@@ -35,6 +35,8 @@ User должен иметь минимальный интерфейс. Блок
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
 - бесшовное получение JWT token на замену истёкшему, звук не пропадает и не обрывается
+- jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
+- reconnection при перезагрузке VPS (в будущем)
 
 ### 10.4. Поведение. Важные моменты
 

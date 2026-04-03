@@ -12,3 +12,7 @@
 - точка автоматизированного разворачивания необходимого ПО на VPS "в один клик" (deploy)
 - перенос HTML на домен
 - Admin Web UI
+- adaptiveStream (обсудить)
+- dynacast (обсудить)
+- audio packet pacing (обсудить)
+- pre-warm publishing (обсудить)
