@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>BYOD Listener</title>
+
+<script src="https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js"></script>
+
+<style>
+
+body{
+    font-family:sans-serif;
+    text-align:center;
+    background:#f4f4f4;
+}
+
+.btn{
+    display:block;
+    width:90%;
+    max-width:500px;
+    margin:15px auto;
+    padding:20px;
+    font-size:20px;
+    border:none;
+    border-radius:12px;
+    background:#ddd;
+}
+
+.active{
+    background:#4CAF50;
+    color:white;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Conference Audio</h1>
+
+<div id="buttons"></div>
+
+<script>
+
+const LIVEKIT_URL = "ws://localhost:7880"
+const TOKEN = "PASTE_BROWSER_TOKEN"
+
+const TRACKS = [
+"track_0","track_1","track_2"
+]
+
+let room
+
+let audioTracks = {}
+let trackReady = {}
+
+let currentTrack = null
+
+//------------------------------------------------
+
+function log(...a){
+console.log("[LISTENER]",...a)
+}
+
+//------------------------------------------------
+// CREATE BUTTONS FIRST
+//------------------------------------------------
+
+function createButtons(){
+
+const container=document.getElementById("buttons")
+
+TRACKS.forEach(track=>{
+
+const btn=document.createElement("button")
+
+btn.className="btn"
+
+btn.id="btn-"+track
+
+btn.innerText=track
+
+btn.onclick=()=>toggleTrack(track)
+
+container.appendChild(btn)
+
+audioTracks[track]=new Audio()
+
+trackReady[track]=false
+
+})
+
+}
+
+//------------------------------------------------
+// TRACK BUTTON
+//------------------------------------------------
+
+function toggleTrack(track){
+
+log("BUTTON",track)
+
+const audio=audioTracks[track]
+
+if(currentTrack===track){
+
+log("PAUSE",track)
+
+audio.pause()
+
+clearActive()
+
+currentTrack=null
+
+return
+
+}
+
+if(currentTrack){
+
+audioTracks[currentTrack].pause()
+
+}
+
+clearActive()
+
+currentTrack=track
+
+document.getElementById("btn-"+track).classList.add("active")
+
+if(trackReady[track]){
+
+audio.play()
+
+setupMediaSession(track)
+
+}else{
+
+log("WAITING FOR STREAM")
+
+}
+
+}
+
+//------------------------------------------------
+
+function clearActive(){
+
+document.querySelectorAll(".btn").forEach(b=>b.classList.remove("active"))
+
+}
+
+//------------------------------------------------
+// CONNECT
+//------------------------------------------------
+
+async function init(){
+
+createButtons()
+
+room=new LivekitClient.Room()
+
+room.on(
+
+LivekitClient.RoomEvent.TrackSubscribed,
+
+(track,publication)=>{
+
+if(track.kind!=="audio") return
+
+const name=publication.trackName
+
+log("TRACK SUBSCRIBED",name)
+
+const audio=audioTracks[name]
+
+audio.srcObject=new MediaStream([track.mediaStreamTrack])
+
+trackReady[name]=true
+
+log("STREAM READY",name)
+
+if(currentTrack===name){
+
+audio.play()
+
+}
+
+}
+
+)
+
+room.on(
+
+LivekitClient.RoomEvent.TrackUnsubscribed,
+
+(track,publication)=>{
+
+const name=publication.trackName
+
+log("TRACK REMOVED",name)
+
+trackReady[name]=false
+
+audioTracks[name].pause()
+
+audioTracks[name].srcObject=null
+
+}
+
+)
+
+try{
+
+log("CONNECTING")
+
+await room.connect(LIVEKIT_URL,TOKEN)
+
+log("CONNECTED")
+
+}catch(e){
+
+console.error("CONNECT ERROR",e)
+
+}
+
+}
+
+//------------------------------------------------
+
+function setupMediaSession(track){
+
+if(!("mediaSession" in navigator)) return
+
+navigator.mediaSession.metadata=new MediaMetadata({
+
+title:"Conference Audio",
+
+artist:track,
+
+album:"Live Translation"
+
+})
+
+navigator.mediaSession.setActionHandler("pause",()=>{
+
+audioTracks[track].pause()
+
+clearActive()
+
+})
+
+navigator.mediaSession.setActionHandler("play",()=>{
+
+audioTracks[track].play()
+
+})
+
+}
+
+//------------------------------------------------
+
+init()
+
+</script>
+
+</body>
+</html>

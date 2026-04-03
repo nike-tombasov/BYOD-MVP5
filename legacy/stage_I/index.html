@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conference Audio</title>
+  <script src="https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #f4f4f4;
+    }
+
+    h1 {
+      margin-top: 20px;
+    }
+
+    .btn {
+      display: block;
+      width: 90%;
+      max-width: 500px;
+      margin: 15px auto;
+      padding: 20px;
+      font-size: 20px;
+      border: none;
+      border-radius: 12px;
+      background: #ddd;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .active {
+      background: #4CAF50;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Conference Name</h1>
+
+<button class="btn" onclick="toggleLang('ru')" id="btn-ru">
+  🇷🇺 Russian — Русский
+</button>
+
+<button class="btn" onclick="toggleLang('en')" id="btn-en">
+  🇬🇧 English — English
+</button>
+
+<button class="btn" onclick="toggleLang('de')" id="btn-de">
+  🇩🇪 German — Deutsch
+</button>
+
+<script>
+let room;
+let audioTracks = {};
+let currentLang = null;
+let currentAudio = null;
+
+async function init() {
+  room = new LivekitClient.Room();
+
+  room.on('trackSubscribed', (track, publication) => {
+    if (track.kind === 'audio') {
+      const lang = publication.trackName;
+
+      const audio = new Audio();
+      audio.srcObject = new MediaStream([track.mediaStreamTrack]);
+      audio.autoplay = false;
+
+      audioTracks[lang] = audio;
+    }
+  });
+
+  const token = "PASTE_BROWSER_TOKEN_HERE";
+
+  await room.connect("ws://91.197.99.193:7880", token);
+}
+
+function toggleLang(lang) {
+  if (!audioTracks[lang]) return;
+
+  // если нажали ту же кнопку — пауза
+  if (currentLang === lang) {
+    currentAudio.pause();
+    clearActive();
+    currentLang = null;
+    currentAudio = null;
+    return;
+  }
+
+  // остановить предыдущий
+  if (currentAudio) {
+    currentAudio.pause();
+  }
+
+  clearActive();
+
+  // включить новый
+  currentLang = lang;
+  currentAudio = audioTracks[lang];
+  currentAudio.play();
+
+  document.getElementById("btn-" + lang).classList.add("active");
+
+  setupMediaSession(lang);
+}
+
+function clearActive() {
+  document.querySelectorAll(".btn").forEach(b => b.classList.remove("active"));
+}
+
+function setupMediaSession(lang) {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: "Conference Audio",
+      artist: lang.toUpperCase(),
+      album: "Live Translation"
+    });
+
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (currentAudio) currentAudio.pause();
+      clearActive();
+    });
+
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (currentAudio) currentAudio.play();
+    });
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

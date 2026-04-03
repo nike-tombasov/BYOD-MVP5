@@ -1,0 +1,194 @@
+## 9. Backend - FastAPI
+
+pip install fastapi uvicorn websockets pyjwt livekit-api
+
+### 9.1. Содержание базы данных Backend, управляемых admin
+
+1) room PIN (6-тизначный код)
+2) channel number - channel_id по форме channel_0, channel_1, channel_2...
+3) channel name - channel_label для каждого channel_id - не используется в SFU WebRTC и требуется только для визуального отображения в UI
+4) режим прослушивания channel - listen (false - по умолчанию для channel_0, Reserve 1 и Reserve 2, и true - по умолчанию для всех остальных) - для каждого channel_id
+5) room name - room_name
+6) room status - room_status (close - по умолчанию во время запуска сервера)
+7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
+
+### 9.2. Tokens and  PIN
+
+JWT tokens выдаются на основе Identity и разные для listener и publisher. Срок действия для production не утверждён, на MVP устанавливается 5 часов.
+
+JWT token содержит:
+* room
+* identity
+* permissions
+
+1) При подключении LiveKit Identity - listener выдаётся token Identity listener_id. Никакой верификации не требуется
+2) При подключении LiveKit Identity - publisher выдаётся токен Identity publisher_id только после проверки PIN
+
+PIN устанавливается admin в момент разворачивания сервера VPS. Может быть изменён в любое время.
+При ручном изменении PIN все Publisher со статусом online не прекращают свою работу. Новый PIN потребуется room technician только для нового подключения. CONNECT к backend по старому PIN с этого момента невозможен.
+
+### 9.3. Room status (room_status)
+
+Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на работу Publisher.
+
+* OPENED - start channel mult-itrack recording, listener может получать звук, subscribe on tracks
+* BLOCKED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, status custom text
+* CLOSED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, стоп записи channel multi-track recording, web page status custom text
+
+### 9.4. Регистрация подключений
+
+Каждый подключающийся Publisher после верификации по PIN должен быть занесён в базу данных по следующим полям (минимально):
+- hostname (system Windows)
+- publisher_counter (счётчик начиная с 0, если Publisher вдруг переподключился - это уже новая регистрация с следующим по порядку номером счётчика)
+- publisher_id (hostname+counter, например, hostPCname_0)
+- publisher_connection_ts (время подключения) 
+- publisher_online (true/false)
+- last_seen_ts (время последнего heartbeat в статусе publisher_online  true)
+- publisher_ip (адрес и порт подключения)
+
+Эти данные служат для управления логикой interlock при multi-publisher connections, а также для statistics.
+
+Каждый подключающийся listener должен быть занесён в базу данных по следующим полям (минимально):
+- listener_counter (счётчик начиная с 0)
+- listener_id (например, listener_0)
+- listener_connection_ts (время подключения) 
+- listener_ip (адрес и порт подключения)
+
+Эти данные служат для выдачи JWT tokens, управления логикой interlock при multi-publisher connections, а также для statistics.
+
+### 9.5. Регистрация ON AIR
+
+Хранение по каждому из channel_id в базе данных:
+- owner - publisher_id, нажавший ON AIR button первым согласно timestamp (null, если не было нажатий ON AIR или если owner нажал STOP)
+- channel_on_air - on air / free
+- on_air_ts - время последнего изменения owner при ON AIR
+- off_air_ts - время последнего изменения owner при STOP или потери связи с owner
+
+### 9.6. Interlock логика
+
+Защититься от гонок (atomic updates). Лимитировать давность поступившего запроса в 30 секунд при расхождение request on air timestamp от current time на случай зависания Publisher или обрывов интернет соединения (ввиду потенциальной неактуальности, чтобы не оборвать актуальный Publisher).
+Первый Publisher, нажавший на ON AIR button, согласно timestamp становится owner. Остальные Publishers получат статус ENGAGE, при этом кнопка ON AIR станет не активна вплоть до смены owner на null.
+
+Примерная схема при ON AIR:
+
+publisher presses ON_AIR 
+↓
+backend receives request
+↓
+backend sets owner(channel_id)
+↓
+backend sets channel_on_air(channel_id) = on_air
+↓
+backend broadcasts state
+↓
+publishers update UI 
+↓
+owner publisher start streaming
+↓
+owner publisher sets UI channel status STREAMING
+↓
+non-owner publishers sets UI channel status ENGAGED
+
+Похожая схема и при STOP:
+
+publisher presses STOP (streaming stopping, unpublish)
+↓
+owner publisher sets UI channel status Connecting...
+↓
+backend receives request
+↓
+backend sets owner(channel_id) = null
+↓
+backend sets channel_on_air(channel_id) = free
+↓
+backend broadcasts state
+↓
+publishers update UI
+↓
+publishers sets UI channel status FREE
+
+### 9.7. Взаимодействие с Publisher по WebSocket
+
+1) Publisher/connecting
+получает PIN и hostname
+
+- при валидном PIN регистрирует Publisher в базе данных, генерирует и отправляет в ответ JWT token Identity publisher_id и персональный publisher_id, а также room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
+- при невалидном PIN возвращает сигнал об ошибке PIN
+
+2) Регулярный Heartbeats и обновление room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
+
+3) Publisher/channel on air
+получает publisher_id, channel_id, request_on_air_ts
+
+4) Publisher/channel stop  
+получает publisher_id, channel_id, request_off_air_ts
+
+5) Publisher/offline  
+Если отсутствие heartbeats 15 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
+
+### 9.8. Взаимодействие с Listener по WebSocket
+
+Listener использует WebSocket для:
+- channel list (channel_id, channel_label, listen)
+- room info (room_name, room_status, status custom text)
+
+Listener НЕ использует backend state для управления аудио.
+Аудио управление осуществляется только через события LiveKit.
+
+Использовать CORS
+
+### 9.9. Channel multi-track recording
+
+После перевода room status to OPENED recording стартуется автоматически. Старт должен быть одновременным по всем channel_id
+
+Требования к записи:
+* MP3 
+* 192 kbps
+* stereo
+* 48000 hz
+* каждый channel_id - отдельный файл mp3
+* имя файла - timestamp-channel_id-channel_label
+
+При изменении channel_label во время recording изменение имени файлов аудиозаписей происходит только при ручном перезапуске записи или при череде смены room status OPENED -> CLOSED -> OPENED.
+
+### 9.10. Admin Web UI (в будущем)
+
+Доступ на страницу управления только по логину и паролю. Логин и пароль вшивается в deploy, но может быть изменён только при ручном входе на VPS через терминал дата центра, PuTTY или иное.
+Возможность объединить управление всеми комнатами (объединение всех VPS в одну локальную сеть дата-центра под одни общим публичным IP), где контроль и управление будет размещено на VPS главного зала конференции с более высокой мощностью.
+
+Admin управляет backend в web UI. Функциональные возможности:
+
+1) начальный ввод room data (PIN, room name, channel number, channel name/label, listen channel_0)
+2) пост-управление room data (изменение PIN, room name, channel name/label, режимов listen)
+3) изменение room status (OPENED, CLOSED, BLOCKED)
+4) визуальный room control - суммарное количество listener (counter), суммарное общее количество subscribed listeners (active  users), длительность статуса OPENED (stopwatch), recording status (on/off)
+5) визуальный контроль channels status по каждому channel_id - текущий owner, длительность последнего on_air (stopwatch), количество subscribed listeners (active user), общее количество subscribes (counter)
+6) возможность OFF AIR по каждому channel_id(owner == null, рассылка state)
+7) ручной старт/стоп channel multi-track recording (автоматически запускается при переходе комнаты в статус OPENED и останавливается при переходе в CLOSED)
+8) состояние room VPS или всех VPS мероприятия (online, CPU, RAM, SSD, LAN/WAN)
+9) визуальный контроль отдельного списка всех Publisher (publisher_id, publisher_online, publisher_connection_ts, last_seen_ts, publisher_ip, number of on air channels)
+10) сохранение и download многоуровневой итоговой statistics
+11) downloading channel multi-track (интеграция с облачными хранилищами с автоматическим копированием по команде)
+*) to be continued…
+
+### 9.11. State
+
+Backend должен рассылать state для publisher и listener.
+
+Publisher использует owner для interlock логики.
+
+Listener использует state только для:
+- button generation
+- channel_label
+- listen
+- room_name
+- room_status
+- status custom text
+
+Listener НЕ использует owner для управления аудио.
+
+Для MVP state единый и должен минимально содержать:
+* room_name
+* room_status
+* status custom text
+* channels (channel_id (channel_label, owner, listen))
