@@ -40,7 +40,6 @@ Publisher B ON AIR
 Expected:
 listener auto switches
 no manual reconnect
-no silence > 500 ms
 
 ### Step 4 — Multi-channel single publisher
 One publisher

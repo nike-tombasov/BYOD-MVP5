@@ -17,7 +17,7 @@ Documentation list:
 * 03_use_cases.md
 * 04_channel_model.md
 * 05_audio_architecture.md
-* 06_livekit_enginge.md
+* 06_livekit_engine.md
 * 07_publisher_ui.md
 * 08_backend.md
 * 09_listener_ui.md

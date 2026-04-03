@@ -22,7 +22,7 @@ channel_0 зарезервирован для:
 - music
 - main stage
 
-channel_0 всегда создаётся при разворачивании VPS (по умолчанию должен быть скрыт/выкл)
+channel_0 всегда создаётся при разворачивании VPS (по умолчанию должен быть listen = false), admin включает его при небходимости вручную 
 
 Tracks creating in LiveKit only when publisher publishes.
 Before publishing track отсутствует in room.

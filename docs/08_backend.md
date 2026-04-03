@@ -64,10 +64,24 @@ Admin изменяет room status вручную. Room status не приост
 - on_air_ts - время последнего изменения owner при ON AIR
 - off_air_ts - время последнего изменения owner при STOP или потери связи с owner
 
+request_on_air_ts и request_off_air_ts не используется в управлении, хранится в backend только для логирования.
+
+Idempotency rule:
+```
+if owner == null:
+    set owner
+elif owner == same publisher:
+    ignore duplicate ON AIR
+else:
+    reject ON AIR
+```
+
 ### 9.6. Interlock логика
 
 Защититься от гонок (atomic updates). Лимитировать давность поступившего запроса в 30 секунд при расхождение request on air timestamp от current time на случай зависания Publisher или обрывов интернет соединения (ввиду потенциальной неактуальности, чтобы не оборвать актуальный Publisher).
 Первый Publisher, нажавший на ON AIR button, согласно timestamp становится owner. Остальные Publishers получат статус ENGAGE, при этом кнопка ON AIR станет не активна вплоть до смены owner на null.
+
+Наличие тишины в channel не является браком в момент переключений, когда один Publisher STOP (unpublish), а второй Publisher ON AIR (publish).
 
 Примерная схема при ON AIR:
 
@@ -124,7 +138,7 @@ publishers sets UI channel status FREE
 получает publisher_id, channel_id, request_off_air_ts
 
 5) Publisher/offline  
-Если отсутствие heartbeats 15 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
+Если отсутствие heartbeats 30 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
 
 ### 9.8. Взаимодействие с Listener по WebSocket
 
@@ -192,3 +206,12 @@ Listener НЕ использует owner для управления аудио.
 * room_status
 * status custom text
 * channels (channel_id (channel_label, owner, listen))
+
+### 9.12 WebSocket
+
+Minimal protocol:
+* connecting
+* heartbeat
+* on_air
+* stop
+* state
