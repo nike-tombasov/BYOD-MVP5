@@ -9,14 +9,8 @@ let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
 let currentTrack = null;
 let currentTrackName = null;
 
-let detachInProgress = false;
-let attachInProgress = false;
-let opCounter = 0;
-
 const publicationByChannel = new Map();
 const trackByChannel = new Map();
-
-const OP_TIMEOUT_MS = 1000;
 
 const player = document.getElementById('player');
 const roomNameEl = document.getElementById('roomName');
@@ -33,141 +27,100 @@ function isLiveKitReady() {
   return typeof window.LivekitClient !== 'undefined' && typeof LivekitClient.Room === 'function';
 }
 
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout ${ms}ms`)), ms)),
-  ]);
+function listValues(collection) {
+  if (!collection) return [];
+  if (typeof collection.values === 'function') return Array.from(collection.values());
+  if (Array.isArray(collection)) return collection;
+  if (typeof collection === 'object') return Object.values(collection);
+  return [];
 }
 
 function getTrackName(publication) {
   return publication?.trackName || publication?.name || publication?.trackSid || null;
 }
 
-function getAudioPublications(participant) {
-  const publications = [];
-
-  if (participant?.trackPublications?.values) {
-    for (const publication of participant.trackPublications.values()) {
-      const kind = publication?.kind;
-      if (kind === LivekitClient.Track.Kind.Audio || kind === 'audio') {
-        publications.push(publication);
-      }
-    }
-  }
-
-  if (publications.length === 0 && participant?.audioTrackPublications?.values) {
-    for (const publication of participant.audioTrackPublications.values()) {
-      publications.push(publication);
-    }
-  }
-
-  return publications;
+function getParticipants() {
+  return room ? listValues(room.remoteParticipants) : [];
 }
 
-function clearPlayerAndTrack() {
+function getAudioPublications(participant) {
+  const raw = listValues(participant?.trackPublications);
+  if (raw.length > 0) {
+    return raw.filter((publication) => {
+      const kind = publication?.kind;
+      return kind === LivekitClient.Track.Kind.Audio || kind === 'audio';
+    });
+  }
+
+  return listValues(participant?.audioTrackPublications);
+}
+
+function stopPlayback() {
   player.pause();
   player.srcObject = null;
   currentTrack = null;
   currentTrackName = null;
+  playbackState = 'IDLE';
 }
 
-async function detachAction() {
-  if (detachInProgress) {
-    log('detachAction skipped: already detaching');
-    return;
+function cachePublication(publication) {
+  const trackName = getTrackName(publication);
+  if (!trackName) return null;
+
+  publicationByChannel.set(trackName, publication);
+  if (publication.track) {
+    trackByChannel.set(trackName, publication.track);
   }
 
-  detachInProgress = true;
-  const myOp = ++opCounter;
-  try {
-    await withTimeout((async () => {
-      clearPlayerAndTrack();
-    })(), OP_TIMEOUT_MS);
+  return trackName;
+}
 
-    if (myOp === opCounter) {
-      if (!selectedChannel) {
-        playbackState = 'IDLE';
-      } else {
-        playbackState = 'WAITING';
-      }
+function refreshPublicationsFromRoom() {
+  for (const participant of getParticipants()) {
+    for (const publication of getAudioPublications(participant)) {
+      cachePublication(publication);
     }
-  } catch (error) {
-    log(`detachAction failed: ${error.message}`);
-    selectedChannel = null;
-    playbackState = 'IDLE';
-    clearPlayerAndTrack();
-  } finally {
-    detachInProgress = false;
   }
 }
 
-async function attachAction(channelId) {
-  if (!channelId) {
+function syncSubscriptions() {
+  if (!room) return;
+
+  refreshPublicationsFromRoom();
+  for (const [trackName, publication] of publicationByChannel.entries()) {
+    const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
+    publication.setSubscribed(shouldSubscribe);
+    log(`setSubscribed(${shouldSubscribe}) track=${trackName}`);
+  }
+}
+
+async function attachSelectedIfPossible() {
+  if (!selectedChannel) {
     return;
   }
 
-  if (attachInProgress) {
-    log('attachAction skipped: already attaching');
-    return;
-  }
+  const publication = publicationByChannel.get(selectedChannel);
+  const track = trackByChannel.get(selectedChannel) || publication?.track || null;
 
-  const track = trackByChannel.get(channelId);
   if (!track) {
-    log(`attachAction waiting: no track for channel=${channelId}`);
     playbackState = 'WAITING';
+    log(`attach waiting channel=${selectedChannel}`);
     return;
   }
 
-  if (currentTrack === track && currentTrackName === channelId && playbackState === 'PLAYING') {
-    log(`attachAction skipped: already attached channel=${channelId}`);
+  if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') {
     return;
   }
 
-  attachInProgress = true;
-  const myOp = ++opCounter;
-  try {
-    await withTimeout((async () => {
-      const mediaStream = new MediaStream([track.mediaStreamTrack]);
-      player.srcObject = mediaStream;
-      await player.play();
-    })(), OP_TIMEOUT_MS);
+  const mediaStream = new MediaStream([track.mediaStreamTrack]);
+  player.pause();
+  player.srcObject = mediaStream;
+  await player.play();
 
-    if (myOp === opCounter) {
-      currentTrack = track;
-      currentTrackName = channelId;
-      playbackState = 'PLAYING';
-      log(`attachAction done channel=${channelId}`);
-    }
-  } catch (error) {
-    log(`attachAction failed: ${error.message}`);
-    selectedChannel = null;
-    playbackState = 'IDLE';
-    clearPlayerAndTrack();
-  } finally {
-    attachInProgress = false;
-  }
-}
-
-async function applySelectiveSubscribe() {
-  if (!room) {
-    log('applySelectiveSubscribe skipped: room is null');
-    return;
-  }
-
-  log(`applySelectiveSubscribe selectedChannel=${selectedChannel}`);
-  for (const participant of room.remoteParticipants.values()) {
-    const publications = getAudioPublications(participant);
-    for (const publication of publications) {
-      const trackName = getTrackName(publication);
-      if (!trackName) continue;
-
-      publicationByChannel.set(trackName, publication);
-      const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
-      publication.setSubscribed(shouldSubscribe);
-      log(`setSubscribed(${shouldSubscribe}) track=${trackName} participant=${participant.identity}`);
-    }
-  }
+  currentTrack = track;
+  currentTrackName = selectedChannel;
+  playbackState = 'PLAYING';
+  log(`attach done channel=${selectedChannel}`);
 }
 
 function renderState(state) {
@@ -181,14 +134,12 @@ function renderState(state) {
     statusBox.style.display = 'none';
   }
 
-  const listeningChannels = new Set((state.channels || []).filter((ch) => ch.listen).map((ch) => ch.channel_id));
-
-  if (selectedChannel && (!listeningChannels.has(selectedChannel) || state.room_status === 'CLOSED' || state.room_status === 'BLOCKED')) {
-    log(`forced stop because selected channel unavailable or room restricted: ${selectedChannel}`);
+  const allowedChannels = new Set((state.channels || []).filter((ch) => ch.listen).map((ch) => ch.channel_id));
+  if (selectedChannel && (!allowedChannels.has(selectedChannel) || state.room_status === 'BLOCKED' || state.room_status === 'CLOSED')) {
+    log(`forced stop channel=${selectedChannel}`);
     selectedChannel = null;
-    playbackState = 'IDLE';
-    clearPlayerAndTrack();
-    applySelectiveSubscribe().catch((error) => log(`applySelectiveSubscribe failed: ${error.message}`));
+    syncSubscriptions();
+    stopPlayback();
   }
 
   buttonsEl.innerHTML = '';
@@ -202,60 +153,38 @@ function renderState(state) {
       button.classList.add('active');
     }
 
-    button.onclick = () => onChannelButtonClick(channel.channel_id);
+    button.onclick = async () => {
+      if (currentState?.room_status && currentState.room_status !== 'OPENED') {
+        log(`click ignored, room_status=${currentState.room_status}`);
+        return;
+      }
+
+      log(`button click channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
+
+      if (selectedChannel === channel.channel_id) {
+        // STOP ACTION
+        selectedChannel = null;
+        syncSubscriptions();
+        stopPlayback();
+        renderState(currentState);
+        return;
+      }
+
+      // PLAY ACTION
+      selectedChannel = channel.channel_id;
+      playbackState = 'WAITING';
+      renderState(currentState);
+      syncSubscriptions();
+
+      try {
+        await attachSelectedIfPossible();
+      } catch (error) {
+        log(`attach error: ${error.message}`);
+      }
+    };
+
     buttonsEl.appendChild(button);
   }
-}
-
-async function onChannelButtonClick(channelId) {
-  if (detachInProgress || attachInProgress) {
-    log(`click ignored channel=${channelId}: operation in progress`);
-    return;
-  }
-
-  if (currentState?.room_status && currentState.room_status !== 'OPENED') {
-    log(`click ignored: room status is ${currentState.room_status}`);
-    return;
-  }
-
-  log(`button click channel=${channelId} current=${selectedChannel} playbackState=${playbackState}`);
-
-  if (selectedChannel === channelId) {
-    // STOP ACTION
-    selectedChannel = null;
-    await applySelectiveSubscribe();
-    await detachAction();
-    renderState(currentState);
-    return;
-  }
-
-  // PLAY ACTION
-  selectedChannel = channelId;
-  playbackState = 'WAITING';
-  renderState(currentState);
-
-  await detachAction();
-  await applySelectiveSubscribe();
-  await attachAction(channelId);
-}
-
-function scanExistingPublications() {
-  if (!room) return;
-
-  for (const participant of room.remoteParticipants.values()) {
-    const publications = getAudioPublications(participant);
-    for (const publication of publications) {
-      const trackName = getTrackName(publication);
-      if (!trackName) continue;
-      publicationByChannel.set(trackName, publication);
-
-      if (publication.track) {
-        trackByChannel.set(trackName, publication.track);
-      }
-    }
-  }
-
-  log(`scanExistingPublications done: publications=${publicationByChannel.size} tracks=${trackByChannel.size}`);
 }
 
 async function connectLiveKit(livekitUrl, token) {
@@ -269,72 +198,79 @@ async function connectLiveKit(livekitUrl, token) {
     autoSubscribe: false,
   });
 
+  room.on(LivekitClient.RoomEvent.TrackPublished, async (publication, participant) => {
+    const trackName = cachePublication(publication);
+    log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
+    syncSubscriptions();
+    if (trackName && selectedChannel === trackName) {
+      await attachSelectedIfPossible();
+    }
+  });
+
   room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    const trackName = getTrackName(publication);
-    if (!trackName) return;
 
-    log(`TrackSubscribed track=${trackName}`);
-    trackByChannel.set(trackName, track);
+    const trackName = cachePublication(publication);
+    if (trackName) {
+      trackByChannel.set(trackName, track);
+      log(`TrackSubscribed track=${trackName}`);
+    }
 
-    if (playbackState === 'WAITING' && selectedChannel === trackName) {
-      await attachAction(trackName);
-      renderState(currentState);
+    if (trackName && selectedChannel === trackName) {
+      await attachSelectedIfPossible();
     }
   });
 
   room.on(LivekitClient.RoomEvent.TrackUnsubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
+
     const trackName = getTrackName(publication);
+    log(`TrackUnsubscribed track=${trackName}`);
     if (!trackName) return;
 
-    log(`TrackUnsubscribed track=${trackName}`);
     trackByChannel.delete(trackName);
-
     if (selectedChannel === trackName && currentTrackName === trackName) {
+      player.pause();
+      player.srcObject = null;
+      currentTrack = null;
+      currentTrackName = null;
       playbackState = 'WAITING';
-      await detachAction();
-      await applySelectiveSubscribe();
-      await attachAction(trackName);
-      renderState(currentState);
+      await attachSelectedIfPossible();
     }
   });
 
-  room.on(LivekitClient.RoomEvent.TrackPublished, async (publication, participant) => {
-    const trackName = getTrackName(publication);
-    log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
-    if (trackName) {
-      publicationByChannel.set(trackName, publication);
-    }
-    await applySelectiveSubscribe();
-  });
-
-  room.on(LivekitClient.RoomEvent.TrackUnpublished, async (publication, participant) => {
+  room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
     const trackName = getTrackName(publication);
     log(`TrackUnpublished participant=${participant?.identity} track=${trackName}`);
     if (!trackName) return;
 
     publicationByChannel.delete(trackName);
     trackByChannel.delete(trackName);
-
-    if (selectedChannel === trackName) {
+    if (selectedChannel === trackName && currentTrackName === trackName) {
+      player.pause();
+      player.srcObject = null;
+      currentTrack = null;
+      currentTrackName = null;
       playbackState = 'WAITING';
-      await detachAction();
-      renderState(currentState);
     }
+  });
+
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, () => {
+    refreshPublicationsFromRoom();
+    syncSubscriptions();
+  });
+
+  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, () => {
+    refreshPublicationsFromRoom();
+    syncSubscriptions();
   });
 
   await room.connect(livekitUrl, token);
   log('Connected to LiveKit');
 
-  scanExistingPublications();
-  await applySelectiveSubscribe();
-
-  if (selectedChannel) {
-    playbackState = 'WAITING';
-    await attachAction(selectedChannel);
-    renderState(currentState);
-  }
+  refreshPublicationsFromRoom();
+  syncSubscriptions();
+  await attachSelectedIfPossible();
 }
 
 async function connectBackend() {
@@ -362,7 +298,8 @@ async function connectBackend() {
     if (msg.type === 'state') {
       renderState(msg.state);
       if (room) {
-        await applySelectiveSubscribe();
+        syncSubscriptions();
+        await attachSelectedIfPossible();
       }
       return;
     }
