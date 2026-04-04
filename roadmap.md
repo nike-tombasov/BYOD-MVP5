@@ -17,6 +17,8 @@ listener selective subscribe channel_0
 
 Expected:
 stable audio
+listener can stop channel and play again
+listener can connect and play after channel publishing 
 
 ### Step 2 — Multi-publisher interlock
 Two publishers
