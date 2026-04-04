@@ -54,19 +54,22 @@ function renderState(state) {
   }
 }
 
+function clearPlayer() {
+  player.pause();
+  player.srcObject = null;
+}
+
 function attachCurrentTrack() {
   if (!selectedChannel) {
     log('no selected channel -> pause and clear player');
-    player.pause();
-    player.srcObject = null;
+    clearPlayer();
     return;
   }
 
   const track = trackByChannel.get(selectedChannel);
   if (!track) {
     log(`selected channel=${selectedChannel} has no subscribed track yet`);
-    player.pause();
-    player.srcObject = null;
+    clearPlayer();
     return;
   }
 
@@ -78,8 +81,15 @@ function attachCurrentTrack() {
   });
 }
 
-function getTrackName(publication) {
-  return publication?.trackName || publication?.trackSid || publication?.name || null;
+function getTrackName(publication, track = null) {
+  return (
+    publication?.trackName ||
+    publication?.name ||
+    publication?.track?.name ||
+    publication?.trackInfo?.name ||
+    track?.name ||
+    null
+  );
 }
 
 function getAudioPublications(participant) {
@@ -93,13 +103,13 @@ function getAudioPublications(participant) {
     }
   }
 
-  if (publications.length === 0 && participant?.audioTrackPublications?.values) {
-    for (const publication of participant.audioTrackPublications.values()) {
-      publications.push(publication);
-    }
-  }
-
   return publications;
+}
+
+function setPublicationSubscribed(publication, shouldSubscribe, participantIdentity) {
+  const trackName = getTrackName(publication);
+  log(`setSubscribed(${shouldSubscribe}) participant=${participantIdentity} track=${trackName}`);
+  publication.setSubscribed(shouldSubscribe);
 }
 
 async function applySelectiveSubscribe() {
@@ -115,15 +125,23 @@ async function applySelectiveSubscribe() {
     for (const publication of publications) {
       const trackName = getTrackName(publication);
       const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
-      log(`setSubscribed(${shouldSubscribe}) participant=${participant.identity} track=${trackName}`);
-      publication.setSubscribed(shouldSubscribe);
+      setPublicationSubscribed(publication, shouldSubscribe, participant.identity);
     }
   }
 
   if (!selectedChannel) {
-    player.pause();
-    player.srcObject = null;
+    clearPlayer();
   }
+}
+
+async function subscribeExistingPublications() {
+  if (!room) {
+    return;
+  }
+
+  log('subscribeExistingPublications start');
+  await applySelectiveSubscribe();
+  attachCurrentTrack();
 }
 
 async function connectLiveKit(livekitUrl, token) {
@@ -133,31 +151,38 @@ async function connectLiveKit(livekitUrl, token) {
     autoSubscribe: false,
   });
 
-  room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication) => {
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication, participant) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    const trackName = getTrackName(publication);
-    log(`TrackSubscribed track=${trackName}`);
+    const trackName = getTrackName(publication, track);
+    log(`TrackSubscribed participant=${participant?.identity} track=${trackName}`);
     if (trackName) {
       trackByChannel.set(trackName, track);
     }
     attachCurrentTrack();
   });
 
-  room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication) => {
+  room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    const trackName = getTrackName(publication);
-    log(`TrackUnsubscribed track=${trackName}`);
+    const trackName = getTrackName(publication, track);
+    log(`TrackUnsubscribed participant=${participant?.identity} track=${trackName}`);
     if (trackName) {
       trackByChannel.delete(trackName);
     }
     if (trackName === selectedChannel) {
-      player.pause();
-      player.srcObject = null;
+      clearPlayer();
     }
   });
 
   room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
-    log(`TrackPublished participant=${participant?.identity} track=${getTrackName(publication)}`);
+    const trackName = getTrackName(publication);
+    log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
+    const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
+    setPublicationSubscribed(publication, shouldSubscribe, participant?.identity);
+    attachCurrentTrack();
+  });
+
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+    log(`ParticipantConnected participant=${participant.identity}`);
     applySelectiveSubscribe().catch(() => {});
   });
 
@@ -172,7 +197,7 @@ async function connectLiveKit(livekitUrl, token) {
 
   await room.connect(livekitUrl, token);
   log('Connected to LiveKit');
-  await applySelectiveSubscribe();
+  await subscribeExistingPublications();
 }
 
 async function connectBackend() {
