@@ -1,6 +1,5 @@
 import asyncio
 import time
-from datetime import timedelta
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -81,7 +80,7 @@ def create_livekit_token(identity: str) -> str:
         livekit_api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
         .with_identity(identity)
         .with_grants(livekit_api.VideoGrants(room_join=True, room=ROOM_NAME))
-        .with_ttl(timedelta(seconds=JWT_LIFETIME_SECONDS))
+        .with_ttl(JWT_LIFETIME_SECONDS)
     )
     return token.to_jwt()
 
