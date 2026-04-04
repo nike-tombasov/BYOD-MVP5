@@ -1,0 +1,16 @@
+# BYOD MVP Step 1 (Python 3.11)
+# LiveKit server target is fixed by architecture: 1.9.11.
+# SDK packages pinned for reproducible client/backend behavior.
+
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+websockets==13.1
+pyjwt==2.10.1
+
+# LiveKit Python SDKs
+livekit==1.1.5
+livekit-api==1.1.0
+
+# Publisher audio pipeline
+numpy==2.2.5
+sounddevice==0.5.1
