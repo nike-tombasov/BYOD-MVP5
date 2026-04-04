@@ -146,8 +146,8 @@ Listener использует WebSocket для:
 - channel list (channel_id, channel_label, listen)
 - room info (room_name, room_status, status custom text)
 
-Listener НЕ использует backend state для управления аудио.
-Аудио управление осуществляется только через события LiveKit.
+Listener НЕ использует backend state (и в частности owner) для управления аудио.
+Аудио управление Listener осуществляется через события LiveKit и channel button condition.
 
 Использовать CORS
 
