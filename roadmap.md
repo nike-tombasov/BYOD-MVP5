@@ -6,58 +6,61 @@ Follow ARCHITECTURE.md
 Implement end-to-end (publisher + backend + listener)
 
 ### Step 1 — Single publisher, single channel
-One publisher
-One channel
-One listener
+- One publisher
+- One channel
+- One listener
 
 Flow:
-publisher publish channel_0
-backend owner assign
-listener selective subscribe channel_0
+- publisher publish channel_0
+- backend owner assign
+- listener selective subscribe channel_0
 
 Expected:
-stable audio
-listener can stop channel and play again
-listener can connect and play after channel publishing 
+- stable audio
+- listener can stop channel and play again
+- listener can connect and play after channel publishing 
 
 ### Step 2 — Multi-publisher interlock
-Two publishers
-One channel
+- Two publishers
+- One channel
 
-Publisher A ON AIR
-Publisher B tries ON AIR
+Flow:
+- Publisher A ON AIR
+- Publisher B tries ON AIR
 
 Expected:
-publisher B blocked
-listener hears publisher A only
+- publisher B blocked
+- listener hears publisher A only
 
 ### Step 3 — Publisher switching
-Two publishers
-One channel
+- Two publishers
+- One channel
 
-Publisher A ON AIR
-Publisher A STOP
-Publisher B ON AIR
+Flow:
+- Publisher A ON AIR
+- Publisher A STOP
+- Publisher B ON AIR
 
 Expected:
-listener auto switches
-no manual reconnect
+- listener auto switches
+- no manual reconnect
 
 ### Step 4 — Multi-channel single publisher
-One publisher
-Three channels
-One listener
+- One publisher
+- Three channels
+- One listener
 
 Publisher streams:
-channel_0
-channel_1
-channel_2
+- channel_0
+- channel_1
+- channel_2
 
+Flow:
 Listener switches channels
 
 Expected:
-correct selective subscribe
-no cross audio
+- correct selective subscribe
+- no cross audio
 
 ### Step 5 — Multi-channel multi-publisher
 Two publishers
