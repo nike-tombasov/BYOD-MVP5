@@ -29,6 +29,10 @@ function log(message) {
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
+function isLiveKitReady() {
+  return typeof window.LivekitClient !== 'undefined' && typeof LivekitClient.Room === 'function';
+}
+
 function withTimeout(promise, ms) {
   return Promise.race([
     promise,
@@ -255,6 +259,10 @@ function scanExistingPublications() {
 }
 
 async function connectLiveKit(livekitUrl, token) {
+  if (!isLiveKitReady()) {
+    throw new Error('LiveKit client script is not loaded');
+  }
+
   room = new LivekitClient.Room({
     adaptiveStream: false,
     dynacast: false,
@@ -343,13 +351,19 @@ async function connectBackend() {
 
     if (msg.type === 'connected') {
       renderState(msg.state);
-      await connectLiveKit(msg.livekit_url, msg.token);
+      try {
+        await connectLiveKit(msg.livekit_url, msg.token);
+      } catch (error) {
+        log(`LiveKit connect failed: ${error.message}`);
+      }
       return;
     }
 
     if (msg.type === 'state') {
       renderState(msg.state);
-      await applySelectiveSubscribe();
+      if (room) {
+        await applySelectiveSubscribe();
+      }
       return;
     }
   };
