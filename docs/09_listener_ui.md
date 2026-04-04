@@ -23,7 +23,45 @@ User должен иметь минимальный интерфейс. Блок
 8) нажатие на active channel button (stop action для текущего воспроизведения channel), кнопка меняет цвет обратно (гаснет)
 9) heartbeats, горячее изменение channel names от backend, появление channel buttons при переводе channels listen в true (не должно влиять на active play, по которому уже нажата channel button)
 
-### 10.3. Key technologies
+### 10.3 Listener playback algorithm
+
+ON CHANNEL BUTTON CLICK:
+
+if same channel:
+    pause audio
+    detach track from audio element
+    clear state
+
+else:
+    detach previous track
+    find trackPublication by track.name == channel_id
+    setSubscribed(true)
+    attach track to audio element
+    audio.play()
+
+### 10.4. Existing tracks handling
+
+After connecting to LiveKit room, Listener MUST:
+
+- iterate over room.remoteParticipants
+- iterate over participant.trackPublications
+- detect already published tracks (trackName == channel_id)
+- store references to these tracks
+
+Listener MUST NOT rely only on trackSubscribed event.
+
+### 10.5. Detach audio element rules
+
+When switching or stopping channel:
+
+Listener MUST:
+- call audio.pause()
+- set audio.srcObject = null
+- clear reference to current track
+
+If this is not done, browser will continue playback.
+
+### 10.6. Key technologies
 
 - autoSubscribe = false
 - selective subscribe
@@ -38,15 +76,7 @@ User должен иметь минимальный интерфейс. Блок
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
-### 10.4. Поведение. Важные моменты
-
-autoSubscribe = false
-↓
-selective subscribe 1 track
-↓
-слушает события LiveKit
-↓
-автоматически ловит смену publisher
+### 10.7. Поведение. Важные моменты
 
 NOT subscribe на всё. Listener subscribe на LiveKit track, имя которого равно выбранному channel_id.
 
