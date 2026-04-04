@@ -2,8 +2,15 @@ const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws:
 
 let backendWs = null;
 let room = null;
+let currentState = null;
+
 let selectedChannel = null;
-let trackByChannel = new Map();
+let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
+let currentTrack = null;
+let currentTrackName = null;
+
+const publicationByChannel = new Map();
+const trackByChannel = new Map();
 
 const player = document.getElementById('player');
 const roomNameEl = document.getElementById('roomName');
@@ -16,8 +23,108 @@ function log(message) {
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
+function isLiveKitReady() {
+  return typeof window.LivekitClient !== 'undefined' && typeof LivekitClient.Room === 'function';
+}
+
+function listValues(collection) {
+  if (!collection) return [];
+  if (typeof collection.values === 'function') return Array.from(collection.values());
+  if (Array.isArray(collection)) return collection;
+  if (typeof collection === 'object') return Object.values(collection);
+  return [];
+}
+
+function getTrackName(publication) {
+  return publication?.trackName || publication?.name || publication?.trackSid || null;
+}
+
+function getParticipants() {
+  return room ? listValues(room.remoteParticipants) : [];
+}
+
+function getAudioPublications(participant) {
+  const raw = listValues(participant?.trackPublications);
+  if (raw.length > 0) {
+    return raw.filter((publication) => {
+      const kind = publication?.kind;
+      return kind === LivekitClient.Track.Kind.Audio || kind === 'audio';
+    });
+  }
+
+  return listValues(participant?.audioTrackPublications);
+}
+
+function stopPlayback() {
+  player.pause();
+  player.srcObject = null;
+  currentTrack = null;
+  currentTrackName = null;
+  playbackState = 'IDLE';
+}
+
+function cachePublication(publication) {
+  const trackName = getTrackName(publication);
+  if (!trackName) return null;
+
+  publicationByChannel.set(trackName, publication);
+  if (publication.track) {
+    trackByChannel.set(trackName, publication.track);
+  }
+
+  return trackName;
+}
+
+function refreshPublicationsFromRoom() {
+  for (const participant of getParticipants()) {
+    for (const publication of getAudioPublications(participant)) {
+      cachePublication(publication);
+    }
+  }
+}
+
+function syncSubscriptions() {
+  if (!room) return;
+
+  refreshPublicationsFromRoom();
+  for (const [trackName, publication] of publicationByChannel.entries()) {
+    const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
+    publication.setSubscribed(shouldSubscribe);
+    log(`setSubscribed(${shouldSubscribe}) track=${trackName}`);
+  }
+}
+
+async function attachSelectedIfPossible() {
+  if (!selectedChannel) {
+    return;
+  }
+
+  const publication = publicationByChannel.get(selectedChannel);
+  const track = trackByChannel.get(selectedChannel) || publication?.track || null;
+
+  if (!track) {
+    playbackState = 'WAITING';
+    log(`attach waiting channel=${selectedChannel}`);
+    return;
+  }
+
+  if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') {
+    return;
+  }
+
+  const mediaStream = new MediaStream([track.mediaStreamTrack]);
+  player.pause();
+  player.srcObject = mediaStream;
+  await player.play();
+
+  currentTrack = track;
+  currentTrackName = selectedChannel;
+  playbackState = 'PLAYING';
+  log(`attach done channel=${selectedChannel}`);
+}
+
 function renderState(state) {
-  log(`renderState room=${state.room_name} status=${state.room_status}`);
+  currentState = state;
   roomNameEl.textContent = state.room_name || 'Room';
 
   if (state.room_status && state.room_status !== 'OPENED') {
@@ -25,6 +132,14 @@ function renderState(state) {
     statusBox.textContent = state.status_custom_text || state.room_status;
   } else {
     statusBox.style.display = 'none';
+  }
+
+  const allowedChannels = new Set((state.channels || []).filter((ch) => ch.listen).map((ch) => ch.channel_id));
+  if (selectedChannel && (!allowedChannels.has(selectedChannel) || state.room_status === 'BLOCKED' || state.room_status === 'CLOSED')) {
+    log(`forced stop channel=${selectedChannel}`);
+    selectedChannel = null;
+    syncSubscriptions();
+    stopPlayback();
   }
 
   buttonsEl.innerHTML = '';
@@ -39,140 +154,124 @@ function renderState(state) {
     }
 
     button.onclick = async () => {
-      log(`button click channel=${channel.channel_id} current=${selectedChannel}`);
-      if (selectedChannel === channel.channel_id) {
-        selectedChannel = null;
-      } else {
-        selectedChannel = channel.channel_id;
+      if (currentState?.room_status && currentState.room_status !== 'OPENED') {
+        log(`click ignored, room_status=${currentState.room_status}`);
+        return;
       }
-      renderState(state);
-      await applySelectiveSubscribe();
-      attachCurrentTrack();
+
+      const nextAction = selectedChannel === channel.channel_id ? 'STOP' : 'PLAY';
+      log(`button click action=${nextAction} channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
+
+      if (selectedChannel === channel.channel_id) {
+        // STOP ACTION
+        selectedChannel = null;
+        syncSubscriptions();
+        stopPlayback();
+        renderState(currentState);
+        return;
+      }
+
+      // PLAY ACTION
+      selectedChannel = channel.channel_id;
+      playbackState = 'WAITING';
+      renderState(currentState);
+      syncSubscriptions();
+
+      try {
+        await attachSelectedIfPossible();
+      } catch (error) {
+        log(`attach error: ${error.message}`);
+      }
     };
 
     buttonsEl.appendChild(button);
   }
 }
 
-function attachCurrentTrack() {
-  if (!selectedChannel) {
-    log('no selected channel -> pause and clear player');
-    player.pause();
-    player.srcObject = null;
-    return;
-  }
-
-  const track = trackByChannel.get(selectedChannel);
-  if (!track) {
-    log(`selected channel=${selectedChannel} has no subscribed track yet`);
-    player.pause();
-    player.srcObject = null;
-    return;
-  }
-
-  const mediaStream = new MediaStream([track.mediaStreamTrack]);
-  log(`attach and play channel=${selectedChannel}`);
-  player.srcObject = mediaStream;
-  player.play().catch((error) => {
-    log(`player.play failed: ${error.message}`);
-  });
-}
-
-function getTrackName(publication) {
-  return publication?.trackName || publication?.trackSid || publication?.name || null;
-}
-
-function getAudioPublications(participant) {
-  const publications = [];
-
-  if (participant?.trackPublications?.values) {
-    for (const publication of participant.trackPublications.values()) {
-      if (publication?.kind === LivekitClient.Track.Kind.Audio) {
-        publications.push(publication);
-      }
-    }
-  }
-
-  if (publications.length === 0 && participant?.audioTrackPublications?.values) {
-    for (const publication of participant.audioTrackPublications.values()) {
-      publications.push(publication);
-    }
-  }
-
-  return publications;
-}
-
-async function applySelectiveSubscribe() {
-  if (!room) {
-    log('applySelectiveSubscribe skipped: room is null');
-    return;
-  }
-
-  log(`applySelectiveSubscribe selectedChannel=${selectedChannel}`);
-
-  for (const participant of room.remoteParticipants.values()) {
-    const publications = getAudioPublications(participant);
-    for (const publication of publications) {
-      const trackName = getTrackName(publication);
-      const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
-      log(`setSubscribed(${shouldSubscribe}) participant=${participant.identity} track=${trackName}`);
-      publication.setSubscribed(shouldSubscribe);
-    }
-  }
-
-  if (!selectedChannel) {
-    player.pause();
-    player.srcObject = null;
-  }
-}
-
 async function connectLiveKit(livekitUrl, token) {
+  if (!isLiveKitReady()) {
+    throw new Error('LiveKit client script is not loaded');
+  }
+
   room = new LivekitClient.Room({
     adaptiveStream: false,
     dynacast: false,
     autoSubscribe: false,
   });
 
+  room.on(LivekitClient.RoomEvent.TrackPublished, async (publication, participant) => {
+    const trackName = cachePublication(publication);
+    log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
+    syncSubscriptions();
+    if (trackName && selectedChannel === trackName) {
+      await attachSelectedIfPossible();
+    }
+  });
+
   room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    const trackName = getTrackName(publication);
-    log(`TrackSubscribed track=${trackName}`);
+
+    const trackName = cachePublication(publication);
     if (trackName) {
       trackByChannel.set(trackName, track);
+      log(`TrackSubscribed track=${trackName}`);
     }
-    attachCurrentTrack();
+
+    if (trackName && selectedChannel === trackName) {
+      await attachSelectedIfPossible();
+    }
   });
 
-  room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication) => {
+  room.on(LivekitClient.RoomEvent.TrackUnsubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
+
     const trackName = getTrackName(publication);
     log(`TrackUnsubscribed track=${trackName}`);
-    if (trackName) {
-      trackByChannel.delete(trackName);
-    }
-    if (trackName === selectedChannel) {
+    if (!trackName) return;
+
+    trackByChannel.delete(trackName);
+    if (selectedChannel === trackName && currentTrackName === trackName) {
       player.pause();
       player.srcObject = null;
+      currentTrack = null;
+      currentTrackName = null;
+      playbackState = 'WAITING';
+      await attachSelectedIfPossible();
     }
-  });
-
-  room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
-    log(`TrackPublished participant=${participant?.identity} track=${getTrackName(publication)}`);
-    applySelectiveSubscribe().catch(() => {});
   });
 
   room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
-    log(`TrackUnpublished participant=${participant?.identity} track=${getTrackName(publication)}`);
     const trackName = getTrackName(publication);
-    if (trackName) {
-      trackByChannel.delete(trackName);
+    log(`TrackUnpublished participant=${participant?.identity} track=${trackName}`);
+    if (!trackName) return;
+
+    publicationByChannel.delete(trackName);
+    trackByChannel.delete(trackName);
+    if (selectedChannel === trackName && currentTrackName === trackName) {
+      player.pause();
+      player.srcObject = null;
+      currentTrack = null;
+      currentTrackName = null;
+      playbackState = 'WAITING';
     }
-    attachCurrentTrack();
+  });
+
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, () => {
+    refreshPublicationsFromRoom();
+    syncSubscriptions();
+  });
+
+  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, () => {
+    refreshPublicationsFromRoom();
+    syncSubscriptions();
   });
 
   await room.connect(livekitUrl, token);
   log('Connected to LiveKit');
-  await applySelectiveSubscribe();
+
+  refreshPublicationsFromRoom();
+  syncSubscriptions();
+  await attachSelectedIfPossible();
 }
 
 async function connectBackend() {
@@ -189,13 +288,20 @@ async function connectBackend() {
 
     if (msg.type === 'connected') {
       renderState(msg.state);
-      await connectLiveKit(msg.livekit_url, msg.token);
+      try {
+        await connectLiveKit(msg.livekit_url, msg.token);
+      } catch (error) {
+        log(`LiveKit connect failed: ${error.message}`);
+      }
       return;
     }
 
     if (msg.type === 'state') {
       renderState(msg.state);
-      await applySelectiveSubscribe();
+      if (room) {
+        syncSubscriptions();
+        await attachSelectedIfPossible();
+      }
       return;
     }
   };

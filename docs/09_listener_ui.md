@@ -116,6 +116,11 @@ if current channel sets listen = false:
 ```
 ### 10.5. Existing tracks handling
 
+Naming rule:
+- publication.trackName (or track.name) MUST be exactly channel_id.
+- currentChannel in Listener logic means selected channel_id from pressed button.
+
+
 After connecting to LiveKit room, Listener MUST:
 - iterate over room.remoteParticipants
 - iterate over participant.trackPublications
@@ -157,7 +162,7 @@ If this is not done, browser will continue playback.
 
 - autoSubscribe = false
 - selective subscribe
-- autoplay (только после нажатия на channel button, не работает после STOP ACTION)
+- autoplay (только после нажатия на channel button; после STOP ACTION повторное нажатие channel button снова запускает звук)
 - НЕ создавать новый audio element каждый раз (используется только один audio element на протяжении всей сессии, при смене channel выполняется detach предыдущего track и attach нового).
 - обмен данным с backend по WebSocket 
 - автоопределение users system language (если не известен - English)

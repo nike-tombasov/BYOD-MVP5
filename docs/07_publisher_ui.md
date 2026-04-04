@@ -119,6 +119,10 @@ room_status никак не влияет на работу Publisher
 
 ### 8.8. Блок CHANNELS
 
+Publisher UI для Stage V строится сразу на 32 channel_id (channel_0...channel_31). Окно фиксированного размера, блок channels работает через vertical scroll.
+
+Прокрутка списка audio devices колесом мыши без раскрытия dropdown допустима и считается полезной функцией (не ошибка).
+
 При заполнении блока channels в момент подключения к комнате ни один audio device выбран быть не должен. По умолчанию отображается служебный пункт None.
 
 Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None нажатие на ON AIR выводит UI channel status - NO DEVICE и остаётся серой (not streaming, not publish).
@@ -134,7 +138,9 @@ UI channel statuses (цвета):
 * DEVICE ERROR (красный)
 * Device error. Check system samplerate (48000 Hz only) (красный)
 
-UI channel status “Device error. Check system samplerate (48000 Hz only)” отображается только в момент выбора соответствующего audio device из списка. При выборе audio device не подходящего под эту ошибку, UI channel status меняется на актуальный.
+UI channel status “Device error. Check system samplerate (48000 Hz only)” отображается сразу в момент выбора соответствующего audio device из списка. При выборе audio device с samplerate 48000 ошибка исчезает сразу и UI channel status меняется на актуальный.
+
+При samplerate != 48000 кнопка ON AIR должна быть неактивной, backend запрос ON AIR отправлять запрещено.
 
 * FREE отображается, если в backend owner == null
 * STREAMING отображается, если в backend owner == self publisher_id
@@ -145,7 +151,7 @@ UI channel status “Device error. Check system samplerate (48000 Hz only)” о
 
 ### 8.9. Interlock логика, UI channel status ENGAGE и поведение ON AIR, STOP 
 
-При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового state (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
+При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. На время ожидания owner==self и во время STREAMING список audio devices по этому channel блокируется (no hot switching). Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового state (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
 
 Другие room Publisher на основе полученного нового state (где owner != self publisher_id) меняют UI channel status на ENGAGED. Кнопка ON AIR становится не кликабельной, синего цвета.
 
@@ -177,7 +183,7 @@ publishers sets UI channel status FREE
 - Передача аудио из callback в asyncio через asyncio.run_coroutine_threadsafe. Позволяет безопасно отправлять данные из аудио-потока (sounddevice) в async очередь.
 - Использование asyncio.Queue как буфера между аудио захватом и LiveKit отправкой. Разрывает realtime callback и сетевую передачу, стабилизируя поток.
 - Каждый трек имеет свой AudioSource, Queue, Stream.
-- Перезапуск аудио стрима при смене устройства на лету. В device_changed() поток останавливается и создается заново без разрыва LiveKit.
+- Во время ON AIR/handover список устройств блокируется. Смена устройства разрешена только при состоянии FREE/ENGAGED до нового ON AIR.
 - Отдельный sender coroutine на каждый трек. asyncio.create_task(self.audio_sender(track)) обеспечивает независимую передачу.
 - Минимизация latency через blocksize = 960. Это соответствует 20ms при 48kHz → стандарт для realtime WebRTC.
 - Конвертация float audio → PCM16 перед отправкой. pcm16 = (data * 32767).astype(np.int16). Требуется LiveKit API.
