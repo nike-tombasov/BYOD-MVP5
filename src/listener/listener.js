@@ -159,7 +159,8 @@ function renderState(state) {
         return;
       }
 
-      log(`button click channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
+      const nextAction = selectedChannel === channel.channel_id ? 'STOP' : 'PLAY';
+      log(`button click action=${nextAction} channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
 
       if (selectedChannel === channel.channel_id) {
         // STOP ACTION
