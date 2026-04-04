@@ -12,10 +12,12 @@ const statusBox = document.getElementById('statusBox');
 const logEl = document.getElementById('log');
 
 function log(message) {
+  console.log(`[listener] ${message}`);
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
 function renderState(state) {
+  log(`renderState room=${state.room_name} status=${state.room_status}`);
   roomNameEl.textContent = state.room_name || 'Room';
 
   if (state.room_status && state.room_status !== 'OPENED') {
@@ -37,6 +39,7 @@ function renderState(state) {
     }
 
     button.onclick = async () => {
+      log(`button click channel=${channel.channel_id} current=${selectedChannel}`);
       if (selectedChannel === channel.channel_id) {
         selectedChannel = null;
       } else {
@@ -53,31 +56,72 @@ function renderState(state) {
 
 function attachCurrentTrack() {
   if (!selectedChannel) {
+    log('no selected channel -> pause and clear player');
+    player.pause();
     player.srcObject = null;
     return;
   }
 
   const track = trackByChannel.get(selectedChannel);
   if (!track) {
+    log(`selected channel=${selectedChannel} has no subscribed track yet`);
+    player.pause();
+    player.srcObject = null;
     return;
   }
 
   const mediaStream = new MediaStream([track.mediaStreamTrack]);
+  log(`attach and play channel=${selectedChannel}`);
   player.srcObject = mediaStream;
-  player.play().catch(() => {});
+  player.play().catch((error) => {
+    log(`player.play failed: ${error.message}`);
+  });
+}
+
+function getTrackName(publication) {
+  return publication?.trackName || publication?.trackSid || publication?.name || null;
+}
+
+function getAudioPublications(participant) {
+  const publications = [];
+
+  if (participant?.trackPublications?.values) {
+    for (const publication of participant.trackPublications.values()) {
+      if (publication?.kind === LivekitClient.Track.Kind.Audio) {
+        publications.push(publication);
+      }
+    }
+  }
+
+  if (publications.length === 0 && participant?.audioTrackPublications?.values) {
+    for (const publication of participant.audioTrackPublications.values()) {
+      publications.push(publication);
+    }
+  }
+
+  return publications;
 }
 
 async function applySelectiveSubscribe() {
-  if (!room) return;
+  if (!room) {
+    log('applySelectiveSubscribe skipped: room is null');
+    return;
+  }
+
+  log(`applySelectiveSubscribe selectedChannel=${selectedChannel}`);
 
   for (const participant of room.remoteParticipants.values()) {
-    for (const publication of participant.audioTrackPublications.values()) {
-      const shouldSubscribe = selectedChannel !== null && publication.trackName === selectedChannel;
+    const publications = getAudioPublications(participant);
+    for (const publication of publications) {
+      const trackName = getTrackName(publication);
+      const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
+      log(`setSubscribed(${shouldSubscribe}) participant=${participant.identity} track=${trackName}`);
       publication.setSubscribed(shouldSubscribe);
     }
   }
 
   if (!selectedChannel) {
+    player.pause();
     player.srcObject = null;
   }
 }
@@ -91,20 +135,39 @@ async function connectLiveKit(livekitUrl, token) {
 
   room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    trackByChannel.set(publication.trackName, track);
+    const trackName = getTrackName(publication);
+    log(`TrackSubscribed track=${trackName}`);
+    if (trackName) {
+      trackByChannel.set(trackName, track);
+    }
     attachCurrentTrack();
   });
 
   room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-    trackByChannel.delete(publication.trackName);
-    if (publication.trackName === selectedChannel) {
+    const trackName = getTrackName(publication);
+    log(`TrackUnsubscribed track=${trackName}`);
+    if (trackName) {
+      trackByChannel.delete(trackName);
+    }
+    if (trackName === selectedChannel) {
+      player.pause();
       player.srcObject = null;
     }
   });
 
-  room.on(LivekitClient.RoomEvent.TrackPublished, () => {
+  room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
+    log(`TrackPublished participant=${participant?.identity} track=${getTrackName(publication)}`);
     applySelectiveSubscribe().catch(() => {});
+  });
+
+  room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
+    log(`TrackUnpublished participant=${participant?.identity} track=${getTrackName(publication)}`);
+    const trackName = getTrackName(publication);
+    if (trackName) {
+      trackByChannel.delete(trackName);
+    }
+    attachCurrentTrack();
   });
 
   await room.connect(livekitUrl, token);
@@ -116,11 +179,13 @@ async function connectBackend() {
   backendWs = new WebSocket(backendUrl);
 
   backendWs.onopen = () => {
+    log(`backend websocket opened: ${backendUrl}`);
     backendWs.send(JSON.stringify({ type: 'connecting' }));
   };
 
   backendWs.onmessage = async (event) => {
     const msg = JSON.parse(event.data);
+    log(`backend message type=${msg.type}`);
 
     if (msg.type === 'connected') {
       renderState(msg.state);
@@ -137,6 +202,10 @@ async function connectBackend() {
 
   backendWs.onclose = () => {
     log('Backend WS closed');
+  };
+
+  backendWs.onerror = (event) => {
+    log(`Backend WS error: ${event.type}`);
   };
 }
 

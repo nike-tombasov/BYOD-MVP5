@@ -96,6 +96,7 @@ async def send_json_safe(ws: WebSocket, payload: dict[str, Any]) -> bool:
 
 async def broadcast_state() -> None:
     payload = {"type": "state", "state": build_state_payload()}
+    print("[backend] broadcast_state")
 
     dead_publishers: list[str] = []
     for publisher_id, session in state.publishers.items():
@@ -122,6 +123,7 @@ async def drop_publisher(publisher_id: str) -> None:
         return
 
     session.online = False
+    print(f"[backend] drop_publisher publisher_id={publisher_id}")
     for channel in state.channels:
         if channel["owner"] == publisher_id:
             channel["owner"] = None
@@ -139,6 +141,7 @@ def find_channel(channel_id: str) -> dict[str, Any] | None:
 @app.websocket("/ws/publisher")
 async def publisher_ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    print("[backend] publisher websocket accepted")
     publisher_id: str | None = None
 
     try:
@@ -150,6 +153,7 @@ async def publisher_ws(websocket: WebSocket) -> None:
                 pin = message.get("pin")
                 hostname = str(message.get("hostname") or "publisher-host")
                 if pin != PIN:
+                    print(f"[backend] invalid pin from hostname={hostname}")
                     await websocket.send_json({"type": "error", "code": "INVALID_PIN"})
                     continue
 
@@ -173,6 +177,7 @@ async def publisher_ws(websocket: WebSocket) -> None:
                             "state": build_state_payload(),
                         }
                     )
+                    print(f"[backend] publisher connected publisher_id={publisher_id}")
                     await broadcast_state()
                 continue
 
@@ -185,6 +190,7 @@ async def publisher_ws(websocket: WebSocket) -> None:
                     session = state.publishers.get(publisher_id)
                     if session:
                         session.last_seen_ts = now_ts()
+                        print(f"[backend] heartbeat publisher_id={publisher_id}")
                 continue
 
             if msg_type == "on_air":
@@ -200,9 +206,15 @@ async def publisher_ws(websocket: WebSocket) -> None:
                     if owner is None:
                         channel["owner"] = publisher_id
                         channel["on_air_ts"] = now_ts()
+                        print(f"[backend] ON_AIR owner set channel={channel_id} owner={publisher_id}")
                     elif owner == publisher_id:
                         channel["request_on_air_ts"] = message.get("request_on_air_ts")
+                        print(f"[backend] ON_AIR duplicate ignored channel={channel_id} owner={publisher_id}")
                     else:
+                        print(
+                            f"[backend] ON_AIR rejected channel={channel_id} "
+                            f"owner={owner} requester={publisher_id}"
+                        )
                         await websocket.send_json(
                             {
                                 "type": "on_air_rejected",
@@ -225,12 +237,15 @@ async def publisher_ws(websocket: WebSocket) -> None:
                     if owner == publisher_id:
                         channel["owner"] = None
                         channel["off_air_ts"] = now_ts()
+                        print(f"[backend] STOP owner cleared channel={channel_id} owner={publisher_id}")
                     elif owner is None:
                         channel["request_off_air_ts"] = message.get("request_off_air_ts")
+                        print(f"[backend] STOP duplicate ignored channel={channel_id}")
                     await broadcast_state()
                 continue
 
     except WebSocketDisconnect:
+        print("[backend] publisher websocket disconnected")
         pass
     finally:
         async with state_lock:
@@ -242,9 +257,11 @@ async def publisher_ws(websocket: WebSocket) -> None:
 @app.websocket("/ws/listener")
 async def listener_ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    print("[backend] listener websocket accepted")
     try:
         first = await websocket.receive_json()
         if first.get("type") != "connecting":
+            print("[backend] listener invalid flow")
             await websocket.send_json({"type": "error", "code": "INVALID_FLOW"})
             return
 
@@ -261,13 +278,16 @@ async def listener_ws(websocket: WebSocket) -> None:
                     "state": build_state_payload(),
                 }
             )
+            print(f"[backend] listener connected listener_id={listener_id}")
 
         while True:
             msg = await websocket.receive_json()
             if msg.get("type") == "heartbeat":
+                print("[backend] listener heartbeat")
                 await websocket.send_json({"type": "heartbeat_ack", "ts": now_ts()})
 
     except WebSocketDisconnect:
+        print("[backend] listener websocket disconnected")
         pass
     finally:
         async with state_lock:
@@ -286,6 +306,7 @@ async def monitor_timeouts() -> None:
 
             for publisher_id in expired:
                 await drop_publisher(publisher_id)
+                print(f"[backend] heartbeat timeout publisher_id={publisher_id}")
 
             if expired:
                 await broadcast_state()

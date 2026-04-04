@@ -86,6 +86,7 @@ class PublisherApp:
 
     async def connect_backend(self) -> None:
         self.backend_ws = await websockets.connect(self.backend_ws_url)
+        print(f"[backend] websocket connected url={self.backend_ws_url}")
 
         await self.backend_ws.send(
             _json(
@@ -108,6 +109,7 @@ class PublisherApp:
         print(f"[backend] connected as {self.session.publisher_id}")
 
         self.capture.open()
+        print("[publisher] ready for ON AIR")
 
     async def connect_livekit(self) -> None:
         if self.room is not None:
@@ -120,6 +122,7 @@ class PublisherApp:
 
     async def start_streaming(self) -> None:
         if self.streaming:
+            print("[livekit] start_streaming skipped: already streaming")
             return
 
         await self.connect_livekit()
@@ -133,6 +136,7 @@ class PublisherApp:
 
     async def stop_streaming(self) -> None:
         if not self.streaming:
+            print("[livekit] stop_streaming skipped: already stopped")
             return
 
         self.streaming = False
@@ -166,6 +170,7 @@ class PublisherApp:
             if self.backend_ws is None:
                 continue
             await self.backend_ws.send(_json({"type": "heartbeat", "ts": time.time()}))
+            print("[backend] heartbeat sent")
 
     async def handle_backend_messages(self) -> None:
         assert self.backend_ws is not None
@@ -181,6 +186,7 @@ class PublisherApp:
                 continue
 
             owner = channel.get("owner")
+            print(f"[backend] state channel={CHANNEL_ID} owner={owner}")
             if owner == self.session.publisher_id:
                 await self.start_streaming()
             else:
@@ -193,6 +199,7 @@ class PublisherApp:
             cmd = await asyncio.to_thread(input, "> ")
             cmd = cmd.strip().lower()
             if cmd == "onair":
+                print(f"[cmd] ON AIR requested channel={CHANNEL_ID}")
                 await self.backend_ws.send(
                     _json(
                         {
@@ -204,6 +211,7 @@ class PublisherApp:
                     )
                 )
             elif cmd == "stop":
+                print(f"[cmd] STOP requested channel={CHANNEL_ID}")
                 await self.stop_streaming()
                 await self.backend_ws.send(
                     _json(
@@ -216,6 +224,7 @@ class PublisherApp:
                     )
                 )
             elif cmd == "quit":
+                print("[cmd] quit requested")
                 await self.stop_streaming()
                 break
 
