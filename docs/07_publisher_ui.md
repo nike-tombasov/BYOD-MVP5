@@ -216,3 +216,75 @@ publishers sets UI channel status FREE
 * import Signal, QObject from livekit 
 * import rtc from audio_stream 
 * import sounddevice as sd
+### 8.12. Visual specification Publisher UI (Stage V)
+
+General:
+- Theme: dark neutral background, no acid colors.
+- Font: Segoe UI, fixed UI size (MVP fixed style).
+- Status visibility enhancement: every status starts with colored square symbol "■".
+
+Window and alignment:
+- Start window width reduced to ~70% from previous v0.3 size.
+- Button text alignment: centered.
+- Main alignment: left-first, with stretch only where needed.
+
+IP/PIN block:
+- Row 1: `Server IP:` + address field + `PIN:` + PIN field + CONNECT button aligned right.
+- CONNECT button width: by text appearance (no extra stretch width).
+- Address and PIN fields: fixed width by practical symbol size.
+- Row 2: connection status label aligned left.
+
+Room block:
+- Row 1: room_name on full available width with word-wrap.
+- Row 2: room_status aligned left.
+
+Channel block:
+- Channel title row: left = `<id_without_channel_> - <channel_label>`, right = channel status.
+- Channel controls row: audio device list + ON AIR button + RMS status.
+- ON AIR button width: by text appearance.
+- RMS status width: fixed by max text appearance (`SOUND OK` / `NO SOUND`).
+- Thin light-gray horizontal separator between blocks/channels.
+
+Color mapping (smooth palette):
+- Connection statuses:
+  - CONNECTED = green
+  - Connecting... = yellow
+  - CONNECTION ERROR / Invalid PIN = red
+  - IDLE = blue/neutral
+- Room statuses:
+  - OPENED = green
+  - BLOCKED = yellow
+  - CLOSED = red
+- Channel statuses:
+  - FREE = green
+  - Connecting... = yellow
+  - STREAMING = green
+  - ENGAGED = blue
+  - NO DEVICE / DEVICE ERROR / samplerate error = red
+
+Button palette:
+- Default active and clickable: middle gray.
+- Hover on enabled button: light gray.
+- Disabled/blocked: dark gray.
+- Pending ON AIR: yellow.
+- Owner streaming (`STOP`): red.
+- Engaged by another publisher: blue and disabled.
+
+Interaction specifics:
+- Mouse wheel scrolling on device dropdown without opening list is disabled.
+- If device is NONE, ON AIR button is disabled.
+- If samplerate != 48000, ON AIR button is disabled.
+- NO DEVICE may be shown on mouse hover over disabled ON AIR button (NONE device case).
+- After mouse leave from ON AIR button, temporary NO DEVICE hint must be reverted to last actual channel status immediately.
+- After STOP flow and owner reset to null, button label must return to `ON AIR` immediately from state update.
+
+Pre-connect and channel visibility:
+- Before CONNECT:
+  - room_name = empty
+  - room_status = empty
+  - channel_label = N/A
+  - ON AIR disabled
+  - device dropdown disabled
+- After CONNECT:
+  - only channels present in backend state are visible.
+  - channels absent in backend state are hidden from UI.
