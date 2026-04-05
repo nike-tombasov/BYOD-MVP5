@@ -483,7 +483,8 @@ class PublisherUI(QWidget):
         except RuntimeError as exc:
             error_text = "Invalid PIN" if str(exc) == "Invalid PIN" else "CONNECTION ERROR"
             self.signals.show_error.emit(error_text)
-            print(f"[publisher] runtime connection error: {exc}")
+            if error_text != "Invalid PIN":
+                print(f"[publisher] runtime connection error: {exc}")
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -722,7 +723,11 @@ def main() -> None:
     app = QApplication(sys.argv)
     ui = PublisherUI(args.backend, args.pin)
     ui.show()
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    except KeyboardInterrupt:
+        print("[publisher] interrupted by user")
+        ui.close()
 
 
 if __name__ == "__main__":

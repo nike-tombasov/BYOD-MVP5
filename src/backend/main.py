@@ -19,23 +19,59 @@ LIVEKIT_API_SECRET = "secret"
 JWT_LIFETIME_SECONDS = 5 * 60 * 60
 HEARTBEAT_TIMEOUT_SECONDS = 15
 
-CHANNELS = [
-    {"channel_id": "channel_0", "channel_label": "FLOOR", "listen": True, "owner": None},
-    {"channel_id": "channel_1", "channel_label": "RUS", "listen": True, "owner": None},
-    {"channel_id": "channel_2", "channel_label": "ENG", "listen": True, "owner": None},
-    {"channel_id": "channel_3", "channel_label": "ARA", "listen": True, "owner": None},
-    {"channel_id": "channel_4", "channel_label": "FRE", "listen": True, "owner": None},
-    {"channel_id": "channel_5", "channel_label": "CHI", "listen": True, "owner": None},
-    {"channel_id": "channel_6", "channel_label": "TUR", "listen": True, "owner": None},
-    {"channel_id": "channel_7", "channel_label": "SPA", "listen": True, "owner": None},
-    {"channel_id": "channel_8", "channel_label": "GER", "listen": True, "owner": None},
-    {"channel_id": "channel_9", "channel_label": "POR", "listen": True, "owner": None},
-    {"channel_id": "channel_10", "channel_label": "ITA", "listen": True, "owner": None},
-    {"channel_id": "channel_11", "channel_label": "JPN", "listen": True, "owner": None},
-    {"channel_id": "channel_12", "channel_label": "KOR", "listen": True, "owner": None},
-    {"channel_id": "channel_13", "channel_label": "Reserve 1", "listen": False, "owner": None},
-    {"channel_id": "channel_14", "channel_label": "Reserve 2", "listen": False, "owner": None},
+LANGUAGE_LABELS = [
+    "English",
+    "Spanish",
+    "French",
+    "German",
+    "Italian",
+    "Portuguese",
+    "Arabic",
+    "Turkish",
+    "Russian",
+    "Ukrainian",
+    "Polish",
+    "Czech",
+    "Romanian",
+    "Greek",
+    "Hebrew",
+    "Persian",
+    "Hindi",
+    "Bengali",
+    "Urdu",
+    "Mandarin",
+    "Cantonese",
+    "Japanese",
+    "Korean",
+    "Vietnamese",
+    "Thai",
+    "Indonesian",
+    "Malay",
+    "Dutch",
+    "Swedish",
 ]
+
+
+def build_default_channels() -> list[dict[str, Any]]:
+    channels: list[dict[str, Any]] = []
+    channels.append({"channel_id": "channel_0", "channel_label": "FLOOR", "listen": False, "owner": None})
+
+    for index, label in enumerate(LANGUAGE_LABELS, start=1):
+        channels.append(
+            {
+                "channel_id": f"channel_{index}",
+                "channel_label": label,
+                "listen": True,
+                "owner": None,
+            }
+        )
+
+    channels.append({"channel_id": "channel_30", "channel_label": "Reserve 1", "listen": False, "owner": None})
+    channels.append({"channel_id": "channel_31", "channel_label": "Reserve 2", "listen": False, "owner": None})
+    return channels
+
+
+CHANNELS = build_default_channels()
 
 
 @dataclass

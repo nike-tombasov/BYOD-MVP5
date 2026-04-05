@@ -12,6 +12,14 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 6) room status - room_status (close - по умолчанию во время запуска сервера)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
 
+### 9.1.1. Stage V default channels for local MVP
+
+- Backend поднимает 32 channel_id: `channel_0 ... channel_31`.
+- `channel_0` = `FLOOR`, `listen = false`.
+- `channel_1 ... channel_29` имеют language labels (фиксированный random-like набор языков), `listen = true`.
+- `channel_30` = `Reserve 1`, `listen = false`.
+- `channel_31` = `Reserve 2`, `listen = false`.
+
 ### 9.2. Tokens and  PIN
 
 JWT tokens выдаются на основе Identity и разные для listener и publisher. Срок действия для production не утверждён, на MVP устанавливается 5 часов.
