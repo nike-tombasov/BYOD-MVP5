@@ -288,3 +288,37 @@ Pre-connect and channel visibility:
 - After CONNECT:
   - only channels present in backend state are visible.
   - channels absent in backend state are hidden from UI.
+
+### 8.13. Visual specification details (implemented values)
+
+Typography and sizing:
+- Base font family: `Segoe UI`.
+- Base font size: `10 px`.
+- Status square symbol `■`: `13 px`, `700` font-weight.
+- ON AIR / STOP button padding: `4 px 10 px`.
+- Input/dropdown internal padding: `3 px`.
+- RMS label width: `88 px`.
+
+Exact color palette (RGB):
+- Main background: `rgb(38, 38, 38)` (`#262626`).
+- Text color: `rgb(214, 214, 214)` (`#D6D6D6`).
+- Horizontal separators: `rgb(255, 255, 255)` (`#FFFFFF`), thickness `2 px`.
+- Input/dropdown field background: `rgb(51, 51, 51)` (`#333333`).
+- Dropdown opened list background: `rgb(59, 59, 59)` (`#3B3B3B`).
+- Dropdown border color: `rgb(85, 85, 85)` (`#555555`), thickness `2 px`.
+
+Status colors:
+- FREE / CONNECTED / OPENED: `rgb(143, 185, 150)` (`#8FB996`).
+- Connecting... / BLOCKED: `rgb(201, 178, 106)` (`#C9B26A`).
+- CONNECTION ERROR / Invalid PIN / NO DEVICE / DEVICE ERROR: `rgb(185, 122, 122)` (`#B97A7A`).
+- ENGAGED (status + ON AIR engaged button): dark blue `rgb(31, 58, 95)` (`#1F3A5F`).
+
+Button colors:
+- Default active: `rgb(106, 106, 106)` (`#6A6A6A`).
+- Hover on enabled buttons: `rgb(179, 179, 179)` (`#B3B3B3`) with dark text.
+- Disabled: `rgb(74, 74, 74)` (`#4A4A4A`).
+- Pending ON AIR: `rgb(167, 146, 86)` (`#A79256`).
+- STOP (streaming): `rgb(168, 90, 90)` (`#A85A5A`).
+
+Channel visibility:
+- Non-present backend channels are fully hidden, including their bottom horizontal separators.
