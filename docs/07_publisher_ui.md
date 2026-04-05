@@ -142,7 +142,7 @@ UI channel statuses (цвета):
 * Connecting... (жёлтый)
 * STREAMING (чёрный)
 * NO DEVICE (красный)
-* ENGAGED (красный)
+* ENGAGED (тёмно-синий)
 * DEVICE ERROR (красный)
 * Device error. Check system samplerate (48000 Hz only) (красный)
 
@@ -216,67 +216,42 @@ publishers sets UI channel status FREE
 * import Signal, QObject from livekit 
 * import rtc from audio_stream 
 * import sounddevice as sd
-### 8.12. Visual specification Publisher UI (Stage V)
+### 8.12. Visual specification Publisher UI (Stage V, fixed values)
 
-General:
-- Theme: dark neutral background, no acid colors.
-- Font: Segoe UI, fixed UI size (MVP fixed style).
-- Status visibility enhancement: every status starts with colored square symbol "■".
+Font and sizing:
+- Base font: `Segoe UI`, 10 px.
+- Colored status symbol `■`: 14 px, weight 600, line-height 1.
+- CONNECT button padding: 4 px vertical, 10 px horizontal.
+- Input/dropdown internal padding: 3 px.
+- RMS label width: 88 px.
+- Horizontal separator height (thickness): 2 px.
+- Dropdown and input border thickness: 2 px.
 
-Window and alignment:
-- Start window width reduced to ~70% from previous v0.3 size.
-- Button text alignment: centered.
-- Main alignment: left-first, with stretch only where needed.
+Main colors (exact RGB/HEX):
+- Main background: RGB(41, 41, 41) / `#292929`.
+- Text color: RGB(214, 214, 214) / `#D6D6D6`.
+- Separators: RGB(255, 255, 255) / `#FFFFFF`.
+- Dropdown list + field background: RGB(52, 52, 52) / `#343434`.
+- Dropdown border: RGB(85, 85, 85) / `#555555`.
 
-IP/PIN block:
-- Row 1: `Server IP:` + address field + `PIN:` + PIN field + CONNECT button aligned right.
-- CONNECT button width: by text appearance (no extra stretch width).
-- Address and PIN fields: fixed width by practical symbol size.
-- Row 2: connection status label aligned left.
+Status colors (exact RGB/HEX):
+- Green: RGB(143, 185, 150) / `#8FB996`.
+- Yellow: RGB(201, 178, 106) / `#C9B26A`.
+- Red: RGB(185, 122, 122) / `#B97A7A`.
+- Dark blue (ENGAGED + IDLE marker): RGB(39, 75, 138) / `#274B8A`.
 
-Room block:
-- Row 1: room_name on full available width with word-wrap.
-- Row 2: room_status aligned left.
+Buttons (exact RGB/HEX):
+- Default active: RGB(106, 106, 106) / `#6A6A6A`.
+- Hover (CONNECT/ON AIR): RGB(138, 138, 138) / `#8A8A8A`.
+- Disabled: RGB(74, 74, 74) / `#4A4A4A`.
+- Pending: RGB(167, 146, 86) / `#A79256`.
+- Streaming STOP: RGB(168, 90, 90) / `#A85A5A`.
+- Engaged STOP/ON AIR disabled: RGB(39, 75, 138) / `#274B8A` with border RGB(31, 59, 110) / `#1F3B6E`.
 
-Channel block:
-- Channel title row: left = `<id_without_channel_> - <channel_label>`, right = channel status.
-- Channel controls row: audio device list + ON AIR button + RMS status.
-- ON AIR button width: by text appearance.
-- RMS status width: fixed by max text appearance (`SOUND OK` / `NO SOUND`).
-- Thin light-gray horizontal separator between blocks/channels.
-
-Color mapping (smooth palette):
-- Connection statuses:
-  - CONNECTED = green
-  - Connecting... = yellow
-  - CONNECTION ERROR / Invalid PIN = red
-  - IDLE = blue/neutral
-- Room statuses:
-  - OPENED = green
-  - BLOCKED = yellow
-  - CLOSED = red
-- Channel statuses:
-  - FREE = green
-  - Connecting... = yellow
-  - STREAMING = green
-  - ENGAGED = blue
-  - NO DEVICE / DEVICE ERROR / samplerate error = red
-
-Button palette:
-- Default active and clickable: middle gray.
-- Hover on enabled button: light gray.
-- Disabled/blocked: dark gray.
-- Pending ON AIR: yellow.
-- Owner streaming (`STOP`): red.
-- Engaged by another publisher: blue and disabled.
-
-Interaction specifics:
-- Mouse wheel scrolling on device dropdown without opening list is disabled.
-- If device is NONE, ON AIR button is disabled.
-- If samplerate != 48000, ON AIR button is disabled.
-- NO DEVICE may be shown on mouse hover over disabled ON AIR button (NONE device case).
-- After mouse leave from ON AIR button, temporary NO DEVICE hint must be reverted to last actual channel status immediately.
-- After STOP flow and owner reset to null, button label must return to `ON AIR` immediately from state update.
+Behavior details:
+- Hover color for dropdown list items must match button hover exactly: `#8A8A8A`.
+- Unused channels (not present in backend `state.channels`) must hide both rows and separator.
+- Wrong PIN on CONNECT must display `Invalid PIN` (not `CONNECTION ERROR`).
 
 Pre-connect and channel visibility:
 - Before CONNECT:

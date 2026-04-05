@@ -41,10 +41,11 @@ COLORS = {
     "green": "#8FB996",
     "yellow": "#C9B26A",
     "red": "#B97A7A",
-    "blue": "#7B8FB8",
+    "blue": "#274B8A",
     "text": "#D6D6D6",
-    "line": "#626262",
-    "bg": "#2E2E2E",
+    "line": "#FFFFFF",
+    "bg": "#292929",
+    "dropdown_bg": "#343434",
     "btn_disabled": "#4A4A4A",
     "btn_active": "#6A6A6A",
     "btn_hover": "#8A8A8A",
@@ -52,7 +53,10 @@ COLORS = {
 
 
 def status_html(text: str, color: str) -> str:
-    return f"<span style='color:{color}'>■</span> {text}"
+    return (
+        f"<span style='color:{color}; font-size: 14px; line-height: 1; font-weight: 600;'>■</span> "
+        f"{text}"
+    )
 
 
 class NoWheelComboBox(QComboBox):
@@ -147,10 +151,20 @@ class PublisherUI(QWidget):
             QPushButton:hover:!disabled {{ background-color: {COLORS['btn_hover']}; }}
             QPushButton:disabled {{ background-color: {COLORS['btn_disabled']}; color: #A8A8A8; }}
             QLineEdit, QComboBox {{
-                background-color: #3A3A3A;
+                background-color: {COLORS['dropdown_bg']};
                 color: {COLORS['text']};
-                border: 1px solid #555;
+                border: 2px solid #555;
                 padding: 3px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {COLORS['dropdown_bg']};
+                border: 2px solid #555;
+                selection-background-color: {COLORS['btn_hover']};
+                selection-color: {COLORS['text']};
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: {COLORS['btn_hover']};
+                color: {COLORS['text']};
             }}
             """
         )
@@ -212,7 +226,7 @@ class PublisherUI(QWidget):
             self.channels[channel_id] = ChannelRuntime(channel_id=channel_id, label="N/A", listen=True, owner=None)
             channels_layout.addLayout(row["line1"])
             channels_layout.addLayout(row["line2"])
-            channels_layout.addWidget(self._line())
+            channels_layout.addWidget(row["separator"])
 
         channels_widget.setLayout(channels_layout)
         scroll.setWidget(channels_widget)
@@ -224,7 +238,7 @@ class PublisherUI(QWidget):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setStyleSheet(f"color: {COLORS['line']};")
-        line.setFixedHeight(1)
+        line.setFixedHeight(2)
         return line
 
     def _build_channel_row(self, channel_id: str) -> dict:
@@ -260,6 +274,7 @@ class PublisherUI(QWidget):
             "rms": rms,
             "line1": line1,
             "line2": line2,
+            "separator": self._line(),
         }
 
     def eventFilter(self, obj, event):
@@ -335,7 +350,7 @@ class PublisherUI(QWidget):
         elif mode == "pending":
             btn.setStyleSheet("background-color: #A79256; color: #F0F0F0; border:1px solid #8A7745; border-radius:4px; padding:4px 10px;")
         elif mode == "engaged":
-            btn.setStyleSheet("background-color: #586B8E; color: #E8E8E8; border:1px solid #47597A; border-radius:4px; padding:4px 10px;")
+            btn.setStyleSheet("background-color: #274B8A; color: #E8E8E8; border:1px solid #1F3B6E; border-radius:4px; padding:4px 10px;")
         else:
             btn.setStyleSheet("")
 
@@ -348,7 +363,7 @@ class PublisherUI(QWidget):
 
     def _ui_set_row_visible(self, channel_id: str, visible: bool) -> None:
         row = self.channel_rows[channel_id]
-        for key in ["title", "status", "device_box", "button", "rms"]:
+        for key in ["title", "status", "device_box", "button", "rms", "separator"]:
             row[key].setVisible(visible)
 
     def _ui_show_error(self, text: str) -> None:
@@ -465,6 +480,10 @@ class PublisherUI(QWidget):
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self.backend_task = asyncio.create_task(self._backend_loop())
             await asyncio.gather(self.heartbeat_task, self.backend_task)
+        except RuntimeError as exc:
+            error_text = "Invalid PIN" if str(exc) == "Invalid PIN" else "CONNECTION ERROR"
+            self.signals.show_error.emit(error_text)
+            print(f"[publisher] runtime connection error: {exc}")
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -476,6 +495,9 @@ class PublisherUI(QWidget):
         await self.backend_ws.send(json.dumps({"type": "connecting", "pin": pin, "hostname": socket.gethostname()}))
         msg = json.loads(await self.backend_ws.recv())
         if msg.get("type") == "error":
+            with contextlib.suppress(Exception):
+                await self.backend_ws.close()
+            self.backend_ws = None
             raise RuntimeError("Invalid PIN" if msg.get("code") == "INVALID_PIN" else msg.get("code", "UNKNOWN"))
 
         self.publisher_id = msg["publisher_id"]
