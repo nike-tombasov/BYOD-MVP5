@@ -103,6 +103,8 @@ Publisher UI хранит последнюю введённую комбинац
 * CONNECTION ERROR (красный)
 * Invalid PIN (красный)
 
+При неверном PIN Publisher UI обязан показывать только статус Invalid PIN (не CONNECTION ERROR).
+
 Entering Publisher into the room никак не нарушает работу других Publishers, в том числе которые уже ON AIR
 
 При наличии связи с сервером CONNECT button должна быть неактивной/некликабельной для защиты от случайного повторного подключения. Room technician перезапускает Publisher UI при необходимости сменить room
@@ -119,9 +121,21 @@ room_status никак не влияет на работу Publisher
 
 ### 8.8. Блок CHANNELS
 
+
+До CONNECT:
+- channel_label = N/A
+- room_name и room_status пустые
+- ON AIR buttons disabled
+- audio device dropdown disabled
+
+После CONNECT отображаются только channel_id, пришедшие от backend state. Неиспользуемые channel_id скрываются из UI.
+Publisher UI для Stage V строится сразу на 32 channel_id (channel_0...channel_31). Окно фиксированного размера, блок channels работает через vertical scroll.
+
+Колесо мыши по device dropdown без раскрытия списка отключено специально (защита от случайной смены устройства при большом числе channels).
+
 При заполнении блока channels в момент подключения к комнате ни один audio device выбран быть не должен. По умолчанию отображается служебный пункт None.
 
-Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None нажатие на ON AIR выводит UI channel status - NO DEVICE и остаётся серой (not streaming, not publish).
+Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None кнопка ON AIR disabled (как и при samplerate error), backend ON AIR request не отправляется. NO DEVICE можно показать при наведении мыши на disabled ON AIR кнопку (подсказка room technician).
 
 UI channel status отрабатываются внутри Publisher UI на основании state от backend и прочих внутренних состояний.
 
@@ -130,11 +144,13 @@ UI channel statuses (цвета):
 * Connecting... (жёлтый)
 * STREAMING (чёрный)
 * NO DEVICE (красный)
-* ENGAGED (красный)
+* ENGAGED (тёмно-синий)
 * DEVICE ERROR (красный)
 * Device error. Check system samplerate (48000 Hz only) (красный)
 
-UI channel status “Device error. Check system samplerate (48000 Hz only)” отображается только в момент выбора соответствующего audio device из списка. При выборе audio device не подходящего под эту ошибку, UI channel status меняется на актуальный.
+UI channel status “Device error. Check system samplerate (48000 Hz only)” отображается сразу в момент выбора соответствующего audio device из списка. При выборе audio device с samplerate 48000 ошибка исчезает сразу и UI channel status меняется на актуальный.
+
+При samplerate != 48000 кнопка ON AIR должна быть неактивной, backend запрос ON AIR отправлять запрещено.
 
 * FREE отображается, если в backend owner == null
 * STREAMING отображается, если в backend owner == self publisher_id
@@ -145,7 +161,7 @@ UI channel status “Device error. Check system samplerate (48000 Hz only)” о
 
 ### 8.9. Interlock логика, UI channel status ENGAGE и поведение ON AIR, STOP 
 
-При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового state (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
+При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. На время ожидания owner==self и во время STREAMING список audio devices по этому channel блокируется (no hot switching). Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового state (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
 
 Другие room Publisher на основе полученного нового state (где owner != self publisher_id) меняют UI channel status на ENGAGED. Кнопка ON AIR становится не кликабельной, синего цвета.
 
@@ -177,7 +193,7 @@ publishers sets UI channel status FREE
 - Передача аудио из callback в asyncio через asyncio.run_coroutine_threadsafe. Позволяет безопасно отправлять данные из аудио-потока (sounddevice) в async очередь.
 - Использование asyncio.Queue как буфера между аудио захватом и LiveKit отправкой. Разрывает realtime callback и сетевую передачу, стабилизируя поток.
 - Каждый трек имеет свой AudioSource, Queue, Stream.
-- Перезапуск аудио стрима при смене устройства на лету. В device_changed() поток останавливается и создается заново без разрыва LiveKit.
+- Во время ON AIR/handover список устройств блокируется. Смена устройства разрешена только при состоянии FREE/ENGAGED до нового ON AIR.
 - Отдельный sender coroutine на каждый трек. asyncio.create_task(self.audio_sender(track)) обеспечивает независимую передачу.
 - Минимизация latency через blocksize = 960. Это соответствует 20ms при 48kHz → стандарт для realtime WebRTC.
 - Конвертация float audio → PCM16 перед отправкой. pcm16 = (data * 32767).astype(np.int16). Требуется LiveKit API.
@@ -202,3 +218,63 @@ publishers sets UI channel status FREE
 * import Signal, QObject from livekit 
 * import rtc from audio_stream 
 * import sounddevice as sd
+### 8.12. Visual specification Publisher UI (Stage V)
+
+General:
+- Theme: dark neutral background, no acid colors.
+- Font: Segoe UI, 10 pt (fixed in code for MVP).
+- Status visibility enhancement: every status starts with colored square symbol "■" (same font size as text).
+
+Exact palette (RGB):
+- Main background: rgb(36, 36, 36)
+- Text: rgb(214, 214, 214)
+- Base button disabled: rgb(74, 74, 74)
+- Base button active: rgb(106, 106, 106)
+- Base button hover: rgb(138, 138, 138)
+- Status green: rgb(143, 185, 150)
+- Status yellow: rgb(201, 178, 106)
+- Status red: rgb(185, 122, 122)
+- Status blue (engaged dark blue): rgb(78, 98, 134)
+- ON AIR engaged button dark blue: rgb(62, 82, 118)
+- Horizontal separator: rgb(255, 255, 255)
+
+Window and alignment:
+- Start window size: 600 x 560 px.
+- Button text alignment: centered.
+- Main alignment: left-first, with stretch only where needed.
+
+IP/PIN block:
+- Row 1: `Server IP:` + address field (250 px) + `PIN:` + PIN field (90 px, 6 digits) + CONNECT button aligned right.
+- CONNECT button width: by text appearance (fixed size policy).
+- Row 2: connection status label aligned left.
+
+Room block:
+- Row 1: room_name on full available width with word-wrap.
+- Row 2: room_status aligned left.
+
+Channel block:
+- Channel title row: left = `<id_without_channel_> - <channel_label>`, right = channel status.
+- Channel controls row: audio device list + ON AIR button + RMS status.
+- RMS status width: 88 px (`SOUND OK` / `NO SOUND`).
+- Thin white horizontal separator between blocks/channels, thickness 2 px.
+
+Interaction specifics:
+- Mouse wheel scrolling on device dropdown without opening list is disabled.
+- Dropdown background is slightly lighter than main background and border thickness is 2 px (same border color).
+- Dropdown selected/hovered item color is identical to hovered ON AIR/CONNECT light gray.
+- If device is NONE, ON AIR button is disabled.
+- If samplerate != 48000, ON AIR button is disabled.
+- NO DEVICE may be shown on mouse hover over disabled ON AIR button (NONE device case).
+- After mouse leave from ON AIR button, temporary NO DEVICE hint must be reverted to last actual channel status immediately.
+- After STOP flow and owner reset to null, button label must return to `ON AIR` immediately from state update.
+
+Pre-connect and channel visibility:
+- Before CONNECT:
+  - room_name = empty
+  - room_status = empty
+  - channel_label = N/A
+  - ON AIR disabled
+  - device dropdown disabled
+- After CONNECT:
+  - only channels present in backend state are visible
+  - channels absent in backend state are hidden from UI
