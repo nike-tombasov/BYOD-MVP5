@@ -129,6 +129,8 @@ After connecting to LiveKit room, Listener MUST:
 
 Listener MUST NOT rely only on trackSubscribed event.
 
+If setSubscribed(true) is sent but trackSubscribed event is delayed/missed, Listener should retry publication check for currentChannel for short timeout window (e.g. 2-3s) and attach as soon as publication.track appears.
+
 When detecting existing track after connect:
 ```
 if state == WAITING and trackName == currentChannel:

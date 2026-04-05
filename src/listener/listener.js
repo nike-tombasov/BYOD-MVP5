@@ -11,6 +11,7 @@ let currentTrackName = null;
 
 const publicationByChannel = new Map();
 const trackByChannel = new Map();
+const attachRetryByChannel = new Map();
 
 const player = document.getElementById('player');
 const roomNameEl = document.getElementById('roomName');
@@ -83,6 +84,44 @@ function refreshPublicationsFromRoom() {
   }
 }
 
+
+function scheduleAttachRetry(channelId) {
+  if (!channelId) return;
+
+  const prev = attachRetryByChannel.get(channelId);
+  const nextTry = (prev?.tries || 0) + 1;
+  if (nextTry > 25) {
+    log(`attach retry timeout channel=${channelId}`);
+    attachRetryByChannel.delete(channelId);
+    return;
+  }
+
+  if (prev?.timer) {
+    clearTimeout(prev.timer);
+  }
+
+  const timer = setTimeout(async () => {
+    if (selectedChannel !== channelId || playbackState !== 'WAITING') {
+      attachRetryByChannel.delete(channelId);
+      return;
+    }
+
+    refreshPublicationsFromRoom();
+    const publication = publicationByChannel.get(channelId);
+    if (publication?.track) {
+      trackByChannel.set(channelId, publication.track);
+      attachRetryByChannel.delete(channelId);
+      await attachSelectedIfPossible();
+      return;
+    }
+
+    await syncSubscriptions();
+    scheduleAttachRetry(channelId);
+  }, 120);
+
+  attachRetryByChannel.set(channelId, { timer, tries: nextTry });
+}
+
 function syncSubscriptions() {
   if (!room) return;
 
@@ -105,6 +144,7 @@ async function attachSelectedIfPossible() {
   if (!track) {
     playbackState = 'WAITING';
     log(`attach waiting channel=${selectedChannel}`);
+    scheduleAttachRetry(selectedChannel);
     return;
   }
 
@@ -116,6 +156,10 @@ async function attachSelectedIfPossible() {
   player.pause();
   player.srcObject = mediaStream;
   await player.play();
+
+  const retry = attachRetryByChannel.get(selectedChannel);
+  if (retry?.timer) clearTimeout(retry.timer);
+  attachRetryByChannel.delete(selectedChannel);
 
   currentTrack = track;
   currentTrackName = selectedChannel;
@@ -164,6 +208,10 @@ function renderState(state) {
 
       if (selectedChannel === channel.channel_id) {
         // STOP ACTION
+        const retry = attachRetryByChannel.get(channel.channel_id);
+        if (retry?.timer) clearTimeout(retry.timer);
+        attachRetryByChannel.delete(channel.channel_id);
+
         selectedChannel = null;
         syncSubscriptions();
         stopPlayback();
