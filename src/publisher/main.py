@@ -161,6 +161,14 @@ class PublisherUI(QWidget):
                 selection-background-color: {COLORS['btn_hover']};
                 selection-color: #1A1A1A;
             }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: {COLORS['btn_hover']};
+                color: #1A1A1A;
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {COLORS['btn_hover']};
+                color: #1A1A1A;
+            }}
             """
         )
 
