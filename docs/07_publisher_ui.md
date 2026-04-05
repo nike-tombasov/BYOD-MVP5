@@ -119,13 +119,21 @@ room_status никак не влияет на работу Publisher
 
 ### 8.8. Блок CHANNELS
 
+
+До CONNECT:
+- channel_label = N/A
+- room_name и room_status пустые
+- ON AIR buttons disabled
+- audio device dropdown disabled
+
+После CONNECT отображаются только channel_id, пришедшие от backend state. Неиспользуемые channel_id скрываются из UI.
 Publisher UI для Stage V строится сразу на 32 channel_id (channel_0...channel_31). Окно фиксированного размера, блок channels работает через vertical scroll.
 
-Прокрутка списка audio devices колесом мыши без раскрытия dropdown допустима и считается полезной функцией (не ошибка).
+Колесо мыши по device dropdown без раскрытия списка отключено специально (защита от случайной смены устройства при большом числе channels).
 
 При заполнении блока channels в момент подключения к комнате ни один audio device выбран быть не должен. По умолчанию отображается служебный пункт None.
 
-Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None нажатие на ON AIR выводит UI channel status - NO DEVICE и остаётся серой (not streaming, not publish).
+Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None кнопка ON AIR disabled (как и при samplerate error), backend ON AIR request не отправляется. NO DEVICE можно показать при наведении мыши на disabled ON AIR кнопку (подсказка room technician).
 
 UI channel status отрабатываются внутри Publisher UI на основании state от backend и прочих внутренних состояний.
 
