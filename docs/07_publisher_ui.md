@@ -216,6 +216,7 @@ publishers sets UI channel status FREE
 * import Signal, QObject from livekit 
 * import rtc from audio_stream 
 * import sounddevice as sd
+
 ### 8.12. Visual specification Publisher UI (Stage V)
 
 General:
@@ -305,6 +306,7 @@ Exact color palette (RGB):
 - Horizontal separators: `rgb(255, 255, 255)` (`#FFFFFF`), thickness `2 px`.
 - Input/dropdown field background: `rgb(51, 51, 51)` (`#333333`).
 - Dropdown opened list background: `rgb(59, 59, 59)` (`#3B3B3B`).
+- Hover on Dropdown opened list items: `rgb(179, 179, 179)` (`#B3B3B3`) with dark text.
 - Dropdown border color: `rgb(85, 85, 85)` (`#555555`), thickness `2 px`.
 
 Status colors:
