@@ -5,7 +5,7 @@ Rule: Sound must work after each step
 Follow ARCHITECTURE.md
 Implement end-to-end (publisher + backend + listener)
 
-### Step 1 — Single publisher, single channel
+### Step 1 — Single publisher, single channel (COMPLETED)
 - One publisher
 - One channel
 - One listener
@@ -20,7 +20,7 @@ Expected:
 - listener can stop channel and play again
 - listener can connect and play after channel publishing 
 
-### Step 2 — Multi-publisher interlock
+### Step 2 — Multi-publisher interlock (COMPLETED)
 - Two publishers
 - One channel
 
@@ -32,7 +32,7 @@ Expected:
 - publisher B blocked
 - listener hears publisher A only
 
-### Step 3 — Publisher switching
+### Step 3 — Publisher switching (COMPLETED)
 - Two publishers
 - One channel
 
@@ -45,7 +45,7 @@ Expected:
 - listener auto switches
 - no manual reconnect
 
-### Step 4 — Multi-channel single publisher
+### Step 4 — Multi-channel single publisher (COMPLETED)
 - One publisher
 - Three channels
 - One listener
@@ -62,7 +62,7 @@ Expected:
 - correct selective subscribe
 - no cross audio
 
-### Step 5 — Multi-channel multi-publisher
+### Step 5 — Multi-channel multi-publisher (COMPLETED)
 Two publishers
 Three channels
 
@@ -74,7 +74,7 @@ Expected:
 parallel streaming
 listener switches freely
 
-### Step 6 — Multi-publisher switching multi-channel
+### Step 6 — Multi-publisher switching multi-channel (COMPLETED)
 Three publishers
 Three channels
 
@@ -85,7 +85,7 @@ listener auto recovery
 no duplicate audio
 no subscribe errors
 
-### Step 7 — Stress small
+### Step 7 — Stress small (COMPLETED)
 Three publishers
 Three channels
 Five listeners
@@ -94,7 +94,7 @@ Expected:
 stable audio
 correct owner logic
 
-### Step 8 — Scale channels
+### Step 8 — Scale channels (COMPLETED)
 One publisher
 15 channels
 
@@ -102,7 +102,7 @@ Expected:
 all tracks publish
 listener switching works
 
-### Step 9 — Multi-publisher scale
+### Step 9 — Multi-publisher scale (COMPLETED)
 Multiple publishers
 15 channels
 
@@ -110,7 +110,7 @@ Expected:
 interlock stable
 no race conditions
 
-### Step 10 — Full target
+### Step 10 — Full target 
 Multiple publishers
 32 channels
 Multiple listeners
