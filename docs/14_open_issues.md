@@ -1,28 +1,34 @@
-## 15. Не решённые трудности
+## 15. Open issues for next stages
 
-### 15.1. Правильная генерация JWT tokens в соответствии с документации. 
-Если допустить ошибку, token не выдаётся или выдаётся неверно и ничего не будет происходить 
+### 15.1 Publisher UI (Stage VI)
+- define final module boundaries without behaviour regression
+- design robust JSON config schema and corruption recovery strategy
+- seamless token refresh mechanism and fallback reconnect policy
+- stable `.exe` packaging script and dependency freeze strategy
 
-Для Stage IV MVP использовались следующие шаблоны с соответствующей программой (для ручного ввода в код):
+### 15.2 Listener UI (Stage VII-VIII)
+- strict BLOCKED/CLOSED behaviour in state machine
+- fallback to local LiveKit client bundle if CDN unavailable
+- race-condition audit with reproducible test scenarios
+- cross-platform compatibility validation matrix
 
-.\lk.exe token create --api-key devkey --api-secret secret --identity publisher --room test-room --join --valid-for 5h 
-.\lk.exe token create --api-key devkey --api-secret secret --identity listener --room test-room --join --valid-for 5h
+### 15.3 Backend (Stage IX)
+- persistent JSON state model for room/connections/events
+- formalized `.csv` bootstrap format and validator
+- recording pipeline for per-channel tracks in `recordings/`
+- safe manual operator console commands and audit logs
 
-### 15.2. При появлении более одно Publisher in room Listener просто теряет связь с предыдущим и не возвращает её, неправильно подписывается или подписывается правильно не на то
+### 15.4 Deployment/Operations (Stage X)
+- one-action Ubuntu deployment flow aligned with Stage I lessons
+- complete runbooks for deploy/operate/emergency scenarios
+- telemetry and log retrieval standards
 
-Необходимо правильно проработать логику в соответствии с спецификацией проекта и официальной документацией используемой версии. При этом избежать ненужную нагрузку на CPU, интернет, users browsers и Publishers на всех узлах. Допускается высокая нагрузка на VPS, которая решается арендой более мощного сервера.
+### 15.5 Stress testing (Stage XI)
+- synthetic traffic generator architecture
+- distributed load coordination across multiple machines
+- test telemetry aggregation and bottleneck analysis templates
 
-Точно определиться, в какой момент должно быть publish, в какой момент subscribe, а в какой момент send frames, чтобы listener не глючил и не перегружался.
-
-Interlock архитектура исключает множественные публикации одного channel_id, что устраняет проблему неправильных подписок listener.
-
-Частично решено autoSubscribe = false, selective subscribe, использованием только одного audio element, detach предыдущего channel и attach нового
-
-### 15.3. CPU/RAM Publisher UI overload
-
-During MVP check CPU/RAM overloading while publishing max 32 channels to find out real limitation of engine. Then make it TBD.
-
-### 15.4. Race conditions
-
-Добиться решения по необходимым мерам устранения гонок.
-
+### 15.6 Architecture decisions (Stage XII-XIII)
+- security model decisions before deep implementation
+- media optimization features adoption sequence
+- Admin Web UI first vertical slice architecture
