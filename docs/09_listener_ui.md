@@ -165,11 +165,11 @@ If this is not done, browser will continue playback.
 - autoplay (только после нажатия на channel button; после STOP ACTION повторное нажатие channel button снова запускает звук)
 - НЕ создавать новый audio element каждый раз (используется только один audio element на протяжении всей сессии, при смене channel выполняется detach предыдущего track и attach нового).
 - обмен данным с backend по WebSocket 
-- автоопределение users system language (если не известен - English)
+- автоопределение users system language (подробная спецификация: см. раздел 10.9)
 - users system volume control для динамиков/наушников
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
-- бесшовное получение JWT token на замену истёкшему, звук не пропадает и не обрывается
+- token lifecycle rules: см. docs/08_backend.md, раздел 9.2
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
@@ -185,3 +185,88 @@ If this is not done, browser will continue playback.
 * Listener MUST NOT rely only on trackSubscribed
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
+
+### 10.9. Спецификация автоопределения языка Listener UI (MVP)
+
+Цель: помочь users на международных мероприятиях понимать:
+- `room_name`
+- `custom_status_text_blocked`
+- `custom_status_text_closed`
+
+Ключевая логика MVP:
+1) Backend отправляет **все** языковые варианты текстов при initial connect и reconnect Listener по WebSocket.
+2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
+3) Выбор языка выполняется только в Listener web page.
+4) Status texts после deploy считаются фиксированными; изменение допускается только emergency override через manual console command (независимо для BLOCKED/CLOSED).
+
+#### 10.9.1 Обязательные языки
+
+Для каждого мероприятия обязательно подготовить минимум:
+- English (`en`)
+- Russian (`ru`)
+
+Другие языки можно добавлять вручную до deploy.
+
+#### 10.9.2 Языковые теги (официальный формат)
+
+Использовать BCP 47 language tags:
+- RFC 5646: https://datatracker.ietf.org/doc/html/rfc5646
+- IANA Language Subtag Registry: https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
+
+Примеры: `en`, `en-US`, `ru`, `ru-RU`, `zh`, `zh-CN`.
+
+#### 10.9.3 Формат данных и fallback на стороне Listener
+
+Backend payload (пример):
+```json
+{
+  "room_name_i18n": {
+    "en": "Test room",
+    "ru": "Тестовая комната",
+    "zh": "考场"
+  },
+  "custom_status_text_blocked_i18n": {
+    "en": "Temporarily blocked",
+    "ru": "Временно заблокировано",
+    "zh": "暂时封锁"
+  },
+  "custom_status_text_closed_i18n": {
+    "en": "Room is closed",
+    "ru": "Зал закрыт",
+    "zh": "会场已关闭"
+  }
+}
+```
+
+Listener language selection rule:
+```
+detected = browser language (navigator.languages/navigator.language)
+if i18n has exact tag:
+    use exact tag
+elif i18n has base tag:
+    use base tag
+else:
+    use "en"
+```
+
+#### 10.9.4 Ограничение по channel_label
+
+`channel_label` не локализуется автоматически по языку браузера.
+
+Для multi-language event канал вводится вручную в формате:
+`English name - abbreviation in original - original name`.
+
+Для silent one-language multi-room event используется отдельная ручная логика (определяется перед мероприятием).
+
+#### 10.9.5 Unicode и спецсимволы
+
+Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
+
+Emergency override details: см. docs/08_backend.md, раздел 9.14.
+
+### 10.10. Future production features (no priority)
+
+Следующие идеи считаются future/no-priority и в MVP не реализуются:
+- backend-driven language selection по `ui_lang` от Listener;
+- динамическая смена status texts во время мероприятия;
+- серверная языковая персонализация текстов «на лету».

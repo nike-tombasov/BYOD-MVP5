@@ -1,0 +1,28 @@
+## 15. Не решённые трудности
+
+### 15.1. Правильная генерация JWT tokens в соответствии с документации. 
+Если допустить ошибку, token не выдаётся или выдаётся неверно и ничего не будет происходить 
+
+Для Stage IV MVP использовались следующие шаблоны с соответствующей программой (для ручного ввода в код):
+
+.\lk.exe token create --api-key devkey --api-secret secret --identity publisher --room test-room --join --valid-for 5h 
+.\lk.exe token create --api-key devkey --api-secret secret --identity listener --room test-room --join --valid-for 5h
+
+### 15.2. При появлении более одно Publisher in room Listener просто теряет связь с предыдущим и не возвращает её, неправильно подписывается или подписывается правильно не на то
+
+Необходимо правильно проработать логику в соответствии с спецификацией проекта и официальной документацией используемой версии. При этом избежать ненужную нагрузку на CPU, интернет, users browsers и Publishers на всех узлах. Допускается высокая нагрузка на VPS, которая решается арендой более мощного сервера.
+
+Точно определиться, в какой момент должно быть publish, в какой момент subscribe, а в какой момент send frames, чтобы listener не глючил и не перегружался.
+
+Interlock архитектура исключает множественные публикации одного channel_id, что устраняет проблему неправильных подписок listener.
+
+Частично решено autoSubscribe = false, selective subscribe, использованием только одного audio element, detach предыдущего channel и attach нового
+
+### 15.3. CPU/RAM Publisher UI overload
+
+During MVP check CPU/RAM overloading while publishing max 32 channels to find out real limitation of engine. Then make it TBD.
+
+### 15.4. Race conditions
+
+Добиться решения по необходимым мерам устранения гонок.
+
