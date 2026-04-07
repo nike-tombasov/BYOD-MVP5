@@ -23,6 +23,9 @@ Refresh policy (single source of truth):
 - Publisher: refresh token за 10 минут до expiry.
 - Listener: новый token запрашивается только при reconnect необходимости.
 
+Infrastructure requirement:
+- VPS time sync (NTP) is mandatory to keep JWT expiry/refresh timings stable.
+
 JWT token содержит:
 * room
 * identity
@@ -209,6 +212,9 @@ Backend рассылает **два разных state**:
   - custom_status_text_blocked_i18n
   - custom_status_text_closed_i18n
 
+Schema evolution rule:
+- `publisher_state` и `listener_state` используют независимые `schema_version` для будущей разработки.
+
 Publisher использует owner для interlock логики.
 Listener НЕ использует owner для управления аудио.
 
@@ -229,6 +235,8 @@ Rules:
 2) backend отправляет полный набор i18n данных Listener сразу при WS connect;
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за Listener;
 4) выбор языка выполняет только Listener page.
+5) i18n maps отправляются при initial WS connect и при reconnect; не рассылаются в каждый state update.
+6) status texts immutable during event runtime, кроме emergency override manual console command.
 
 Mandatory dictionaries for each event:
 - `en` (required)

@@ -61,10 +61,10 @@ Former Stage V issues were reviewed and pinned as follows:
 ### 14.7 Confirmed architectural resolutions (April 7, 2026)
 
 1) Room status text model
-- status texts are immutable after deploy for MVP event runtime.
+- status texts are immutable after deploy for MVP event runtime (except emergency override manual console command).
 
 2) Multi-language transport model
-- backend sends full i18n maps on Listener WS connect;
+- backend sends full i18n maps on initial Listener WS connect and reconnect;
 - backend does not receive `ui_lang` and does not select Listener language;
 - Listener page performs detection and local selection.
 
@@ -81,3 +81,10 @@ Former Stage V issues were reviewed and pinned as follows:
 6) Localization scope limits
 - automatic channel_label localization is restricted;
 - multi-language event labels are entered manually using agreed event format.
+
+
+7) Infrastructure requirement
+- NTP time sync on VPS is mandatory for stable JWT expiry/refresh behavior.
+
+8) Validation artifact preference
+- for Stage VII protocol compatibility, runnable integration script is preferred over checklist.

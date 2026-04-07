@@ -41,3 +41,5 @@ If a task is not required for Stage VI exit criteria, postpone it to next stage 
 ## Pinned protocol decisions
 - Backend state transport uses separated payloads: `publisher_state` and `listener_state`.
 - Publisher packaging mode: MVP = folder build, production target = one-file build.
+- NTP time sync on VPS is mandatory for JWT timing stability.
+- Protocol compatibility validation should use runnable integration scripts.

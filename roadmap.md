@@ -45,7 +45,7 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts
-- compatibility checks for both state channels are documented and passed
+- compatibility checks for both state channels are passed by runnable integration script
 
 ---
 

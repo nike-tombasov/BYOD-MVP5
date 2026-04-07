@@ -194,10 +194,10 @@ If this is not done, browser will continue playback.
 - `custom_status_text_closed`
 
 Ключевая логика MVP:
-1) Backend отправляет **все** языковые варианты текстов при подключении Listener по WebSocket.
+1) Backend отправляет **все** языковые варианты текстов при initial connect и reconnect Listener по WebSocket.
 2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
 3) Выбор языка выполняется только в Listener web page.
-4) Status texts после deploy считаются фиксированными и не меняются во время мероприятия.
+4) Status texts после deploy считаются фиксированными; изменение допускается только emergency override через manual console command.
 
 #### 10.9.1 Обязательные языки
 
