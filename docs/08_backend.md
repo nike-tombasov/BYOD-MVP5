@@ -257,6 +257,7 @@ JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 - Override применяется ко всем listeners текущей комнаты.
 - Override сбрасывается при restart backend.
 - Override для BLOCKED и CLOSED независимы друг от друга.
+- Override reset применяется ко всем listeners текущей комнаты и рассылает исходные словари текстов статусов.
 
 Console commands:
 ```
