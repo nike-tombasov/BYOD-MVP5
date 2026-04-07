@@ -46,10 +46,7 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 7) compatibility checks for separated WS states:
 - backend <-> publisher (`publisher_state`)
 - backend <-> listener (`listener_state`)
-6) compatibility checks for separated WS states:
-- backend <-> publisher (`publisher_state`)
-- backend <-> listener (`listener_state`)
-7) emergency override manual console command
+8) emergency override manual console command
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts

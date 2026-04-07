@@ -276,7 +276,6 @@ override reset closed
 Ограничение:
 - Override не изменяет deploy configuration files и не сохраняется после restart.
 
-
 ### 9.15. Protection from unwanted room overflow by Listeners
 
 Для MVP Stage VII-IX вводятся базовые защитные лимиты:
