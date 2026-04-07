@@ -39,6 +39,13 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - change `channel_label`
 - change `listen`
 5) channel multi-track recording to `recordings/`
+6) listener overflow protection (backend side):
+- hard limit `max_active_listeners = target_capacity * 1.05`
+- connection rate-limit: max `target_capacity / 15` new connections per second
+- minimal reconnect interval per listener: > 2 sec
+7) compatibility checks for separated WS states:
+- backend <-> publisher (`publisher_state`)
+- backend <-> listener (`listener_state`)
 6) compatibility checks for separated WS states:
 - backend <-> publisher (`publisher_state`)
 - backend <-> listener (`listener_state`)
@@ -89,7 +96,8 @@ Bring Listener web app to stable production-like baseline.
 2) local fallback to pinned LiveKit client file near listener JS (CDN backup)
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction
-5) cross-platform compatibility matrix (desktop/mobile major browsers)
+5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
+6) cross-platform compatibility matrix (desktop/mobile major browsers)
 
 ### Exit criteria
 - listener survives token rotation and CDN issues

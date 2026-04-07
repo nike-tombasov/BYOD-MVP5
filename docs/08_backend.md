@@ -275,3 +275,25 @@ override reset closed
 
 Ограничение:
 - Override не изменяет deploy configuration files и не сохраняется после restart.
+
+
+### 9.15. Protection from unwanted room overflow by Listeners
+
+Для MVP Stage VII-IX вводятся базовые защитные лимиты:
+
+1) Hard limit active listeners:
+- `max_active_listeners = target_capacity * 1.05`
+- при превышении новых listeners не подключать (возврат отказа подключения).
+
+2) Rate-limit new connections:
+- максимум `target_capacity / 15` новых Listener подключений в секунду.
+
+3) Minimal reconnect interval:
+- для одного listener identity/IP новый reconnect допускается только при интервале `> 2 sec`.
+
+4) Active PLAY heartbeat control:
+- Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
+- если heartbeat отсутствует `60 sec`, backend переводит listener в reconnect-required состояние.
+
+Примечание:
+- точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.

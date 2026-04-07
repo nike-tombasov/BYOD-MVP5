@@ -264,7 +264,19 @@ Backend JSON и Listener UI обязаны поддерживать Unicode бе
 
 Emergency override details: см. docs/08_backend.md, раздел 9.14.
 
-### 10.10. Future production features (no priority)
+
+
+### 10.10. Active PLAY heartbeat control
+
+Rules for MVP Stage IX:
+- when listener has active PLAY state, web page sends heartbeat every `10 sec`;
+- if backend does not receive heartbeat for `60 sec`, listener session must switch to reconnect-required state;
+- heartbeat control is for active playback monitoring and room overflow protection.
+
+Listener UX expectation:
+- on reconnect-required state user sees reconnect flow without manual page reload where technically possible.
+
+### 10.11. Future production features (no priority)
 
 Следующие идеи считаются future/no-priority и в MVP не реализуются:
 - backend-driven language selection по `ui_lang` от Listener;

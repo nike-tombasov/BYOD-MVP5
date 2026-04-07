@@ -16,6 +16,11 @@ Listener must use selective subscribe only (good), but no debounce/backoff polic
 
 Real timing for offline Publisher and other 
 
+## 5. Listener overflow protection baseline
+
+Decision direction:
+- should be implemented in MVP Stage VII-IX (backend admission control + listener active PLAY heartbeat).
+- baseline values: 1.05 hard-limit reserve, target/15 conn rate, reconnect interval >2 sec, play heartbeat 10 sec/timeout 60 sec.
 ## 5. Protection from unwanted room overflow by lots of Listeners
 
 - hard limit [max active listeners = <target capacity> * <1,05 reserve>]

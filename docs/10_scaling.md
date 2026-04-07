@@ -14,3 +14,14 @@
 Максимальная ожидаемая нагрузка на 1 Publisher (не должно быть предограничением системы): 32 channels
 
 Средняя ожидаемая нагрузка на 1 Publisher: 2-5 channels
+
+## 11.1. Listener admission control baseline (MVP Stage VII-IX)
+
+Recommended baseline formulas:
+- `max_active_listeners = target_capacity * 1.05`
+- `max_new_connections_per_sec = target_capacity / 15`
+- `min_reconnect_interval_sec = 2+`
+
+Active PLAY heartbeat baseline:
+- heartbeat interval = `10 sec`
+- heartbeat timeout = `60 sec` -> reconnect required
