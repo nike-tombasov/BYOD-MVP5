@@ -46,6 +46,10 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 7) compatibility checks for separated WS states:
 - backend <-> publisher (`publisher_state`)
 - backend <-> listener (`listener_state`)
+6) compatibility checks for separated WS states:
+- backend <-> publisher (`publisher_state`)
+- backend <-> listener (`listener_state`)
+7) emergency override manual console command
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts
@@ -74,6 +78,8 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 3) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
 - after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
 - listener keeps operating with current page session and current websocket/livekit lifecycle
+
+4) emergency override behavior
 
 ### Exit criteria
 - deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
