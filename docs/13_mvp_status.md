@@ -1,20 +1,83 @@
-## 14.  Процесс MVP 
+## 14. MVP status (updated)
 
-### 14.1. Прошедшие этапы MVP (использовались фиксированные в коде room data и tokens):
+### 14.1 Stage summary
 
-Stage I - первичная разработка - тест LiveKit Server и backend на VPS и Python Publisher (без UI) на Windows- УСПЕШНО - код максимально адаптирован под LiveKit v1.9.11, html прекрасно отрабатывал, Publisher без crashes.
+- **Stage I** — VPS first successful chain (legacy baseline) — **DONE**.
+- **Stage II** — expanded redesign attempt — **FAILED** (version/architecture mismatch).
+- **Stage III** — simplified publisher recovery stage — **DONE**.
+- **Stage IV** — gradual Publisher UI v0.2 stabilization — **DONE**.
+- **Stage V** — multi-publisher + multi-listener + up to risky 32 channels with interlock logic — **DONE**.
 
-Stage II - теоретическая подготовка и разработка разом расширенного функционала системы - тест локального LiveKit Server (Windows) с backend и publisher UI - ПРОВАЛ - Publisher UI зависал при нажатии на JOIN, терялась связь с LiveKit Server (скорее всего, было нарушение рабочей документации версий, потерян фокус на привязке к LiveKit v1.7 на всей цепочке Stage II)
+### 14.2 Current active stage
 
-Stage III - сразу после Stage  II - тест локального LiveKit Server (Windows) с упрощённым publisher (без UI) - УСПЕШНО
+- **Active:** Stage VI (Publisher UI hardening for VPS pilot).
+- **Why now:** this is the highest priority before broader Listener/Backend/VPS scaling tasks.
 
-Stage IV - переработка теории и плавный ввод функций Publisher UI v0.2 - тест Publisher UI v0.2 и локального LiveKit Server (Windows) на локальном html listener - УСПЕШНО 
+### 14.3 Stage V completion snapshot
 
-### 14.2. Текущий статус Stage V:
+Stage V achieved:
+1) stable publish/listen flow for multi-publisher multi-channel scenarios
+2) backend state remains source of truth for owner/interlock logic
+3) practical scaling path up to 32 channels in MVP conditions
+4) Publisher UI baseline version is **v0.3**
 
-1) Необходимость окончательно проработать и реализовать логику multi-publisher multi-channel room и избежать ошибок Listener subscribe
-2) Пересобрать Publisher UI с минимальной визуализацей, но максимально подготовленным core engine
-3) Реализовать локальный backend на Python, способный отработать multi-publisher multi-channel room до 32 channels
-4) Реализовать web page, отвечающий требованиям спецификации и архитектуры
+### 14.4 Stage VI target snapshot
 
-До конца Stage V соблюдать спецификацию и архитектуру, чтобы на следующих Stage разработка шла быстрее и являлась прямым логическим продолжением.
+Must deliver:
+1) safer module decomposition in Publisher UI
+2) JSON memory for IP/PIN/device mapping
+3) silent seamless token refreshing
+4) reproducible `.exe` packaging process
+
+### 14.5 What is intentionally postponed
+
+Moved to next stages (not Stage VI):
+- Listener BLOCKED/CLOSED final rules
+- Listener CDN fallback + race hardening
+- backend persistence/recording/operator console
+- one-action Ubuntu VPS deployment package
+- high-load stress framework
+- advanced media/security technologies discussion implementation
+- Admin Web UI realization
+
+
+### 14.6 Check of former Stage V open issues and specification pinning
+
+Former Stage V issues were reviewed and pinned as follows:
+
+1) JWT token generation risk
+- pinned in backend specification with identity/grants/lifetime requirements and connect flow.
+
+2) Multi-publisher listener switching/subscription risk
+- pinned in hard rules + listener algorithms: `autoSubscribe=false`, selective subscribe, single audio element, existing publications check, `trackUnsubscribed -> trackSubscribed` recovery flow.
+
+3) CPU/RAM overload risk
+- moved to explicit stress/load validation stages (Stage XI) with telemetry requirement.
+
+4) Race condition risk
+- moved to dedicated listener/backend hardening stages (Stage IX + Stage VII/VIII dependencies) with mandatory audit/fixes before production readiness.
+
+
+### 14.7 Confirmed architectural resolutions (April 7, 2026)
+
+1) Room status text model
+- status texts are immutable after deploy for MVP event runtime.
+
+2) Multi-language transport model
+- backend sends full i18n maps on Listener WS connect;
+- backend does not receive `ui_lang` and does not select Listener language;
+- Listener page performs detection and local selection.
+
+3) State model
+- use separated payloads: `publisher_state` and `listener_state`.
+
+4) Token refresh policy
+- pinned only in backend spec: `docs/08_backend.md` section 9.2.
+
+5) Build mode policy
+- MVP packaging: folder build (`onedir`).
+- Production packaging target: one-file build (`onefile`).
+
+6) Localization scope limits
+- automatic channel_label localization is restricted;
+- multi-language event labels are entered manually using agreed event format.

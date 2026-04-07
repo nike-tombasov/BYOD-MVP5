@@ -1,126 +1,150 @@
-# Roadmap for MVP Stage V
+# Roadmap for next MVP stages (after successful Stage V)
 
-## Stage V — Multi-Publisher Integration Steps
-Rule: Sound must work after each step
-Follow ARCHITECTURE.md
-Implement end-to-end (publisher + backend + listener)
+## Status on April 7, 2026
+- Stage V is completed and considered stable for core multi-publisher / multi-listener engine up to risky 32 channels.
+- Stage dependency update: Listener room_status behavior validation depends on backend console commands.
 
-### Step 1 — Single publisher, single channel (COMPLETED)
-- One publisher
-- One channel
-- One listener
+---
 
-Flow:
-- publisher publish channel_0
-- backend owner assign
-- listener selective subscribe channel_0
+## Stage VI — Publisher UI hardening for VPS test (Priority 1)
 
-Expected:
-- stable audio
-- listener can stop channel and play again
-- listener can connect and play after channel publishing 
+### Main target
+Finish Publisher UI as practical room-technician tool for VPS pilot runs.
 
-### Step 2 — Multi-publisher interlock (COMPLETED)
-- Two publishers
-- One channel
+### Large-doing steps
+1) module decomposition (without changing behavior)
+2) JSON memory for last IP/PIN/device mapping
+3) silent seamless token refresh
+4) stable Windows `.exe` packaging (MVP: folder build; production target: one-file build)
 
-Flow:
-- Publisher A ON AIR
-- Publisher B tries ON AIR
+### Exit criteria
+- no manual re-entry of IP/PIN/devices after restart
+- token renewal does not stop active audio
+- `.exe` starts and works on target test PCs
 
-Expected:
-- publisher B blocked
-- listener hears publisher A only
+---
 
-### Step 3 — Publisher switching (COMPLETED)
-- Two publishers
-- One channel
+## Stage VII — Backend hardening before Listener status tests (Priority 2)
 
-Flow:
-- Publisher A ON AIR
-- Publisher A STOP
-- Publisher B ON AIR
+### Main target
+Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED` tests.
 
-Expected:
-- listener auto switches
-- no manual reconnect
+### Large-doing steps
+1) backend module decomposition and service boundaries
+2) JSON persistence for room data / connections / events
+3) admin import of initial room data from formalized `.csv`
+4) manual console commands:
+- change `room_status`
+- start/stop recording
+- change `channel_label`
+- change `listen`
+5) channel multi-track recording to `recordings/`
+6) compatibility checks for separated WS states:
+- backend <-> publisher (`publisher_state`)
+- backend <-> listener (`listener_state`)
 
-### Step 4 — Multi-channel single publisher (COMPLETED)
-- One publisher
-- Three channels
-- One listener
+### Exit criteria
+- operator can change room status and verify effects without code edits/restarts
+- compatibility checks for both state channels are documented and passed
 
-Publisher streams:
-- channel_0
-- channel_1
-- channel_2
+---
 
-Flow:
-Listener switches channels
+## Stage VIII — Listener room_status rules finalization (Priority 3)
 
-Expected:
-- correct selective subscribe
-- no cross audio
+### Main target
+Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 
-### Step 5 — Multi-channel multi-publisher (COMPLETED)
-Two publishers
-Three channels
+### Large-doing steps
+1) **BLOCKED rule:**
+- show `custom_text_blocked` banner (white text / red background)
+- stop current sound immediately
+- keep channel buttons clickable (push/unpush allowed)
+- while BLOCKED no sound arrives
 
-Publisher A → channel_0
-Publisher B → channel_1
-Publisher A → channel_2
+2) **CLOSED rule:**
+- show `custom_text_closed` banner (white text / red background)
+- stop current sound immediately
+- unpush current button
+- lock all controls until status changes
 
-Expected:
-parallel streaming
-listener switches freely
+3) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
+- after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
+- listener keeps operating with current page session and current websocket/livekit lifecycle
 
-### Step 6 — Multi-publisher switching multi-channel (COMPLETED)
-Three publishers
-Three channels
+### Exit criteria
+- deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
 
-Switch owners dynamically
+---
 
-Expected:
-listener auto recovery
-no duplicate audio
-no subscribe errors
+## Stage IX — Listener resilience & compatibility (Priority 4)
 
-### Step 7 — Stress small (COMPLETED)
-Three publishers
-Three channels
-Five listeners
+### Main target
+Bring Listener web app to stable production-like baseline.
 
-Expected:
-stable audio
-correct owner logic
+### Large-doing steps
+1) listener token policy: request new token only when reconnect is required
+2) local fallback to pinned LiveKit client file near listener JS (CDN backup)
+3) race-condition audit and elimination of highest-risk races
+4) security protocol plan for landing page and backend interaction
+5) cross-platform compatibility matrix (desktop/mobile major browsers)
 
-### Step 8 — Scale channels (COMPLETED)
-One publisher
-15 channels
+### Exit criteria
+- listener survives token rotation and CDN issues
+- critical races are fixed or formally deferred with mitigations
 
-Expected:
-all tracks publish
-listener switching works
+---
 
-### Step 9 — Multi-publisher scale (COMPLETED)
-Multiple publishers
-15 channels
+## Stage X — VPS deploy package & operator manuals (Priority 5)
 
-Expected:
-interlock stable
-no race conditions
+### Main target
+Prepare one-action deployment and clear runbook documentation.
 
-### Step 10 — Full target 
-Multiple publishers
-32 channels
-Multiple listeners
+### Large-doing steps
+1) one-action Ubuntu deploy for livekit + backend + listener (from `legacy/stage_I` lessons)
+2) detailed deploy guide for regular scenarios
+3) detailed operations guide (console control, recordings, metrics, logs)
+4) emergency incident guide with step-by-step actions
 
-Expected:
-stable audio
-no drift
-no duplicate tracks
+### Exit criteria
+- new operator can deploy and operate by docs only
 
-## Stage V complete when:
-- 3 channels multi publisher works
-- switching stable
-- scaling to 32 channels works without logic changes
+---
+
+## Stage XI — VPS stress test program (Priority 6)
+
+### Main target
+Validate realistic and extreme load behavior.
+
+### Large-doing steps
+1) stress tool without IP/token limits for synthetic user actions
+2) scenario: 50 concurrent page opens + random PLAY actions
+3) multi-machine scaling to 500–2000 active users
+4) telemetry collection + post-test analysis template
+
+### Exit criteria
+- bottlenecks and safe operating envelope measured and documented
+
+---
+
+## Stage XII — Technology discussion and decisions (Priority 7)
+
+Topics:
+- full review of `docs/11_security.md`
+- adaptiveStream, dynacast, audio packet pacing
+- jitter buffer / packet recovery
+- reconnection after VPS reset
+- noise gate, audio processing, RMS visualizer
+- statistics, room dashboard, pre-warm publishing
+
+### Exit criteria
+- each topic has decision: adopt now / postpone / reject (with reason)
+
+---
+
+## Stage XIII — Admin Web UI architecture start (Priority 8)
+
+### Main target
+Define and start Admin Web UI architecture and first vertical slice.
+
+### Exit criteria
+- first usable Admin UI slice works end-to-end on VPS test environment
