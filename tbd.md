@@ -15,3 +15,10 @@ Listener must use selective subscribe only (good), but no debounce/backoff polic
 ## 4. Heartbeats
 
 Real timing for offline Publisher and other 
+
+## 5. Protection from unwanted room overflow by lots of Listeners
+
+- hard limit [max active listeners = <target capacity> * <1,05 reserve>]
+- Rate-limit - frequency of new connections (ex., max [<target capacity>/15] per sec)
+- Minimal limit between reconnect (ex., > 2 sec)
+- heartbeat active listeners - web page active "play" control (ex., heartbeat every 10 sec, after 60 sec need to reconnect)
