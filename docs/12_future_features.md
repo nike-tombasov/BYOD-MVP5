@@ -16,3 +16,6 @@
 - dynacast (обсудить)
 - audio packet pacing (обсудить)
 - pre-warm publishing (обсудить)
+- backend-driven language selection by ui_lang (no priority)
+- dynamic status text changes during event runtime (no priority)
+- server-side real-time language personalization for listener texts (no priority)

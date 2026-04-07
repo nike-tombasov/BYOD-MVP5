@@ -56,3 +56,29 @@ Former Stage V issues were reviewed and pinned as follows:
 
 4) Race condition risk
 - moved to dedicated listener/backend hardening stages (Stage IX + Stage VII/VIII dependencies) with mandatory audit/fixes before production readiness.
+
+
+### 14.7 Confirmed architectural resolutions (April 7, 2026)
+
+1) Room status text model
+- status texts are immutable after deploy for MVP event runtime.
+
+2) Multi-language transport model
+- backend sends full i18n maps on Listener WS connect;
+- backend does not receive `ui_lang` and does not select Listener language;
+- Listener page performs detection and local selection.
+
+3) State model
+- use separated payloads: `publisher_state` and `listener_state`.
+
+4) Token refresh policy
+- Publisher refreshes token 10 minutes before expiry (MVP + production).
+- Listener requests new token only when reconnect is required.
+
+5) Build mode policy
+- MVP packaging: folder build (`onedir`).
+- Production packaging target: one-file build (`onefile`).
+
+6) Localization scope limits
+- automatic channel_label localization is restricted;
+- multi-language event labels are entered manually using agreed event format.

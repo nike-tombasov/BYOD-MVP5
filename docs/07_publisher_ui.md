@@ -324,3 +324,11 @@ Button colors:
 
 Channel visibility:
 - Non-present backend channels are fully hidden, including their bottom horizontal separators.
+
+
+### 8.14. Token refresh and build mode decisions
+
+Pinned decisions:
+- Publisher refreshes token за 10 минут до expiry (MVP и production).
+- MVP release artifact: folder build (`onedir`).
+- Production target artifact: one-file build (`onefile`).

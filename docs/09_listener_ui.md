@@ -169,7 +169,7 @@ If this is not done, browser will continue playback.
 - users system volume control для динамиков/наушников
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
-- бесшовное получение JWT token на замену истёкшему, звук не пропадает и не обрывается
+- refresh listener token только при reconnect необходимости (см. 10.10)
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
@@ -186,48 +186,38 @@ If this is not done, browser will continue playback.
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
 
-### 10.9. Спецификация автоопределения языка Listener UI
+### 10.9. Спецификация автоопределения языка Listener UI (MVP)
 
 Цель: помочь users на международных мероприятиях понимать:
 - `room_name`
 - `custom_status_text_blocked`
 - `custom_status_text_closed`
 
-Важно:
-- `channel_label` **не зависит от языка user интерфейса**. Названия каналов задаются администратором заранее по формализованному списку мероприятия и отображаются как есть.
+Ключевая логика MVP:
+1) Backend отправляет **все** языковые варианты текстов при подключении Listener по WebSocket.
+2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
+3) Выбор языка выполняется только в Listener web page.
+4) Status texts после deploy считаются фиксированными и не меняются во время мероприятия.
 
-#### 10.9.1 Источник языка
-
-1) Listener определяет язык из браузера (`navigator.languages` -> `navigator.language`).
-2) Listener отправляет backend поле `ui_lang` (например: `ru`, `en`, `zh-CN`).
-3) Backend выбирает текстовые поля по этому языку.
-4) Если такого языка нет в данных room -> backend возвращает English (`en`).
-
-#### 10.9.2 Обязательные языки
+#### 10.9.1 Обязательные языки
 
 Для каждого мероприятия обязательно подготовить минимум:
 - English (`en`)
 - Russian (`ru`)
 
-Другие языки могут добавляться до deploy и во время мероприятия.
+Другие языки можно добавлять вручную до deploy.
 
-#### 10.9.3 Языковые теги (официальный формат)
+#### 10.9.2 Языковые теги (официальный формат)
 
 Использовать BCP 47 language tags:
 - RFC 5646: https://datatracker.ietf.org/doc/html/rfc5646
 - IANA Language Subtag Registry: https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
 
-Примеры:
-- `en`, `en-US`
-- `ru`, `ru-RU`
-- `zh`, `zh-CN`, `zh-TW`
+Примеры: `en`, `en-US`, `ru`, `ru-RU`, `zh`, `zh-CN`.
 
-Для MVP рекомендуется нормализация до базового языка (`en`, `ru`, `zh`) при выборе текстов.
+#### 10.9.3 Формат данных и fallback на стороне Listener
 
-#### 10.9.4 JSON модель мультиязычных текстов
-
-Рекомендуемая структура в backend JSON:
-
+Backend payload (пример):
 ```json
 {
   "room_name_i18n": {
@@ -248,33 +238,44 @@ If this is not done, browser will continue playback.
 }
 ```
 
-Правило выбора backend:
+Listener language selection rule:
 ```
-if ui_lang exists in i18n map:
-    return i18n[ui_lang]
-elif base(ui_lang) exists:
-    return i18n[base(ui_lang)]
+detected = browser language (navigator.languages/navigator.language)
+if i18n has exact tag:
+    use exact tag
+elif i18n has base tag:
+    use base tag
 else:
-    return i18n["en"]
+    use "en"
 ```
+
+#### 10.9.4 Ограничение по channel_label
+
+`channel_label` не локализуется автоматически по языку браузера.
+
+Для multi-language event канал вводится вручную в формате:
+`English name - abbreviation in original - original name`.
+
+Для silent one-language multi-room event используется отдельная ручная логика (определяется перед мероприятием).
 
 #### 10.9.5 Unicode и спецсимволы
 
-Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов:
-- кириллица
-- иероглифы
-- спецзнаки и диакритика
+Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
 
-Это касается `room_name`, status texts и `channel_label`.
+### 10.10. Token refresh policy
 
-#### 10.9.6 Динамические изменения текста во время мероприятия
+- Publisher: refresh token за 10 минут до expiry (MVP и production).
+- Listener: proactive refresh не требуется; новый token запрашивается только при reconnect необходимости.
 
-- Listener не обязан хранить полный архив всех языковых текстов с момента подключения до refresh страницы.
-- Backend отправляет **актуальные** значения текстов в момент инициализации нового статуса/нового state.
-- Listener просто применяет текущий текст из последнего state.
+### 10.11. Future production features (no priority)
 
-### 10.10. Связь с Backend и Publisher
+Следующие идеи считаются future/no-priority и в MVP не реализуются:
+- backend-driven language selection по `ui_lang` от Listener;
+- динамическая смена status texts во время мероприятия;
+- серверная языковая персонализация текстов «на лету».
 
-- Multi-lang модель хранится и управляется на backend стороне.
-- Listener получает локализованные тексты согласно `ui_lang` и fallback правилам.
-- Publisher UI для MVP получает English тексты (фиксированный `en` output от backend для Publisher).
+### 10.12. Связь с Backend и Publisher
+
+- Multi-lang модель хранится на backend и отправляется Listener целиком при WS connect.
+- Язык интерфейса выбирается только Listener page логикой.
+- Publisher UI получает English тексты (`en`) в MVP.

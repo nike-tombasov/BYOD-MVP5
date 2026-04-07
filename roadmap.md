@@ -15,7 +15,7 @@ Finish Publisher UI as practical room-technician tool for VPS pilot runs.
 1) module decomposition (without changing behavior)
 2) JSON memory for last IP/PIN/device mapping
 3) silent seamless token refresh
-4) stable Windows `.exe` packaging
+4) stable Windows `.exe` packaging (MVP: folder build; production target: one-file build)
 
 ### Exit criteria
 - no manual re-entry of IP/PIN/devices after restart
@@ -78,7 +78,7 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 Bring Listener web app to stable production-like baseline.
 
 ### Large-doing steps
-1) seamless listener token refresh without sound cuts
+1) listener token policy: request new token only when reconnect is required
 2) local fallback to pinned LiveKit client file near listener JS (CDN backup)
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction

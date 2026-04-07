@@ -185,27 +185,25 @@ Admin управляет backend в web UI. Функциональные воз�
 11) downloading channel multi-track (интеграция с облачными хранилищами с автоматическим копированием по команде)
 *) to be continued…
 
-### 9.11. State
+### 9.11. State (separated)
 
-Backend должен рассылать state для publisher и listener.
+Backend рассылает **два разных state**:
+
+1) `publisher_state`:
+- room_name (English)
+- room_status
+- channels (channel_id, channel_label, owner, listen)
+
+2) `listener_state`:
+- room_status
+- channels (channel_id, channel_label, listen)
+- i18n maps:
+  - room_name_i18n
+  - custom_status_text_blocked_i18n
+  - custom_status_text_closed_i18n
 
 Publisher использует owner для interlock логики.
-
-Listener использует state только для:
-- button generation
-- channel_label
-- listen
-- room_name
-- room_status
-- status custom text
-
 Listener НЕ использует owner для управления аудио.
-
-Для MVP state единый и должен минимально содержать:
-* room_name
-* room_status
-* status custom text
-* channels (channel_id (channel_label, owner, listen))
 
 ### 9.12 WebSocket
 
@@ -214,26 +212,26 @@ Minimal protocol:
 * heartbeat
 * on_air
 * stop
-* state
+* publisher_state
+* listener_state
 
-### 9.13. Multi-language text delivery for Listener UI
+### 9.13. Multi-language data delivery for Listener UI (MVP)
 
-Backend stores multilingual maps for UI texts (`room_name`, `custom_status_text_blocked`, `custom_status_text_closed`) and chooses text by `ui_lang` received from Listener.
-
-Selection rule:
-```
-if exact lang exists (e.g. ru-RU):
-    use exact value
-elif base lang exists (e.g. ru):
-    use base value
-else:
-    use English (en)
-```
+Rules:
+1) status texts (`custom_status_text_blocked`, `custom_status_text_closed`) и room name фиксируются при deploy и не меняются во время мероприятия;
+2) backend отправляет полный набор i18n данных Listener сразу при WS connect;
+3) backend не получает `ui_lang` и не выбирает язык интерфейса за Listener;
+4) выбор языка выполняет только Listener page.
 
 Mandatory dictionaries for each event:
 - `en` (required)
 - `ru` (required)
 
-Publisher UI receives English texts (`en`) in MVP mode.
+Publisher UI receives English texts (`en`) in MVP.
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
+
+### 9.14. Token refresh policy
+
+- Publisher: refresh token за 10 минут до expiry (MVP и production).
+- Listener: proactive refresh не нужен; новый token выдаётся только при reconnect необходимости.

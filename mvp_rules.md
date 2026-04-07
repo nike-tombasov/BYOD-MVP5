@@ -36,3 +36,10 @@ Publisher UI hardening for VPS pilot test, without uncontrolled feature expansio
 
 ## Anti-overdevelopment policy
 If a task is not required for Stage VI exit criteria, postpone it to next stage and document it in roadmap/open issues.
+
+
+## Pinned protocol decisions
+- Backend state transport uses separated payloads: `publisher_state` and `listener_state`.
+- Publisher token refresh is scheduled 10 minutes before expiry.
+- Listener token is refreshed only on reconnect requirement.
+- Publisher packaging mode: MVP = folder build, production target = one-file build.
