@@ -213,7 +213,7 @@ Backend рассылает **два разных state**:
   - custom_status_text_closed_i18n
 
 Schema evolution rule:
-- `publisher_state` и `listener_state` используют независимые `schema_version` для будущей разработки.
+- `publisher_state` и `listener_state` используют независимые `schema_version` (integer) для будущей разработки.
 
 Publisher использует owner для interlock логики.
 Listener НЕ использует owner для управления аудио.
@@ -232,11 +232,12 @@ Minimal protocol:
 
 Rules:
 1) status texts (`custom_status_text_blocked`, `custom_status_text_closed`) и room name фиксируются при deploy и не меняются во время мероприятия;
-2) backend отправляет полный набор i18n данных Listener сразу при WS connect;
+2) backend отправляет полный набор i18n данных Listener при initial WS connect и при reconnect;
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за Listener;
 4) выбор языка выполняет только Listener page.
 5) i18n maps отправляются при initial WS connect и при reconnect; не рассылаются в каждый state update.
 6) status texts immutable during event runtime, кроме emergency override manual console command.
+7) override применяется независимо для BLOCKED и CLOSED текстов.
 
 Mandatory dictionaries for each event:
 - `en` (required)
@@ -245,3 +246,31 @@ Mandatory dictionaries for each event:
 Publisher UI receives English texts (`en`) in MVP.
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
+
+
+### 9.14. Emergency override (runtime status texts)
+
+Цель: временная коррекция текстов статусов во время мероприятия без redeploy.
+
+Правила:
+- Override хранится только в памяти backend (in-memory only).
+- Override применяется ко всем listeners текущей комнаты.
+- Override сбрасывается при restart backend.
+- Override для BLOCKED и CLOSED независимы друг от друга.
+
+Console commands:
+```
+override blocked "<text>"
+override closed "<text>"
+override reset blocked
+override reset closed
+```
+
+Поведение:
+1) `override blocked` меняет только runtime текст для BLOCKED.
+2) `override closed` меняет только runtime текст для CLOSED.
+3) `override reset blocked` возвращает BLOCKED текст к deploy value.
+4) `override reset closed` возвращает CLOSED текст к deploy value.
+
+Ограничение:
+- Override не изменяет deploy configuration files и не сохраняется после restart.

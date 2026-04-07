@@ -61,7 +61,7 @@ Former Stage V issues were reviewed and pinned as follows:
 ### 14.7 Confirmed architectural resolutions (April 7, 2026)
 
 1) Room status text model
-- status texts are immutable after deploy for MVP event runtime (except emergency override manual console command).
+- status texts are immutable after deploy for MVP event runtime (except in-memory emergency override manual console command, independent for BLOCKED/CLOSED).
 
 2) Multi-language transport model
 - backend sends full i18n maps on initial Listener WS connect and reconnect;
@@ -69,7 +69,7 @@ Former Stage V issues were reviewed and pinned as follows:
 - Listener page performs detection and local selection.
 
 3) State model
-- use separated payloads: `publisher_state` and `listener_state`.
+- use separated payloads: `publisher_state` and `listener_state` with independent integer `schema_version`.
 
 4) Token refresh policy
 - pinned only in backend spec: `docs/08_backend.md` section 9.2.
@@ -87,4 +87,4 @@ Former Stage V issues were reviewed and pinned as follows:
 - NTP time sync on VPS is mandatory for stable JWT expiry/refresh behavior.
 
 8) Validation artifact preference
-- for Stage VII protocol compatibility, runnable integration script is preferred over checklist.
+- for Stage VII protocol compatibility, formal acceptance checklist document is preferred.
