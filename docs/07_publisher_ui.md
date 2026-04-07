@@ -324,3 +324,10 @@ Button colors:
 
 Channel visibility:
 - Non-present backend channels are fully hidden, including their bottom horizontal separators.
+
+
+### 8.14. Build mode decisions
+
+Pinned decisions:
+- MVP release artifact: folder build (`onedir`).
+- Production target artifact: one-file build (`onefile`).
