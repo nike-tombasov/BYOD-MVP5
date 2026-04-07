@@ -39,3 +39,20 @@ Moved to next stages (not Stage VI):
 - high-load stress framework
 - advanced media/security technologies discussion implementation
 - Admin Web UI realization
+
+
+### 14.6 Check of former Stage V open issues and specification pinning
+
+Former Stage V issues were reviewed and pinned as follows:
+
+1) JWT token generation risk
+- pinned in backend specification with identity/grants/lifetime requirements and connect flow.
+
+2) Multi-publisher listener switching/subscription risk
+- pinned in hard rules + listener algorithms: `autoSubscribe=false`, selective subscribe, single audio element, existing publications check, `trackUnsubscribed -> trackSubscribed` recovery flow.
+
+3) CPU/RAM overload risk
+- moved to explicit stress/load validation stages (Stage XI) with telemetry requirement.
+
+4) Race condition risk
+- moved to dedicated listener/backend hardening stages (Stage IX + Stage VII/VIII dependencies) with mandatory audit/fixes before production readiness.

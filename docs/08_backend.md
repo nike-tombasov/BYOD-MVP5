@@ -215,3 +215,25 @@ Minimal protocol:
 * on_air
 * stop
 * state
+
+### 9.13. Multi-language text delivery for Listener UI
+
+Backend stores multilingual maps for UI texts (`room_name`, `custom_status_text_blocked`, `custom_status_text_closed`) and chooses text by `ui_lang` received from Listener.
+
+Selection rule:
+```
+if exact lang exists (e.g. ru-RU):
+    use exact value
+elif base lang exists (e.g. ru):
+    use base value
+else:
+    use English (en)
+```
+
+Mandatory dictionaries for each event:
+- `en` (required)
+- `ru` (required)
+
+Publisher UI receives English texts (`en`) in MVP mode.
+
+JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.

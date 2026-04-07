@@ -165,7 +165,7 @@ If this is not done, browser will continue playback.
 - autoplay (только после нажатия на channel button; после STOP ACTION повторное нажатие channel button снова запускает звук)
 - НЕ создавать новый audio element каждый раз (используется только один audio element на протяжении всей сессии, при смене channel выполняется detach предыдущего track и attach нового).
 - обмен данным с backend по WebSocket 
-- автоопределение users system language (если не известен - English)
+- автоопределение users system language (подробная спецификация: см. раздел 10.9)
 - users system volume control для динамиков/наушников
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
@@ -185,3 +185,96 @@ If this is not done, browser will continue playback.
 * Listener MUST NOT rely only on trackSubscribed
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
+
+### 10.9. Спецификация автоопределения языка Listener UI
+
+Цель: помочь users на международных мероприятиях понимать:
+- `room_name`
+- `custom_status_text_blocked`
+- `custom_status_text_closed`
+
+Важно:
+- `channel_label` **не зависит от языка user интерфейса**. Названия каналов задаются администратором заранее по формализованному списку мероприятия и отображаются как есть.
+
+#### 10.9.1 Источник языка
+
+1) Listener определяет язык из браузера (`navigator.languages` -> `navigator.language`).
+2) Listener отправляет backend поле `ui_lang` (например: `ru`, `en`, `zh-CN`).
+3) Backend выбирает текстовые поля по этому языку.
+4) Если такого языка нет в данных room -> backend возвращает English (`en`).
+
+#### 10.9.2 Обязательные языки
+
+Для каждого мероприятия обязательно подготовить минимум:
+- English (`en`)
+- Russian (`ru`)
+
+Другие языки могут добавляться до deploy и во время мероприятия.
+
+#### 10.9.3 Языковые теги (официальный формат)
+
+Использовать BCP 47 language tags:
+- RFC 5646: https://datatracker.ietf.org/doc/html/rfc5646
+- IANA Language Subtag Registry: https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
+
+Примеры:
+- `en`, `en-US`
+- `ru`, `ru-RU`
+- `zh`, `zh-CN`, `zh-TW`
+
+Для MVP рекомендуется нормализация до базового языка (`en`, `ru`, `zh`) при выборе текстов.
+
+#### 10.9.4 JSON модель мультиязычных текстов
+
+Рекомендуемая структура в backend JSON:
+
+```json
+{
+  "room_name_i18n": {
+    "en": "Test room",
+    "ru": "Тестовая комната",
+    "zh": "考场"
+  },
+  "custom_status_text_blocked_i18n": {
+    "en": "Temporarily blocked",
+    "ru": "Временно заблокировано",
+    "zh": "暂时封锁"
+  },
+  "custom_status_text_closed_i18n": {
+    "en": "Room is closed",
+    "ru": "Зал закрыт",
+    "zh": "会场已关闭"
+  }
+}
+```
+
+Правило выбора backend:
+```
+if ui_lang exists in i18n map:
+    return i18n[ui_lang]
+elif base(ui_lang) exists:
+    return i18n[base(ui_lang)]
+else:
+    return i18n["en"]
+```
+
+#### 10.9.5 Unicode и спецсимволы
+
+Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов:
+- кириллица
+- иероглифы
+- спецзнаки и диакритика
+
+Это касается `room_name`, status texts и `channel_label`.
+
+#### 10.9.6 Динамические изменения текста во время мероприятия
+
+- Listener не обязан хранить полный архив всех языковых текстов с момента подключения до refresh страницы.
+- Backend отправляет **актуальные** значения текстов в момент инициализации нового статуса/нового state.
+- Listener просто применяет текущий текст из последнего state.
+
+### 10.10. Связь с Backend и Publisher
+
+- Multi-lang модель хранится и управляется на backend стороне.
+- Listener получает локализованные тексты согласно `ui_lang` и fallback правилам.
+- Publisher UI для MVP получает English тексты (фиксированный `en` output от backend для Publisher).
