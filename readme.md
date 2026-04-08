@@ -26,6 +26,10 @@ Documentation list:
 * 12_future_features.md
 * 13_mvp_status.md
 * 14_open_issues.md
+* 15_ws_schema_v1.md
+* 16_backend_persistence_json_v1.md
+* 17_csv_import_schema_v1.md
+* 18_stage_vii_ix_acceptance_checklist.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md

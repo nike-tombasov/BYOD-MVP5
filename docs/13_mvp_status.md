@@ -64,9 +64,9 @@ Former Stage V issues were reviewed and pinned as follows:
 - status texts are immutable after deploy for MVP event runtime (except in-memory emergency override manual console command, independent for BLOCKED/CLOSED).
 
 2) Multi-language transport model
-- backend sends full i18n maps on initial Listener WS connect and reconnect;
-- backend does not receive `ui_lang` and does not select Listener language;
-- Listener page performs detection and local selection.
+- backend sends immutable `i18n_library` (full i18n maps) on initial WS connect and reconnect for both Publisher and Listener;
+- backend does not receive `ui_lang` and does not select language for clients;
+- Listener page performs detection and local selection; Publisher renders `en` in MVP.
 
 3) State model
 - use separated payloads: `publisher_state` and `listener_state` with independent integer `schema_version`.
