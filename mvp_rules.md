@@ -33,6 +33,7 @@ Publisher UI hardening for VPS pilot test, without uncontrolled feature expansio
 - PIN may remain fixed for MVP runtime tests
 - single room mode remains acceptable
 - console logging remains enabled for diagnostics
+- LiveKit API secret key for local test may still --dev (unchanged)
 
 ## Anti-overdevelopment policy
 If a task is not required for Stage VI exit criteria, postpone it to next stage and document it in roadmap/open issues.
