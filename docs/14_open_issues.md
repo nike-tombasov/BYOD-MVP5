@@ -41,3 +41,9 @@ By decision, previous items 15.1–15.8 are moved out of open unresolved backlog
 ### 15.2 Current unresolved items
 
 No unresolved items remain after this documentation update.
+
+### 15.3 Clarification update (April 8, 2026, follow-up)
+
+По уточнению в чате добавлена явная фиксация:
+- immutable `i18n_library` должен отправляться на connect/reconnect не только Listener, но и Publisher;
+- реализация этого потока закреплена в ближайших этапах roadmap (Stage VII/IX), а не в дальнем non-priority.

@@ -54,6 +54,10 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - message types, required fields, validation rules
 - error codes and retry/backoff behavior
 - compatibility checklist for `publisher_state` and `listener_state`
+11) immutable i18n library transport (must be implemented within near stages):
+- backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
+- base deploy dictionaries are immutable during event runtime
+- emergency override remains separate runtime overlay mechanism
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts
@@ -106,6 +110,9 @@ Bring Listener web app to stable production-like baseline.
 - `attachInProgress` / `detachInProgress`
 - operation timeout and deterministic state reset to `IDLE`
 - rapid-click burst test cases
+8) verify reconnect behavior with immutable i18n library:
+- Listener restores texts without page reload after reconnect
+- Publisher keeps English UI rendering from same library (`en`)
 
 ### Exit criteria
 - listener survives token rotation and CDN issues

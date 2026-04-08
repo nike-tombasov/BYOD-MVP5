@@ -80,6 +80,7 @@ sounddevice.query_devices()
 2) статус в блоке подключения меняется на Connecting..., в backend отправляются IP+PIN и Windows system hostname (backend проверяет правильность room PIN, generate and send в ответ JWT token Identity publisher_id и персональный publisher_id)
 3) блок подключения к серверу отображает статус Connected при успешном подключении, кнопка CONNECT становится неактивной/некликабельной, а в случае обрывов выводить статус CONNECTION ERROR или Invalid PIN в случае неверного PIN
 4) получает room info from backend (поля заполняются автоматически) в динамическом режиме - room_name, room_status, channel_id, channel_label, а также owner по каждому channel_id
+4.1) на initial connect/reconnect получает immutable `i18n_library` (full maps), в MVP использует `en` для отображения текстов
 5) room technician выбирает audio device в выпадающих списках по каждому channel, планируемым to stream
 6) room technician самостоятельно убеждается, что нет sample rate ошибки и RMS analyzer показывает наличие звука
 7) room technician нажимает по подготовленным channels ON AIR button (UI channel status меняется на Connecting...) и самостоятельно убеждается, что нет device error, ожидает подтверждения от backend
