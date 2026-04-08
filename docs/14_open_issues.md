@@ -47,3 +47,4 @@ No unresolved items remain after this documentation update.
 По уточнению в чате добавлена явная фиксация:
 - immutable `i18n_library` должен отправляться на connect/reconnect не только Listener, но и Publisher;
 - реализация этого потока закреплена в ближайших этапах roadmap (Stage VII/IX), а не в дальнем non-priority.
+- локальный pinned Listener SDK path фиксируется как `src/listener/vendor/livekit-client.umd.1.15.13.js`, подключение в Listener обязательно в ближайших этапах roadmap.

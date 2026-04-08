@@ -173,7 +173,10 @@ Implementation priority note:
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
 - token lifecycle rules: см. docs/08_backend.md, раздел 9.2
-- LiveKit JS SDK policy: pinned `1.15.13`; production Listener хранит локальный fallback-файл той же версии рядом с Listener JS и использует его при CDN недоступности.
+- LiveKit JS SDK policy: pinned `1.15.13`.
+- Local pinned file path (project): `src/listener/vendor/livekit-client.umd.1.15.13.js`.
+- CDN source: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js`.
+- Listener deploy script policy: подключение локального pinned файла обязательно; CDN допускается как fallback.
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 

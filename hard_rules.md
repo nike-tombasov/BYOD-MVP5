@@ -27,7 +27,13 @@
 * Python runtime libraries for current codebase:
   * `livekit==1.1.5`
   * `livekit-api==1.1.0`
-* Listener Web SDK file baseline: **1.15.13** (CDN and identical local fallback file)
+  * `livekit-protocol==1.1.3` (transitive pin observed in environment scan)
+* Listener Web SDK file baseline: **1.15.13**
+  * local pinned artifact path: `src/listener/vendor/livekit-client.umd.1.15.13.js`
+  * CDN source: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js`
+
+Server patch note:
+* LiveKit Server `1.9.12+` is not auto-approved by this spec; it requires compatibility checklist pass before replacing pinned `1.9.11`.
 
 Upgrade rule:
 * Any change of any matrix row requires explicit docs update in `docs/06_livekit_engine.md`, `docs/09_listener_ui.md`, `docs/14_open_issues.md` resolution note, and a compatibility re-test checklist.

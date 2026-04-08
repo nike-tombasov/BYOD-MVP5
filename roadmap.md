@@ -113,6 +113,9 @@ Bring Listener web app to stable production-like baseline.
 8) verify reconnect behavior with immutable i18n library:
 - Listener restores texts without page reload after reconnect
 - Publisher keeps English UI rendering from same library (`en`)
+9) Listener local SDK wiring:
+- connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
+- keep CDN only as fallback path
 
 ### Exit criteria
 - listener survives token rotation and CDN issues
@@ -130,6 +133,10 @@ Prepare one-action deployment and clear runbook documentation.
 2) detailed deploy guide for regular scenarios
 3) detailed operations guide (console control, recordings, metrics, logs)
 4) emergency incident guide with step-by-step actions
+5) LiveKit binary delivery policy for Ubuntu VPS:
+- preferred: pinned own artifact (exact version) with checksum verification
+- fallback: `curl` from official release URL with checksum verification
+- document rollback procedure to previous pinned binary
 
 ### Exit criteria
 - new operator can deploy and operate by docs only
