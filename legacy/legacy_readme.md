@@ -5,8 +5,9 @@ Folder /legacy contains legacy experimental implementations.
 ## Rules:
 - Do not reuse directly
 - Use only as reference
-- Current architecture is defined in ARCHITECTURE.md
+- Current architecture is defined in architecture.md
 - Legacy code may violate current rules
+- Do not make any changes in past Stages
 
 ## Stage I
 
