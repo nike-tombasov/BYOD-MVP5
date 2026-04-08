@@ -4,6 +4,14 @@
 
 На всей структуре проекта строгое соблюдение фокуса на LiveKit v1.9.11 (либо вескоаргументированно другой стабильной версии, при необходимости)
 
+Pinned compatibility matrix (MVP baseline):
+* LiveKit Server: `1.9.11`
+* Python SDK: `livekit==1.1.5`
+* Python API SDK: `livekit-api==1.1.0`
+* Listener JS SDK: `1.15.13` (CDN + identical local fallback file)
+
+Любое изменение любой версии из матрицы допустимо только после отдельного compatibility review и обновления hard rules / roadmap / open issues resolution note.
+
 Официальная документацая, обязательная к соблюдению:
 * https://github.com/livekit/livekit 
 * https://docs.livekit.io/intro/overview/

@@ -5,39 +5,39 @@ Rules for docs/14_open_issues.md:
 - All new ambiguities are discussed in chat first.
 - Only unresolved items after discussion are written here.
 
-### 15.1. Drift mismatchs between new documentation, mvp rules and current code.
+### 15.1 Resolution log (April 8, 2026)
 
-Add to roadmap as uncoming fixes:
-- Heartbeats mismatch;
-- channel_0 must be listen false;
-- deploying room status - CLOSED - change before VPS test with ready console commands;
-- JWT token lifetime mismatch.
+By decision, previous items 15.1–15.8 are moved out of open unresolved backlog:
 
-### 15.2. LiveKit version policy of LiveKit 1.9.11.
-Current Python deps are livekit==1.1.5 and livekit-api==1.1.0, and listener HTML loads CDN client 1.15.13.
-Check for compatibility again. Make real terminal/console scan of environment versions and pin this matrix in hard rules.
-Also choose to download fallback livekit client for Listener, then realize fallback protocol. Mark in docs this file version, which must be used as standalone in production Listener.
+1) Minor mismatches (heartbeats / `channel_0 listen=false` / deploy default `room_status=CLOSED` / JWT lifetime consistency)
+- moved to active workflow and acceptance checks in `roadmap.md` Stage VII + Stage IX;
+- canonical behavior remains pinned in `docs/04_channel_model.md`, `docs/08_backend.md`, `docs/10_scaling.md`.
 
-### 15.3. Backend lock during websocket send.
-Need to be corrected as:
-```
-lock -> copy state
-unlock
-send to clients
-```
+2) LiveKit versions policy
+- resolved by explicit pinned compatibility matrix in `hard_rules.md` and `docs/06_livekit_engine.md`;
+- Listener fallback version pin added in `docs/09_listener_ui.md`.
 
-### 15.4. Thread safety Qt (Publisher).
-async tasks read UI widget state (currentData()) from non-UI thread path, which can cause intermittent undefined behavior in Qt apps under load or rapid interaction.
+3) Backend lock during WS send
+- resolved at specification level in `docs/08_backend.md` (mandatory snapshot-send rule).
 
-### 15.5. LiveKit API key / secret.
-Must be marked in specification:
-- secret lenght for VPS deploy is >32 character;
-- auto generation with VPS deploy and save to backend, livekit.yaml for each new deploy.
+4) Thread safety Qt (Publisher)
+- resolved at specification level in `docs/07_publisher_ui.md` (UI-thread-only widget access rule).
 
-### 15.6. i18n payload model.
-Feature must be in current roadmap.md.
+5) LiveKit API key / secret policy
+- resolved at specification level in `docs/08_backend.md` (`LIVEKIT_API_SECRET` length `>32`, deploy-time auto-generation, synced persistence in backend + `livekit.yaml`).
 
-### 15.7. Listener attach/detach race guards from spec are not implemented.
-No attachInProgress/detachInProgress flags and no operation timeout logic despite being specified, so rapid clicks + event bursts can produce inconsistent state transitions.
+6) i18n payload multi-language model
+- already specified; additionally formalized in active workflow and deferred backlog split:
+  - active MVP behavior remains in `docs/08_backend.md` + `docs/09_listener_ui.md`;
+  - post-Stage XIII non-priority dynamic personalization tracked in `roadmap.md`.
 
-### 15.8. Formalize a strict WS schema doc (message types, required fields, error codes, retry behavior)
+7) Listener race guards
+- escalated as mandatory Stage IX hardening item in `roadmap.md`; normative rules remain in `docs/09_listener_ui.md`.
+
+8) Formal strict WS schema
+- added to active MVP workflow as Stage VII deliverable in `roadmap.md`;
+- temporary strict runtime validation requirement added in `docs/08_backend.md`.
+
+### 15.2 Current unresolved items
+
+No unresolved items remain after this documentation update.

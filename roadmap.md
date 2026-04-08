@@ -47,6 +47,13 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - backend <-> publisher (`publisher_state`)
 - backend <-> listener (`listener_state`)
 8) emergency override manual console command
+9) websocket broadcast lock policy fix in backend event loop:
+- `lock -> copy immutable snapshot -> unlock -> send`
+- network sending is forbidden while state lock is held
+10) formal WS schema document (v1):
+- message types, required fields, validation rules
+- error codes and retry/backoff behavior
+- compatibility checklist for `publisher_state` and `listener_state`
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts
@@ -95,6 +102,10 @@ Bring Listener web app to stable production-like baseline.
 4) security protocol plan for landing page and backend interaction
 5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
 6) cross-platform compatibility matrix (desktop/mobile major browsers)
+7) strict attach/detach race guards implementation:
+- `attachInProgress` / `detachInProgress`
+- operation timeout and deterministic state reset to `IDLE`
+- rapid-click burst test cases
 
 ### Exit criteria
 - listener survives token rotation and CDN issues
@@ -143,6 +154,10 @@ Topics:
 - reconnection after VPS reset
 - noise gate, audio processing, RMS visualizer
 - statistics, room dashboard, pre-warm publishing
+- LiveKit version policy matrix and upgrade rules:
+  - server version policy
+  - Python SDK/API compatibility matrix
+  - Listener JS SDK pinned + local fallback artifact version
 
 ### Exit criteria
 - each topic has decision: adopt now / postpone / reject (with reason)
@@ -156,3 +171,10 @@ Define and start Admin Web UI architecture and first vertical slice.
 
 ### Exit criteria
 - first usable Admin UI slice works end-to-end on VPS test environment
+
+---
+
+## Post-MVP deferred items (after Stage XIII, non-priority unless risk escalates)
+
+1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries + emergency override)
+2) advanced runtime language personalization (backend-side per-listener selection)

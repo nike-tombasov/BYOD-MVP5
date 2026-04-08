@@ -20,3 +20,14 @@
 * Send frames only after ON AIR
 * track created only after publish
 * track removed after STOP
+
+## LiveKit pinned compatibility matrix (MVP baseline)
+
+* LiveKit Server target: **1.9.11**
+* Python runtime libraries for current codebase:
+  * `livekit==1.1.5`
+  * `livekit-api==1.1.0`
+* Listener Web SDK file baseline: **1.15.13** (CDN and identical local fallback file)
+
+Upgrade rule:
+* Any change of any matrix row requires explicit docs update in `docs/06_livekit_engine.md`, `docs/09_listener_ui.md`, `docs/14_open_issues.md` resolution note, and a compatibility re-test checklist.

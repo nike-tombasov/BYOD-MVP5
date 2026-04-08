@@ -198,6 +198,7 @@ publishers sets UI channel status FREE
 - Thread-safe аудио захват через callback sounddevice.InputStream. Используется неблокирующий callback вместо polling.
 - Ограничение размера очереди (maxsize=32). Предотвращает переполнение памяти и контролирует backpressure.
 - Изоляция потоков: один device → один AudioStream объект. Управление через словарь self.streams[track].
+- Qt thread-safety rule: любые чтения/изменения Qt widget state (например `currentData()`, `setText()`, `setEnabled()`) выполняются только в UI thread. Async/thread paths используют только snapshot values, переданные через сигналы/очереди.
 - Проверка samplerate устройства перед стартом. Избегает resampling и лишней нагрузки CPU.
 - UI сигнализация через Qt Signals (thread-safe обновления). UISignals.sound_update — безопасное обновление UI из async/threads.
 - publish только при owner == self publiser_id после нажатия ON AIR.

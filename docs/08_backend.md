@@ -37,6 +37,12 @@ JWT token содержит:
 PIN устанавливается admin в момент разворачивания сервера VPS. Может быть изменён в любое время.
 При ручном изменении PIN все Publisher со статусом online не прекращают свою работу. Новый PIN потребуется room technician только для нового подключения. CONNECT к backend по старому PIN с этого момента невозможен.
 
+LiveKit API credentials policy:
+* LiveKit API key/secret генерируются автоматически во время VPS deploy.
+* `LIVEKIT_API_SECRET` для production deploy: длина строго `> 32` символов.
+* Секрет сохраняется синхронно в backend env/config и `livekit.yaml` конкретного VPS deploy.
+* Запрещено хранить production secret в git-репозитории.
+
 ### 9.3. Room status (room_status)
 
 Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на работу Publisher.
@@ -227,6 +233,20 @@ Minimal protocol:
 * stop
 * publisher_state
 * listener_state
+
+Mandatory backend broadcast concurrency rule:
+```
+lock state
+copy immutable snapshot
+unlock state
+send snapshot to clients (without lock)
+```
+
+Запрещено удерживать state lock во время сетевых send операций.
+
+Formal WS schema requirement:
+* отдельный документ контракта обязателен (типы сообщений, обязательные поля, коды ошибок, retry behavior);
+* до публикации schema v1 используются временные строгие runtime-валидации и совместимость через acceptance checklist.
 
 ### 9.13. Multi-language data delivery for Listener UI (MVP)
 

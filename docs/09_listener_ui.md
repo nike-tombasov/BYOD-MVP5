@@ -158,6 +158,9 @@ When switching or stopping channel Listener MUST:
 
 If this is not done, browser will continue playback.
 
+Implementation priority note:
+- это обязательный hardening-блок Stage IX (не переносить далее), т.к. rapid-click гонки приводят к недетерминированным переходам состояния.
+
 ### 10.7. Key technologies
 
 - autoSubscribe = false
@@ -170,6 +173,7 @@ If this is not done, browser will continue playback.
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
 - token lifecycle rules: см. docs/08_backend.md, раздел 9.2
+- LiveKit JS SDK policy: pinned `1.15.13`; production Listener хранит локальный fallback-файл той же версии рядом с Listener JS и использует его при CDN недоступности.
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
