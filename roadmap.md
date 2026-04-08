@@ -15,7 +15,8 @@ Finish Publisher UI as practical room-technician tool for VPS pilot runs.
 1) module decomposition (without changing behavior)
 2) JSON memory for last IP/PIN/device mapping
 3) silent seamless token refresh
-4) stable Windows `.exe` packaging (MVP: folder build; production target: one-file build)
+4) receiving immutable i18n library on initial WS connect and reconnect (reading room_name only from `en`)
+5) stable Windows `.exe` packaging (MVP: folder build; production target: one-file build)
 
 ### Exit criteria
 - no manual re-entry of IP/PIN/devices after restart
@@ -72,23 +73,25 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 
 ### Large-doing steps
-1) **BLOCKED rule:**
-- show `custom_text_blocked` banner (white text / red background)
+1) receiving immutable i18n library on initial WS connect and reconnect
+
+2) **BLOCKED rule:**
+- show `custom_status_text_blocked_i18n` banner (white text / red background) using language selection rule
 - stop current sound immediately
 - keep channel buttons clickable (push/unpush allowed)
 - while BLOCKED no sound arrives
 
-2) **CLOSED rule:**
-- show `custom_text_closed` banner (white text / red background)
+3) **CLOSED rule:**
+- show `custom_status_text_closed_i18n` banner (white text / red background) using language selection rule
 - stop current sound immediately
 - unpush current button
 - lock all controls until status changes
 
-3) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
+4) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
 - after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
 - listener keeps operating with current page session and current websocket/livekit lifecycle
 
-4) emergency override behavior
+5) emergency override behavior
 
 ### Exit criteria
 - deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
@@ -113,7 +116,6 @@ Bring Listener web app to stable production-like baseline.
 - rapid-click burst test cases
 8) verify reconnect behavior with immutable i18n library:
 - Listener restores texts without page reload after reconnect
-- Publisher keeps English UI rendering from same library (`en`)
 9) Listener local SDK wiring:
 - connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
 - keep CDN only as fallback path
