@@ -249,6 +249,7 @@ send snapshot to clients (without lock)
 Formal WS schema requirement:
 * отдельный документ контракта обязателен (типы сообщений, обязательные поля, коды ошибок, retry behavior);
 * до публикации schema v1 используются временные строгие runtime-валидации и совместимость через acceptance checklist.
+* canonical v1 document: `docs/15_ws_schema_v1.md`.
 
 ### 9.13. Multi-language data delivery for Publisher and Listener UI (MVP)
 

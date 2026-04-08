@@ -26,6 +26,7 @@ Documentation list:
 * 12_future_features.md
 * 13_mvp_status.md
 * 14_open_issues.md
+* 15_ws_schema_v1.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md

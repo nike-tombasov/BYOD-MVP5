@@ -5,6 +5,7 @@ This repository contains the full architecture of the BYOD Audio Distribution Sy
 IMPORTANT:
 All development must follow the documentation below.
 Do not change architecture without updating documentation.
+`tbd.md` is for project lead personal notes only: it is out of architecture analysis scope and must not be modified by development tasks.
 
 Read in this order:
 
@@ -65,7 +66,10 @@ docs/13_mvp_status.md
 19. Open issues
 docs/14_open_issues.md
 
-20. Legacy implementations
+20. WS schema v1
+docs/15_ws_schema_v1.md
+
+21. Legacy implementations
 legacy/legacy_readme.md
 
 Core rules:

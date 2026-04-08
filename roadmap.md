@@ -55,6 +55,7 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - message types, required fields, validation rules
 - error codes and retry/backoff behavior
 - compatibility checklist for `publisher_state` and `listener_state`
+- canonical file: `docs/15_ws_schema_v1.md`
 11) immutable i18n library transport (must be implemented within near stages):
 - backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
 - base deploy dictionaries are immutable during event runtime
