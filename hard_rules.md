@@ -15,8 +15,6 @@
 * selective subscribe only
 * autoSubscribe = false
 * single audio element for listener session
-* heartbeat publisher → backend: 5 seconds
-* timeout publisher: 15 seconds
 * Interlock logic must prevent multiple publishers for one channel_id
 * Audio device must be opened before ON AIR
 * Send frames only after ON AIR
