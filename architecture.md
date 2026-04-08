@@ -77,7 +77,6 @@ Core rules:
 - publish only between ON AIR and STOP
 - queue overflow must drop oldest
 - audio 48000 Hz stereo
-- heartbeat 5s timeout 15s
 - interlock logic must be preserved
 
 Development rule:
