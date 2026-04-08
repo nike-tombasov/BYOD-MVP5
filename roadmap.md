@@ -47,6 +47,17 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - backend <-> publisher (`publisher_state`)
 - backend <-> listener (`listener_state`)
 8) emergency override manual console command
+9) websocket broadcast lock policy fix in backend event loop:
+- `lock -> copy immutable snapshot -> unlock -> send`
+- network sending is forbidden while state lock is held
+10) formal WS schema document (v1):
+- message types, required fields, validation rules
+- error codes and retry/backoff behavior
+- compatibility checklist for `publisher_state` and `listener_state`
+11) immutable i18n library transport (must be implemented within near stages):
+- backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
+- base deploy dictionaries are immutable during event runtime
+- emergency override remains separate runtime overlay mechanism
 
 ### Exit criteria
 - operator can change room status and verify effects without code edits/restarts
@@ -95,6 +106,16 @@ Bring Listener web app to stable production-like baseline.
 4) security protocol plan for landing page and backend interaction
 5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
 6) cross-platform compatibility matrix (desktop/mobile major browsers)
+7) strict attach/detach race guards implementation:
+- `attachInProgress` / `detachInProgress`
+- operation timeout and deterministic state reset to `IDLE`
+- rapid-click burst test cases
+8) verify reconnect behavior with immutable i18n library:
+- Listener restores texts without page reload after reconnect
+- Publisher keeps English UI rendering from same library (`en`)
+9) Listener local SDK wiring:
+- connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
+- keep CDN only as fallback path
 
 ### Exit criteria
 - listener survives token rotation and CDN issues
@@ -112,6 +133,10 @@ Prepare one-action deployment and clear runbook documentation.
 2) detailed deploy guide for regular scenarios
 3) detailed operations guide (console control, recordings, metrics, logs)
 4) emergency incident guide with step-by-step actions
+5) LiveKit binary delivery policy for Ubuntu VPS:
+- preferred: pinned own artifact (exact version) with checksum verification
+- fallback: `curl` from official release URL with checksum verification
+- document rollback procedure to previous pinned binary
 
 ### Exit criteria
 - new operator can deploy and operate by docs only
@@ -143,6 +168,10 @@ Topics:
 - reconnection after VPS reset
 - noise gate, audio processing, RMS visualizer
 - statistics, room dashboard, pre-warm publishing
+- LiveKit version policy matrix and upgrade rules:
+  - server version policy
+  - Python SDK/API compatibility matrix
+  - Listener JS SDK pinned + local fallback artifact version
 
 ### Exit criteria
 - each topic has decision: adopt now / postpone / reject (with reason)
@@ -156,3 +185,10 @@ Define and start Admin Web UI architecture and first vertical slice.
 
 ### Exit criteria
 - first usable Admin UI slice works end-to-end on VPS test environment
+
+---
+
+## Post-MVP deferred items (after Stage XIII, non-priority unless risk escalates)
+
+1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries + emergency override)
+2) advanced runtime language personalization (backend-side per-listener selection)

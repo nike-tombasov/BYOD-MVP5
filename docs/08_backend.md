@@ -37,6 +37,12 @@ JWT token содержит:
 PIN устанавливается admin в момент разворачивания сервера VPS. Может быть изменён в любое время.
 При ручном изменении PIN все Publisher со статусом online не прекращают свою работу. Новый PIN потребуется room technician только для нового подключения. CONNECT к backend по старому PIN с этого момента невозможен.
 
+LiveKit API credentials policy:
+* LiveKit API key/secret генерируются автоматически во время VPS deploy.
+* `LIVEKIT_API_SECRET` для production deploy: длина строго `> 32` символов.
+* Секрет сохраняется синхронно в backend env/config и `livekit.yaml` конкретного VPS deploy.
+* Запрещено хранить production secret в git-репозитории.
+
 ### 9.3. Room status (room_status)
 
 Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на работу Publisher.
@@ -137,6 +143,7 @@ publishers sets UI channel status FREE
 получает PIN и hostname
 
 - при валидном PIN регистрирует Publisher в базе данных, генерирует и отправляет в ответ JWT token Identity publisher_id и персональный publisher_id, а также room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
+- на initial connect и reconnect дополнительно отправляет `i18n_library` (immutable base dictionaries)
 - при невалидном PIN возвращает сигнал об ошибке PIN
 
 2) Регулярный Heartbeats и обновление room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
@@ -155,6 +162,7 @@ publishers sets UI channel status FREE
 Listener использует WebSocket для:
 - channel list (channel_id, channel_label, listen)
 - room info (room_name, room_status, status custom text)
+- `i18n_library` (room/status texts dictionaries) на initial connect и reconnect
 
 Listener НЕ использует backend state (и в частности owner) для управления аудио.
 Аудио управление Listener осуществляется через события LiveKit и channel button condition.
@@ -228,15 +236,29 @@ Minimal protocol:
 * publisher_state
 * listener_state
 
-### 9.13. Multi-language data delivery for Listener UI (MVP)
+Mandatory backend broadcast concurrency rule:
+```
+lock state
+copy immutable snapshot
+unlock state
+send snapshot to clients (without lock)
+```
+
+Запрещено удерживать state lock во время сетевых send операций.
+
+Formal WS schema requirement:
+* отдельный документ контракта обязателен (типы сообщений, обязательные поля, коды ошибок, retry behavior);
+* до публикации schema v1 используются временные строгие runtime-валидации и совместимость через acceptance checklist.
+
+### 9.13. Multi-language data delivery for Publisher and Listener UI (MVP)
 
 Rules:
 1) status texts (`custom_status_text_blocked`, `custom_status_text_closed`) и room name фиксируются при deploy и не меняются во время мероприятия;
-2) backend отправляет полный набор i18n данных Listener при initial WS connect и при reconnect;
-3) backend не получает `ui_lang` и не выбирает язык интерфейса за Listener;
-4) выбор языка выполняет только Listener page.
-5) i18n maps отправляются при initial WS connect и при reconnect; не рассылаются в каждый state update.
-6) status texts immutable during event runtime, кроме emergency override manual console command.
+2) backend отправляет полный набор i18n данных как immutable `i18n_library` при initial WS connect и reconnect **для Listener и Publisher**;
+3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
+4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
+5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
+6) deploy dictionaries immutable during event runtime, кроме emergency override manual console command;
 7) override применяется независимо для BLOCKED и CLOSED текстов.
 
 Mandatory dictionaries for each event:
@@ -244,6 +266,7 @@ Mandatory dictionaries for each event:
 - `ru` (required)
 
 Publisher UI receives English texts (`en`) in MVP.
+Publisher получает полный `i18n_library`, но в MVP рендерит английский (`en`) как основной UI язык.
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
