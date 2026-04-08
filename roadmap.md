@@ -54,7 +54,6 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - network sending is forbidden while state lock is held
 10) formal WS schema document (v1):
 - message types, required fields, validation rules
-- error codes and retry/backoff behavior
 - compatibility checklist for `publisher_state` and `listener_state`
 - canonical file: `docs/15_ws_schema_v1.md`
 11) immutable i18n library transport (must be implemented within near stages):
@@ -106,7 +105,7 @@ Bring Listener web app to stable production-like baseline.
 
 ### Large-doing steps
 1) listener token policy: request new token only when reconnect is required
-2) local fallback to pinned LiveKit client file near listener JS (CDN backup)
+2) local pinned LiveKit client file near listener JS
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction
 5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
@@ -120,10 +119,9 @@ Bring Listener web app to stable production-like baseline.
 - Publisher keeps English UI rendering from same library (`en`)
 9) Listener local SDK wiring:
 - connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
-- keep CDN only as fallback path
 
 ### Exit criteria
-- listener survives token rotation and CDN issues
+- listener survives token rotation
 - critical races are fixed or formally deferred with mitigations
 - checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage IX section)
 
@@ -177,7 +175,7 @@ Topics:
 - LiveKit version policy matrix and upgrade rules:
   - server version policy
   - Python SDK/API compatibility matrix
-  - Listener JS SDK pinned + local fallback artifact version
+  - Listener JS SDK pinned local artifact version
 
 ### Exit criteria
 - each topic has decision: adopt now / postpone / reject (with reason)

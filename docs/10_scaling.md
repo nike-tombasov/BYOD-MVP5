@@ -25,3 +25,12 @@ Recommended baseline formulas:
 Active PLAY heartbeat baseline:
 - heartbeat interval = `10 sec`
 - heartbeat timeout = `60 sec` -> reconnect required
+
+## 11.2. Advanced load-control backlog (later stages)
+
+- listener fingerprinting model
+- NAT-aware admission control
+- burst handling strategy
+- proxy detection logic
+- advanced rate-limit model
+- reconnect SLA metrics

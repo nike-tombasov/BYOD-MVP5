@@ -35,8 +35,8 @@ If optional headers are omitted, room-level values are taken from operator input
 
 `channel_id`:
 - required
-- regex: `^channel_([0-9]|[1-2][0-9]|3[0-1])$`
-- unique per file
+- expected format: `channel_<number>`
+- unique per file (baseline check)
 
 `channel_label`:
 - required
@@ -63,11 +63,11 @@ channel_2,German,true,Main Hall,123456
 
 ---
 
-### 18.5 Validation and apply strategy
+### 18.5 Validation and apply strategy (baseline)
 
 Process:
 1) parse and validate all rows first;
-2) if any error exists -> reject full file (no partial apply);
+2) if critical error exists -> reject import and show report;
 3) if valid -> write new `room_config_v1.json` atomically;
 4) emit `csv_import_applied` event to events log.
 
@@ -83,7 +83,7 @@ Error payload example:
 
 ---
 
-### 18.6 Error codes
+### 18.6 Error codes (baseline)
 
 - `MISSING_HEADER`
 - `UNKNOWN_HEADER`
@@ -94,6 +94,8 @@ Error payload example:
 - `INVALID_LISTEN_VALUE`
 - `INCONSISTENT_ROOM_NAME`
 - `INCONSISTENT_PIN`
+
+Strict validation profile (full regex, strict reject-all policy nuances) is postponed to open issues discussion.
 
 ---
 

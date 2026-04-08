@@ -3,7 +3,7 @@
 Goal:
 - make Stage VII backend JSON persistence deterministic and auditable;
 - avoid data-loss ambiguity during restart/crash;
-- define minimal migration strategy for future schema changes.
+- keep MVP persistence simple for first VPS cycle.
 
 ---
 
@@ -18,7 +18,6 @@ Files:
 - `connections_log_YYYYMMDD.jsonl` — append-only connection events (publisher/listener connect/disconnect).
 - `events_log_YYYYMMDD.jsonl` — append-only operational events (on_air/stop/status changes/override commands).
 - `recording_state_v1.json` — recording on/off snapshot and active files metadata.
-- `meta_schema.json` — schema versions for each persistence artifact.
 
 JSONL format:
 - one JSON object per line, UTF-8.
@@ -118,18 +117,10 @@ Baseline policy (MVP):
 
 ### 17.7 Startup recovery order
 
-1) load `meta_schema.json`
-2) load `room_config_v1.json`
-3) load `runtime_state_v1.json` (if exists)
-4) rebuild in-memory state
-5) open new JSONL log files for current day
-6) append `backend_started` event
+1) load `room_config_v1.json`
+2) load `runtime_state_v1.json` (if exists)
+3) rebuild in-memory state
+4) open new JSONL log files for current day
+5) append `backend_started` event
 
 ---
-
-### 17.8 Schema migration rule
-
-- every file has explicit `schema_version`.
-- backward-compatible additions: optional fields only.
-- breaking changes: new filename suffix `_v2` + migration script.
-- no silent in-place format break.

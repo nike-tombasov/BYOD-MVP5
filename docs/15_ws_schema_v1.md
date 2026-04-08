@@ -353,30 +353,10 @@ Before stage completion:
 
 ---
 
-### 16.14. ACK/NACK and deduplication policy
+### 16.14. Deferred advanced protocol topics (not blocking Stage VII-IX)
 
-ACK rule:
-- state-style broadcasts (`publisher_state`, `listener_state`, `i18n_library`) do not require per-message ACK.
-- command responses (`connecting`, `on_air`, `stop`) must be correlated by `request_id`.
-
-NACK representation:
-- use `type=error` with same `request_id` as failed command.
-
-Deduplication:
-- backend keeps short-lived `request_id` cache (recommended TTL: 120 sec) for command messages.
-- duplicate command with same `request_id` returns previously computed result (or no-op with same semantic outcome).
-
----
-
-### 16.15. WS close codes and reconnect behavior
-
-Recommended close code mapping:
-- `1000` normal close (no immediate reconnect loop)
-- `1008` policy violation (invalid auth/schema; reconnect only after corrective action)
-- `1011` internal backend error (reconnect with exponential backoff)
-- custom app code `4001` token expired (request fresh token and reconnect)
-- custom app code `4002` rate limited (wait + backoff before reconnect)
-
-Reconnect baseline:
-- backoff sequence: 1s, 2s, 4s, 8s (cap 10s) with jitter.
-- after reconnect success backend sends fresh `listener_state`/`publisher_state` and `i18n_library`.
+Moved to later stages / future features:
+- WS ACK/NACK flow;
+- request_id deduplication cache;
+- reconnect session resume;
+- advanced retry policies and close-code strategy.
