@@ -15,7 +15,7 @@ Add to roadmap as uncoming fixes:
 
 ### 15.2. LiveKit version policy of LiveKit 1.9.11.
 Current Python deps are livekit==1.1.5 and livekit-api==1.1.0, and listener HTML loads CDN client 1.15.13.
-Check for compatibility again. Make real terminal/console scan of environment versions and pin this matrix in hard rules
+Check for compatibility again. Make real terminal/console scan of environment versions and pin this matrix in hard rules.
 Also choose to download fallback livekit client for Listener, then realize fallback protocol. Mark in docs this file version, which must be used as standalone in production Listener.
 
 ### 15.3. Backend lock during websocket send.
