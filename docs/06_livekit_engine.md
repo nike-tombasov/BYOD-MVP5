@@ -44,3 +44,31 @@ async loop
 
 Учесть при разворачивании LiveKit на VPS строку про use external IP. 
 Опущение это вводной приводит к неработоспособности LiveKit.
+
+### 7.5. Ubuntu binary acquisition (pinned)
+
+Recommended deploy policy:
+1) keep own pinned binary artifact in internal storage (preferred);
+2) use official GitHub release download only as fallback;
+3) always verify checksum before install/start.
+
+Practical command template for pinned version:
+```bash
+LK_VERSION="1.9.11"
+LK_DIR="/opt/livekit"
+mkdir -p "${LK_DIR}"
+
+# fallback source from official release assets (exact filename must match release asset list)
+curl -fL "https://github.com/livekit/livekit/releases/download/v${LK_VERSION}/livekit_${LK_VERSION}_linux_amd64.tar.gz" \
+  -o "${LK_DIR}/livekit_${LK_VERSION}_linux_amd64.tar.gz"
+
+# verify sha256 (use value from your pinned artifact/checksum registry)
+sha256sum "${LK_DIR}/livekit_${LK_VERSION}_linux_amd64.tar.gz"
+
+tar -xzf "${LK_DIR}/livekit_${LK_VERSION}_linux_amd64.tar.gz" -C "${LK_DIR}"
+"${LK_DIR}/livekit-server" --version
+```
+
+If release asset naming changes, first open:
+`https://github.com/livekit/livekit/releases/tag/v1.9.11`
+and copy the exact Linux amd64 asset link.
