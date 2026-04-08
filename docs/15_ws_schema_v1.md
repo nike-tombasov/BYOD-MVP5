@@ -350,3 +350,13 @@ Before stage completion:
 4) error codes are deterministic for invalid PIN / owner mismatch / schema error;
 5) no state lock held during send operations;
 6) rapid reconnects do not break schema processing.
+
+---
+
+### 16.14. Deferred advanced protocol topics (not blocking Stage VII-IX)
+
+Moved to later stages / future features:
+- WS ACK/NACK flow;
+- request_id deduplication cache;
+- reconnect session resume;
+- advanced retry policies and close-code strategy.

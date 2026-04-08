@@ -4,6 +4,10 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 
 ### 9.1. Содержание базы данных Backend, управляемых admin
 
+Persistence formalization:
+- canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
+- canonical file for admin CSV import format and validation: `docs/17_csv_import_schema_v1.md`.
+
 1) room PIN (6-тизначный код)
 2) channel number - channel_id по форме channel_0, channel_1, channel_2...
 3) channel name - channel_label для каждого channel_id - не используется в SFU WebRTC и требуется только для визуального отображения в UI

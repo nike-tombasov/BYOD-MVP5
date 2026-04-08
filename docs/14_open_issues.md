@@ -40,7 +40,22 @@ By decision, previous items 15.1–15.8 are moved out of open unresolved backlog
 
 ### 15.2 Current unresolved items
 
-No unresolved items remain after this documentation update.
+1) Deploy artifact manifest is not fully formalized yet (pre-Stage X blocker):
+- exact manifest structure for release bundle is not pinned (artifacts list, versions, checksums, signatures, required/optional flags);
+- verification/rollback procedure must reference that manifest as single source of truth.
+
+2) Stress program formalization is incomplete (Stage XI preparation gap):
+- missing strict metrics set (latency/jitter/reconnect/error budget/CPU-RAM thresholds);
+- missing pass/fail numeric thresholds and mandatory report template fields.
+
+3) CSV strict validation rules are still open for final freeze:
+- whether to keep strict regex/atomic reject-all policy or simplify for operator UX in first VPS cycle.
+
+4) Persistence schema versioning format is still open:
+- whether dedicated `meta_schema.json` is mandatory in MVP or can be postponed to next cycle.
+
+5) Migration rules are still open:
+- policy for v1->v2 persistence migration and rollback is not finalized for current stage.
 
 ### 15.3 Clarification update (April 8, 2026, follow-up)
 

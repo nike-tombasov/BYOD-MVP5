@@ -175,6 +175,7 @@ Implementation priority note:
 - token lifecycle rules: см. docs/08_backend.md, раздел 9.2
 - LiveKit JS SDK policy: pinned `1.15.13`.
 - Local pinned file path (project): `src/listener/vendor/livekit-client.umd.1.15.13.js`.
+- CDN source reference: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js` (optional, future fallback discussion).
 - CDN source: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js`.
 - Listener deploy script policy: подключение локального pinned файла обязательно; CDN допускается как fallback.
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
