@@ -16,7 +16,7 @@ User должен иметь минимальный интерфейс. Блок
 1) отображение заглушки, логотипа, welcome text до получения актуальных room data
 2) автоматическое получение от backend JWT token Identity listener_id
 3) автоматическое получение от backend channel list
-4) initialize generation with status custom text (при status OPENED ничего не отображать), room_name, отображение channel buttons с режимом listen == true
+4) automatic receive immutable `i18n_library` on connect/reconnect; initialize generation with status custom text (при status OPENED ничего не отображать), room_name, отображение channel buttons с режимом listen == true
 5) нажатие на желаемый channel button (PLAY ACTION), button меняет цвет (подсвечивается), автоматическая обработка получения звука только по этому channel
 6) channel button не меняет цвет (не гаснет) за исключением перезапуска web page, перевода room status в CLOSED
 7) нажатие другого channel button (STOP ACTION для предыдущего channel и PLAY ACTION для нового channel) - предыдущая channel button меняет цвет обратно (гаснет), новая меняет цвет (подсвечивается) - звук с предыдущего channel button прекращает поступать для user, поступает только звук с новго channel button
@@ -158,6 +158,9 @@ When switching or stopping channel Listener MUST:
 
 If this is not done, browser will continue playback.
 
+Implementation priority note:
+- это обязательный hardening-блок Stage IX (не переносить далее), т.к. rapid-click гонки приводят к недетерминированным переходам состояния.
+
 ### 10.7. Key technologies
 
 - autoSubscribe = false
@@ -170,6 +173,10 @@ If this is not done, browser will continue playback.
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
 - token lifecycle rules: см. docs/08_backend.md, раздел 9.2
+- LiveKit JS SDK policy: pinned `1.15.13`.
+- Local pinned file path (project): `src/listener/vendor/livekit-client.umd.1.15.13.js`.
+- CDN source: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js`.
+- Listener deploy script policy: подключение локального pinned файла обязательно; CDN допускается как fallback.
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
@@ -195,6 +202,7 @@ If this is not done, browser will continue playback.
 
 Ключевая логика MVP:
 1) Backend отправляет **все** языковые варианты текстов при initial connect и reconnect Listener по WebSocket.
+1.1) Эти словари приходят как immutable `i18n_library` base payload (state-independent).
 2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
 3) Выбор языка выполняется только в Listener web page.
 4) Status texts после deploy считаются фиксированными; изменение допускается только emergency override через manual console command (независимо для BLOCKED/CLOSED).
