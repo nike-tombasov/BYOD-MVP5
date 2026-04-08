@@ -176,6 +176,8 @@ Implementation priority note:
 - LiveKit JS SDK policy: pinned `1.15.13`.
 - Local pinned file path (project): `src/listener/vendor/livekit-client.umd.1.15.13.js`.
 - CDN source reference: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js` (optional, future fallback discussion).
+- CDN source: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js`.
+- Listener deploy script policy: подключение локального pinned файла обязательно; CDN допускается как fallback.
 - jitter buffer, packet recovery (при плохом Wi-Fi, 3G/LTE - в будущем)
 - reconnection при перезагрузке VPS (в будущем)
 
@@ -224,26 +226,7 @@ Implementation priority note:
 
 #### 10.9.3 Формат данных и fallback на стороне Listener
 
-Backend payload (пример):
-```json
-{
-  "room_name_i18n": {
-    "en": "Test room",
-    "ru": "Тестовая комната",
-    "zh": "考场"
-  },
-  "custom_status_text_blocked_i18n": {
-    "en": "Temporarily blocked",
-    "ru": "Временно заблокировано",
-    "zh": "暂时封锁"
-  },
-  "custom_status_text_closed_i18n": {
-    "en": "Room is closed",
-    "ru": "Зал закрыт",
-    "zh": "会场已关闭"
-  }
-}
-```
+Backend payload (образец): см. docs/08_backend.md, раздел 9.13.
 
 Listener language selection rule:
 ```
