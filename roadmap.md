@@ -119,7 +119,6 @@ Bring Listener web app to stable production-like baseline.
 - rapid-click burst test cases
 8) verify reconnect behavior with immutable i18n library:
 - Listener restores texts without page reload after reconnect
-- Publisher keeps English UI rendering from same library (`en`)
 9) Listener local SDK wiring:
 - connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
 
