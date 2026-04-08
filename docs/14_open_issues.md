@@ -29,8 +29,10 @@ send to clients
 ### 15.4. Thread safety Qt (Publisher).
 async tasks read UI widget state (currentData()) from non-UI thread path, which can cause intermittent undefined behavior in Qt apps under load or rapid interaction.
 
-### 15.5. LiveKit API secret key.
-Must be marked that key lenght for VPS deploy is >32 character.
+### 15.5. LiveKit API key / secret.
+Must be marked in specification:
+- secret lenght for VPS deploy is >32 character;
+- auto generation with VPS deploy and save to backend, livekit.yaml for each new deploy.
 
 ### 15.6. i18n payload model.
 Feature must be in current roadmap.md.
