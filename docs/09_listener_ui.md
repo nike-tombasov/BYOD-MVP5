@@ -284,6 +284,49 @@ Rules for MVP Stage IX:
 Listener UX expectation:
 - on reconnect-required state user sees reconnect flow without manual page reload where technically possible.
 
+#### 10.10.1 Connection recovery rules (Listener)
+
+Listener maintains `connectionState`:
+- `CONNECTED`
+- `STALE`
+- `RECONNECTING`
+
+`connectionState` becomes `STALE` when:
+- heartbeat timeout;
+- backend websocket disconnect;
+- LiveKit disconnect;
+- token expiry.
+
+Reconnect triggers:
+1) mandatory: channel button click;
+2) optional: `document.visibilitychange` -> page becomes visible;
+3) optional: network restored event.
+
+On PLAY ACTION:
+```
+if connectionState == STALE:
+    reconnect
+    keep button active
+    state = WAITING
+else:
+    ATTACH ACTION
+```
+
+Reconnect fallback:
+```
+if reconnect fails:
+    reload page
+```
+
+Expected UX result:
+- after STOP ACTION, return from background, idle on opened page, or other stale cases, user can press channel button once and receive audio again without extra manual recovery steps.
+
+#### 10.10.2 Mobile system player behavior (Android/iOS)
+
+Expected compatibility behavior:
+- if user selected a channel button (PLAY state), page went background, and user pressed pause/play in system mobile player **before heartbeat timeout**, Listener must resume playback of the same last selected channel button;
+- if timeout already happened and connection is `STALE`, system play action follows reconnect rules from 10.10.1.
+
 ### 10.11. Future production features (no priority)
 
 Следующие идеи считаются future/no-priority и в MVP не реализуются:

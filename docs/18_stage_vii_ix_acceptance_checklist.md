@@ -76,7 +76,14 @@ Result statuses:
 5) No-active-PLAY return path
 - after background timeout with no active PLAY, return to page triggers auto-reconnect (or auto-reload fallback).
 
-6) Browser matrix (minimum)
+6) Connection recovery state machine
+- `CONNECTED` -> `STALE` -> `RECONNECTING` transitions verified for heartbeat timeout / WS disconnect / LiveKit disconnect / token expiry.
+- channel button click always works as mandatory reconnect trigger in `STALE`.
+
+7) Mobile system player behavior
+- on Android/iOS background pause->play before heartbeat timeout resumes last selected channel.
+
+8) Browser matrix (minimum)
 - Chrome latest-1 (Windows, Android)
 - Edge latest-1 (Windows)
 - Safari latest-1 (iOS/macOS)

@@ -110,6 +110,7 @@ Bring Listener web app to stable production-like baseline.
 4) security protocol plan for landing page and backend interaction
 5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
    - include return-from-background path: no-active-PLAY timeout must recover via auto-reconnect (or auto page reload fallback)
+   - follow Listener connection recovery rules: `docs/09_listener_ui.md` section 10.10.1
 6) cross-platform compatibility matrix (desktop/mobile major browsers)
 7) strict attach/detach race guards implementation:
 - `attachInProgress` / `detachInProgress`
