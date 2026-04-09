@@ -28,7 +28,8 @@ Finish Publisher UI as practical room-technician tool for VPS pilot runs.
 ## Stage VII — Backend hardening before Listener status tests (Priority 2)
 
 ### Main target
-Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED` tests.
+Finish backend baseline MVP develop 
+for VPS pilot runs.
 
 ### Large-doing steps
 1) backend module decomposition and service boundaries
@@ -59,7 +60,7 @@ Deliver backend operator controls required to run real Listener `BLOCKED/CLOSED`
 - canonical file: `docs/15_ws_schema_v1.md`
 11) immutable i18n library transport (must be implemented within near stages):
 - backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
-- base deploy dictionaries are immutable during event runtime
+- base deploy dictionaries are immutable duringr event runtime
 - emergency override remains separate runtime overlay mechanism
 
 ### Exit criteria
@@ -88,6 +89,7 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 - stop current sound immediately
 - unpush current button
 - lock all controls until status changes
+- while CLOSED no sound arrives
 
 4) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
 - after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
