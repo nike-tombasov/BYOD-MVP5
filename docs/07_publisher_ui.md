@@ -80,6 +80,7 @@ sounddevice.query_devices()
 2) статус в блоке подключения меняется на Connecting..., в backend отправляются IP+PIN и Windows system hostname (backend проверяет правильность room PIN, generate and send в ответ JWT token Identity publisher_id и персональный publisher_id)
 3) блок подключения к серверу отображает статус Connected при успешном подключении, кнопка CONNECT становится неактивной/некликабельной, а в случае обрывов выводить статус CONNECTION ERROR или Invalid PIN в случае неверного PIN
 4) получает room info from backend (поля заполняются автоматически) в динамическом режиме - room_name, room_status, channel_id, channel_label, а также owner по каждому channel_id
+4.1) на initial connect/reconnect получает immutable `i18n_library` (full maps), в MVP использует `en` для отображения текстов
 5) room technician выбирает audio device в выпадающих списках по каждому channel, планируемым to stream
 6) room technician самостоятельно убеждается, что нет sample rate ошибки и RMS analyzer показывает наличие звука
 7) room technician нажимает по подготовленным channels ON AIR button (UI channel status меняется на Connecting...) и самостоятельно убеждается, что нет device error, ожидает подтверждения от backend
@@ -198,6 +199,7 @@ publishers sets UI channel status FREE
 - Thread-safe аудио захват через callback sounddevice.InputStream. Используется неблокирующий callback вместо polling.
 - Ограничение размера очереди (maxsize=32). Предотвращает переполнение памяти и контролирует backpressure.
 - Изоляция потоков: один device → один AudioStream объект. Управление через словарь self.streams[track].
+- Qt thread-safety rule: любые чтения/изменения Qt widget state (например `currentData()`, `setText()`, `setEnabled()`) выполняются только в UI thread. Async/thread paths используют только snapshot values, переданные через сигналы/очереди.
 - Проверка samplerate устройства перед стартом. Избегает resampling и лишней нагрузки CPU.
 - UI сигнализация через Qt Signals (thread-safe обновления). UISignals.sound_update — безопасное обновление UI из async/threads.
 - publish только при owner == self publiser_id после нажатия ON AIR.

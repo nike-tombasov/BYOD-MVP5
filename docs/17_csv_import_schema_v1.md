@@ -1,0 +1,118 @@
+## 18. CSV import schema v1 (admin initial room data)
+
+Goal:
+- formalize Stage VII admin import format;
+- prevent partial/ambiguous room setup;
+- provide deterministic validation and error reporting.
+
+---
+
+### 18.1 File format
+
+- Encoding: UTF-8 (without BOM preferred).
+- Delimiter: comma `,`.
+- Quote char: `"` (RFC4180 compatible).
+- First row: header required.
+- Line ending: LF or CRLF allowed.
+
+---
+
+### 18.2 Required headers
+
+```text
+channel_id,channel_label,listen
+```
+
+Optional headers:
+- `room_name` (if repeated in each row, values must be identical)
+- `pin` (if repeated in each row, values must be identical)
+- `target_capacity` (room-level value; if repeated in each row, values must be identical)
+
+If optional headers are omitted, room-level values are taken from operator input or existing persisted config.
+For deploy-time room bootstrap, `target_capacity` is REQUIRED either in CSV or explicit admin input.
+
+---
+
+### 18.3 Field rules
+
+`channel_id`:
+- required
+- expected format: `channel_<number>`
+- unique per file (baseline check)
+
+`channel_label`:
+- required
+- 1..80 chars
+- UTF-8 text allowed
+
+`listen`:
+- required
+- allowed values: `true`, `false` (lowercase)
+
+`target_capacity` (room-level):
+- integer, required for deploy bootstrap
+- minimum recommended: 50
+- immutable during event runtime after deploy
+
+Additional rule:
+- `channel_0` may be imported as `listen=false` by default; if imported as true, operator confirmation is required before applying.
+
+---
+
+### 18.4 Example CSV
+
+```csv
+channel_id,channel_label,listen,room_name,pin
+channel_0,Floor,false,Main Hall,123456
+channel_1,English,true,Main Hall,123456
+channel_2,German,true,Main Hall,123456
+```
+
+---
+
+### 18.5 Validation and apply strategy (baseline)
+
+Process:
+1) parse and validate all rows first;
+2) if critical error exists -> reject import and show report;
+3) if valid -> write new `room_config_v1.json` atomically;
+4) compute and persist derived backend limits from `target_capacity`:
+   - `max_active_listeners = target_capacity * 1.05`
+   - `max_new_connections_per_sec = target_capacity / 15`
+5) emit `csv_import_applied` event to events log.
+
+Error payload example:
+```json
+{
+  "ok": false,
+  "errors": [
+    {"line": 3, "field": "channel_id", "code": "DUPLICATE_CHANNEL_ID", "message": "channel_1 already used"}
+  ]
+}
+```
+
+---
+
+### 18.6 Error codes (baseline)
+
+- `MISSING_HEADER`
+- `UNKNOWN_HEADER`
+- `INVALID_ENCODING`
+- `INVALID_CHANNEL_ID`
+- `DUPLICATE_CHANNEL_ID`
+- `EMPTY_CHANNEL_LABEL`
+- `INVALID_LISTEN_VALUE`
+- `INCONSISTENT_ROOM_NAME`
+- `INCONSISTENT_PIN`
+- `MISSING_TARGET_CAPACITY`
+- `INVALID_TARGET_CAPACITY`
+
+Strict validation profile (full regex, strict reject-all policy nuances) is postponed to open issues discussion.
+
+---
+
+### 18.7 Operator UX requirements
+
+- show line number + field + human-readable message;
+- provide downloadable error report (`.json`);
+- require explicit confirmation before replacing active config.

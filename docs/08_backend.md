@@ -4,6 +4,10 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 
 ### 9.1. Содержание базы данных Backend, управляемых admin
 
+Persistence formalization:
+- canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
+- canonical file for admin CSV import format and validation: `docs/17_csv_import_schema_v1.md`.
+
 1) room PIN (6-тизначный код)
 2) channel number - channel_id по форме channel_0, channel_1, channel_2...
 3) channel name - channel_label для каждого channel_id - не используется в SFU WebRTC и требуется только для визуального отображения в UI
@@ -11,6 +15,7 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 5) room name - room_name
 6) room status - room_status (close - по умолчанию во время запуска сервера)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
+8) target_capacity - целевое количество Listener для sizing/лимитов VPS (задаётся при deploy и не изменяется в runtime мероприятия)
 
 ### 9.2. Tokens and PIN
 
@@ -36,6 +41,12 @@ JWT token содержит:
 
 PIN устанавливается admin в момент разворачивания сервера VPS. Может быть изменён в любое время.
 При ручном изменении PIN все Publisher со статусом online не прекращают свою работу. Новый PIN потребуется room technician только для нового подключения. CONNECT к backend по старому PIN с этого момента невозможен.
+
+LiveKit API credentials policy:
+* LiveKit API key/secret генерируются автоматически во время VPS deploy.
+* `LIVEKIT_API_SECRET` для production deploy: длина строго `> 32` символов.
+* Секрет сохраняется синхронно в backend env/config и `livekit.yaml` конкретного VPS deploy.
+* Запрещено хранить production secret в git-репозитории.
 
 ### 9.3. Room status (room_status)
 
@@ -137,6 +148,7 @@ publishers sets UI channel status FREE
 получает PIN и hostname
 
 - при валидном PIN регистрирует Publisher в базе данных, генерирует и отправляет в ответ JWT token Identity publisher_id и персональный publisher_id, а также room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
+- на initial connect и reconnect дополнительно отправляет `i18n_library` (immutable base dictionaries)
 - при невалидном PIN возвращает сигнал об ошибке PIN
 
 2) Регулярный Heartbeats и обновление room_name, room_status, channel_id, channel_label, owner (по каждому channel_id)
@@ -155,6 +167,7 @@ publishers sets UI channel status FREE
 Listener использует WebSocket для:
 - channel list (channel_id, channel_label, listen)
 - room info (room_name, room_status, status custom text)
+- `i18n_library` (room/status texts dictionaries) на initial connect и reconnect
 
 Listener НЕ использует backend state (и в частности owner) для управления аудио.
 Аудио управление Listener осуществляется через события LiveKit и channel button condition.
@@ -228,15 +241,30 @@ Minimal protocol:
 * publisher_state
 * listener_state
 
-### 9.13. Multi-language data delivery for Listener UI (MVP)
+Mandatory backend broadcast concurrency rule:
+```
+lock state
+copy immutable snapshot
+unlock state
+send snapshot to clients (without lock)
+```
+
+Запрещено удерживать state lock во время сетевых send операций.
+
+Formal WS schema requirement:
+* отдельный документ контракта обязателен (типы сообщений, обязательные поля, коды ошибок, retry behavior);
+* до публикации schema v1 используются временные строгие runtime-валидации и совместимость через acceptance checklist.
+* canonical v1 document: `docs/15_ws_schema_v1.md`.
+
+### 9.13. Multi-language data delivery for Publisher and Listener UI (MVP)
 
 Rules:
 1) status texts (`custom_status_text_blocked`, `custom_status_text_closed`) и room name фиксируются при deploy и не меняются во время мероприятия;
-2) backend отправляет полный набор i18n данных Listener при initial WS connect и при reconnect;
-3) backend не получает `ui_lang` и не выбирает язык интерфейса за Listener;
-4) выбор языка выполняет только Listener page.
-5) i18n maps отправляются при initial WS connect и при reconnect; не рассылаются в каждый state update.
-6) status texts immutable during event runtime, кроме emergency override manual console command.
+2) backend отправляет полный набор i18n данных как immutable `i18n_library` при initial WS connect и reconnect **для Listener и Publisher**;
+3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
+4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
+5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
+6) deploy dictionaries immutable during event runtime, кроме emergency override manual console command;
 7) override применяется независимо для BLOCKED и CLOSED текстов.
 
 Mandatory dictionaries for each event:
@@ -244,6 +272,7 @@ Mandatory dictionaries for each event:
 - `ru` (required)
 
 Publisher UI receives English texts (`en`) in MVP.
+Publisher получает полный `i18n_library`, но в MVP рендерит английский (`en`) как основной UI язык.
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
@@ -293,6 +322,10 @@ override reset closed
 4) Active PLAY heartbeat control:
 - Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
 - если heartbeat отсутствует `60 sec`, backend переводит listener в reconnect-required состояние.
+
+5) No-active-PLAY timeout recovery:
+- если Listener ушёл в background без активного PLAY и backend WS-сессия считается потерянной, при возврате user на страницу выполняется auto-reconnect к backend;
+- fallback допускается как auto page reload, если reconnect flow не восстановил сессию штатно.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.
