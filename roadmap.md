@@ -113,7 +113,7 @@ Bring Listener web app to stable production-like baseline.
 2) local pinned LiveKit client file near listener JS
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction
-5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
+5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> autoreconnect required)
 6) cross-platform compatibility matrix (desktop/mobile major browsers)
 7) strict attach/detach race guards implementation:
 - `attachInProgress` / `detachInProgress`
