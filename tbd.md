@@ -23,3 +23,5 @@ Decision direction:
 - baseline values: 1.05 hard-limit reserve, target/15 conn rate, reconnect interval >2 sec, play heartbeat 10 sec/timeout 60 sec.
 
 Unresolved question: Listener UX note to reload page or autoreload/reconnect after timeout?
+
+## 6. Owner return after reconnect 
