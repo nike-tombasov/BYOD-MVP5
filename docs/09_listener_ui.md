@@ -327,6 +327,22 @@ Expected compatibility behavior:
 - if user selected a channel button (PLAY state), page went background, and user pressed pause/play in system mobile player **before heartbeat timeout**, Listener must resume playback of the same last selected channel button;
 - if timeout already happened and connection is `STALE`, system play action follows reconnect rules from 10.10.1.
 
+#### 10.10.3 Backend availability banner texts (Listener web page)
+
+Listener connection states and required texts:
+
+- `CONNECTING` (`0-3s`):
+  - `"Connecting..."`
+
+- `RETRYING` (`3-10s`):
+  - `"Trying to reconnect..."`
+
+- `UNAVAILABLE` (`>10s`):
+  - `"Unable to connect. Waiting for service..."`
+
+Rule when backend connection restored:
+- hide the backend-availability message immediately.
+
 ### 10.11. Future production features (no priority)
 
 Следующие идеи считаются future/no-priority и в MVP не реализуются:

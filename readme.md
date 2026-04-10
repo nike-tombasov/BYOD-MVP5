@@ -30,6 +30,7 @@ Documentation list:
 * 16_backend_persistence_json_v1.md
 * 17_csv_import_schema_v1.md
 * 18_stage_vii_ix_acceptance_checklist.md
+* 19_ux_scenarios.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md
