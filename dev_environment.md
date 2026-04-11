@@ -25,6 +25,7 @@ Listener:
 - opened locally in browser
 - no web server required for MVP
 - test via file:// or localhost
+- will move to Ubuntu VPS later
 
 Browser testing:
 - Chrome
@@ -35,6 +36,7 @@ Browser testing:
 LiveKit:
 - local LiveKit server for development
 - Windows build
+- will move to Ubuntu VPS later
 
 Development rules:
 - no Docker for MVP
@@ -46,7 +48,10 @@ Networking:
 - localhost testing
 - local IP allowed
 - no domain required
+- later public IP on VPS
 
 Goal:
 - full local end-to-end testing:
 publisher → backend → livekit → listener
+- then same full VPS end-to-end testing:
+online publisher → VPS backend → VPS livekit → VPS listener

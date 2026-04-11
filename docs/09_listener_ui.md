@@ -224,26 +224,7 @@ Implementation priority note:
 
 #### 10.9.3 Формат данных и fallback на стороне Listener
 
-Backend payload (пример):
-```json
-{
-  "room_name_i18n": {
-    "en": "Test room",
-    "ru": "Тестовая комната",
-    "zh": "考场"
-  },
-  "custom_status_text_blocked_i18n": {
-    "en": "Temporarily blocked",
-    "ru": "Временно заблокировано",
-    "zh": "暂时封锁"
-  },
-  "custom_status_text_closed_i18n": {
-    "en": "Room is closed",
-    "ru": "Зал закрыт",
-    "zh": "会场已关闭"
-  }
-}
-```
+Backend payload (образец): см. docs/08_backend.md, раздел 9.13.
 
 Listener language selection rule:
 ```
