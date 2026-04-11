@@ -1,13 +1,12 @@
 import argparse
 import asyncio
+import base64
 import contextlib
 import json
-import queue
 import socket
 import sys
 import threading
 import time
-from dataclasses import dataclass
 
 import numpy as np
 import sounddevice as sd
@@ -29,55 +28,27 @@ from PySide6.QtWidgets import (
 )
 from livekit import rtc
 
-SAMPLE_RATE = 48000
-CHANNELS = 2
-FRAME_SIZE = 960
-QUEUE_MAXSIZE = 32
-HEARTBEAT_SECONDS = 5
-CHANNEL_IDS = [f"channel_{i}" for i in range(32)]
-PIN_LENGTH = 6
-PUBLISHER_UI_VERSION = "v0.3"
-
-COLORS = {
-    "green": "#8FB996",
-    "yellow": "#C9B26A",
-    "red": "#B97A7A",
-    "blue": "#1F3A5F",
-    "text": "#D6D6D6",
-    "line": "#FFFFFF",
-    "bg": "#262626",
-    "field_bg": "#333333",
-    "dropdown_list_bg": "#3B3B3B",
-    "btn_disabled": "#4A4A4A",
-    "btn_active": "#6A6A6A",
-    "btn_hover": "#B3B3B3",
-}
-
-
-def status_html(text: str, color: str) -> str:
-    return f"<span style='color:{color}; font-size: 13px; font-weight: 700;'>■</span> {text}"
+from constants import (
+    CHANNEL_IDS,
+    CHANNELS,
+    COLORS,
+    FRAME_SIZE,
+    HEARTBEAT_SECONDS,
+    PIN_LENGTH,
+    PUBLISHER_UI_VERSION,
+    QUEUE_MAXSIZE,
+    SAMPLE_RATE,
+    TOKEN_REFRESH_LEAD_SECONDS,
+    TOKEN_REFRESH_POLL_SECONDS,
+    status_html,
+)
+from models import ChannelRuntime
+from state_store import PublisherStateStore
 
 
 class NoWheelComboBox(QComboBox):
     def wheelEvent(self, event):
         event.ignore()
-
-
-@dataclass
-class ChannelRuntime:
-    channel_id: str
-    label: str
-    listen: bool
-    owner: str | None
-    desired_on_air: bool = False
-    streaming: bool = False
-    audio_queue: queue.Queue[bytes] | None = None
-    capture_stream: sd.InputStream | None = None
-    source: rtc.AudioSource | None = None
-    local_track: rtc.LocalAudioTrack | None = None
-    track_sid: str | None = None
-    sender_task: asyncio.Task | None = None
-    last_actual_status: str = "FREE"
 
 
 class UISignals(QObject):
@@ -96,8 +67,10 @@ class UISignals(QObject):
 class PublisherUI(QWidget):
     def __init__(self, backend_ws_url: str, pin: str) -> None:
         super().__init__()
-        self.backend_ws_url = backend_ws_url
+        self.default_backend_ws_url = backend_ws_url
         self.default_pin = pin
+        self.state_store = PublisherStateStore()
+        self.persisted_state = self.state_store.load()
 
         self.signals = UISignals()
         self.signals.set_connect_status.connect(self._ui_set_connect_status)
@@ -114,8 +87,11 @@ class PublisherUI(QWidget):
         self.setWindowTitle(f"BYOD Publisher UI {PUBLISHER_UI_VERSION}")
         self.resize(600, 560)
 
+        self.backend_ws_url = ""
         self.publisher_id: str | None = None
+        self.pin: str = ""
         self.token: str | None = None
+        self.token_exp_ts: int = 0
         self.livekit_url: str | None = None
         self.backend_ws = None
         self.room: rtc.Room | None = None
@@ -126,13 +102,16 @@ class PublisherUI(QWidget):
 
         self.heartbeat_task: asyncio.Task | None = None
         self.backend_task: asyncio.Task | None = None
+        self.token_refresh_task: asyncio.Task | None = None
         self.shutting_down = False
 
         self.channel_rows: dict[str, dict] = {}
         self.channels: dict[str, ChannelRuntime] = {}
+        self.device_items: dict[str, tuple[int, int, int] | None] = {}
 
         self._build_layout()
         self._populate_all_devices()
+        self._restore_saved_inputs()
         self._set_preconnect_state()
 
     def _build_layout(self) -> None:
@@ -162,14 +141,6 @@ class PublisherUI(QWidget):
                 selection-background-color: {COLORS['btn_hover']};
                 selection-color: #1A1A1A;
             }}
-            QComboBox QAbstractItemView::item:hover {{
-                background-color: {COLORS['btn_hover']};
-                color: #1A1A1A;
-            }}
-            QComboBox QAbstractItemView::item:selected {{
-                background-color: {COLORS['btn_hover']};
-                color: #1A1A1A;
-            }}
             """
         )
 
@@ -182,11 +153,11 @@ class PublisherUI(QWidget):
         conn_row = QHBoxLayout()
         conn_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.ip_label = QLabel("Server IP:")
-        self.ip_input = QLineEdit(self.backend_ws_url)
+        self.ip_input = QLineEdit("")
         self.ip_input.setFixedWidth(250)
 
         self.pin_label = QLabel("PIN:")
-        self.pin_input = QLineEdit(self.default_pin)
+        self.pin_input = QLineEdit("")
         self.pin_input.setMaxLength(PIN_LENGTH)
         self.pin_input.setFixedWidth(90)
 
@@ -204,7 +175,6 @@ class PublisherUI(QWidget):
         root.addLayout(conn_row)
 
         self.connect_status = QLabel(status_html("IDLE", COLORS["blue"]))
-        self.connect_status.setAlignment(Qt.AlignmentFlag.AlignLeft)
         root.addWidget(self.connect_status)
 
         root.addWidget(self._line())
@@ -212,7 +182,6 @@ class PublisherUI(QWidget):
         self.room_name_label = QLabel("")
         self.room_name_label.setWordWrap(True)
         self.room_status_label = QLabel("")
-        self.room_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         root.addWidget(self.room_name_label)
         root.addWidget(self.room_status_label)
 
@@ -235,8 +204,33 @@ class PublisherUI(QWidget):
         channels_widget.setLayout(channels_layout)
         scroll.setWidget(channels_widget)
         root.addWidget(scroll)
-
         self.setLayout(root)
+
+    def _restore_saved_inputs(self) -> None:
+        stored_ip = self.persisted_state.get("backend_ws_url") or self.default_backend_ws_url
+        stored_pin = self.persisted_state.get("pin") or self.default_pin
+        self.ip_input.setText(stored_ip)
+        self.pin_input.setText(stored_pin)
+        for channel_id, device_label in self.persisted_state.get("device_map", {}).items():
+            row = self.channel_rows.get(channel_id)
+            if not row:
+                continue
+            idx = row["device_box"].findText(device_label)
+            if idx >= 0:
+                row["device_box"].setCurrentIndex(idx)
+
+    def _save_local_state(self) -> None:
+        payload = {
+            "backend_ws_url": self.ip_input.text().strip(),
+            "pin": self.pin_input.text().strip(),
+            "device_map": {},
+        }
+        for channel_id, row in self.channel_rows.items():
+            text = row["device_box"].currentText()
+            if text and text != "NONE":
+                payload["device_map"][channel_id] = text
+        self.persisted_state = payload
+        self.state_store.save(payload)
 
     def _line(self) -> QFrame:
         line = QFrame()
@@ -292,8 +286,7 @@ class PublisherUI(QWidget):
         if event.type() == QEvent.Type.Leave:
             for channel_id, row in self.channel_rows.items():
                 if row["button"] is obj:
-                    last_status = self.channels[channel_id].last_actual_status
-                    self._set_actual_channel_status(channel_id, last_status)
+                    self._set_actual_channel_status(channel_id, self.channels[channel_id].last_actual_status)
         return super().eventFilter(obj, event)
 
     def _set_preconnect_state(self) -> None:
@@ -307,21 +300,25 @@ class PublisherUI(QWidget):
     def _populate_all_devices(self) -> None:
         devices = sd.query_devices()
         apis = sd.query_hostapis()
-        usable = []
+        usable: list[tuple[int, str, int, int]] = []
         for idx, dev in enumerate(devices):
             if dev["max_input_channels"] <= 0:
                 continue
             api_name = apis[dev["hostapi"]]["name"]
             if "WASAPI" not in api_name:
                 continue
-            usable.append((idx, dev["name"], int(dev["default_samplerate"]), int(dev["max_input_channels"])))
+            sr = int(dev["default_samplerate"])
+            max_channels = int(dev["max_input_channels"])
+            name = dev["name"]
+            label = f"{name} | {sr} Hz | ch {max_channels}"
+            usable.append((idx, label, sr, max_channels))
 
         for row in self.channel_rows.values():
             box: NoWheelComboBox = row["device_box"]
-            for idx, name, sr, max_channels in usable:
-                box.addItem(f"{name} | {sr} Hz | ch {max_channels}", (idx, sr, max_channels))
+            for idx, label, sr, max_channels in usable:
+                box.addItem(label, (idx, sr, max_channels))
+                self.device_items[label] = (idx, sr, max_channels)
 
-    # UI slots
     def _ui_set_connect_status(self, text: str, color: str) -> None:
         self.connect_status.setText(status_html(text, COLORS[color]))
 
@@ -349,7 +346,6 @@ class PublisherUI(QWidget):
         btn: QPushButton = self.channel_rows[channel_id]["button"]
         btn.setText(text)
         btn.setEnabled(enabled)
-
         if mode == "streaming":
             btn.setStyleSheet("background-color: #A85A5A; color: #F0F0F0; border:1px solid #8F4747; border-radius:4px; padding:4px 10px;")
         elif mode == "pending":
@@ -375,17 +371,14 @@ class PublisherUI(QWidget):
         self._ui_set_connect_status(text, "red")
         self.connect_btn.setEnabled(True)
 
-    # helpers
     def _set_actual_channel_status(self, channel_id: str, text: str) -> None:
         color = "green"
-        if text in {"Connecting..."}:
+        if text == "Connecting...":
             color = "yellow"
-        elif text in {"NO DEVICE", "DEVICE ERROR", "Device error. Check system samplerate (48000 Hz only)"}:
+        elif text in {"NO DEVICE", "DEVICE ERROR", "Device error. Check system samplerate (48000 Hz only)", "CONNECTION ERROR"}:
             color = "red"
-        elif text in {"ENGAGED"}:
+        elif text == "ENGAGED":
             color = "blue"
-        elif text in {"STREAMING"}:
-            color = "green"
         self.signals.set_channel_status.emit(channel_id, text, color, False)
 
     def _refresh_channel_controls(self, channel_id: str) -> None:
@@ -403,26 +396,23 @@ class PublisherUI(QWidget):
             self.signals.set_device_enabled.emit(channel_id, True)
             return
 
-        # owner is None
         self.signals.set_device_enabled.emit(channel_id, True)
         if dev_data is None:
             self.signals.set_button_state.emit(channel_id, "ON AIR", False, "disabled")
             return
-
         _, sr, _ = dev_data
         if int(sr) != SAMPLE_RATE:
             self.signals.set_button_state.emit(channel_id, "ON AIR", False, "disabled")
             return
-
         self.signals.set_button_state.emit(channel_id, "ON AIR", True, "default")
 
-    # actions
     def _on_connect_clicked(self) -> None:
         self.connect_btn.setEnabled(False)
         self.signals.set_connect_status.emit("Connecting...", "yellow")
-        self.backend_ws_url = self.ip_input.text().strip() or self.backend_ws_url
-        pin = self.pin_input.text().strip() or self.default_pin
-        asyncio.run_coroutine_threadsafe(self._run_client(pin), self.loop)
+        self.backend_ws_url = self.ip_input.text().strip() or self.default_backend_ws_url
+        self.pin = self.pin_input.text().strip() or self.default_pin
+        self._save_local_state()
+        asyncio.run_coroutine_threadsafe(self._run_client(), self.loop)
 
     def _on_device_changed(self, channel_id: str) -> None:
         runtime = self.channels[channel_id]
@@ -433,17 +423,20 @@ class PublisherUI(QWidget):
         if dev_data is None:
             self._set_actual_channel_status(channel_id, "FREE")
             self._refresh_channel_controls(channel_id)
+            self._save_local_state()
             return
 
         _, sr, _ = dev_data
         if int(sr) != SAMPLE_RATE:
             self._set_actual_channel_status(channel_id, "Device error. Check system samplerate (48000 Hz only)")
             self._refresh_channel_controls(channel_id)
+            self._save_local_state()
             return
 
         if runtime.owner is None:
             self._set_actual_channel_status(channel_id, "FREE")
         self._refresh_channel_controls(channel_id)
+        self._save_local_state()
 
     def _on_onair_click(self, channel_id: str) -> None:
         runtime = self.channels[channel_id]
@@ -452,7 +445,6 @@ class PublisherUI(QWidget):
             return
 
         dev_data = self.channel_rows[channel_id]["device_box"].currentData()
-
         if not runtime.desired_on_air:
             if dev_data is None:
                 self.signals.set_channel_status.emit(channel_id, "NO DEVICE", "red", True)
@@ -461,7 +453,6 @@ class PublisherUI(QWidget):
             if int(sr) != SAMPLE_RATE:
                 self.signals.set_channel_status.emit(channel_id, "Device error. Check system samplerate (48000 Hz only)", "red", True)
                 return
-
             self._set_actual_channel_status(channel_id, "Connecting...")
             self.signals.set_device_enabled.emit(channel_id, False)
             self.signals.set_button_state.emit(channel_id, "STOP", True, "pending")
@@ -470,43 +461,50 @@ class PublisherUI(QWidget):
         else:
             runtime.desired_on_air = False
             msg = {"type": "stop", "publisher_id": self.publisher_id, "channel_id": channel_id, "request_off_air_ts": time.time()}
-
         asyncio.run_coroutine_threadsafe(self.backend_ws.send(json.dumps(msg)), self.loop)
 
-    # async
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
-    async def _run_client(self, pin: str) -> None:
+    def _parse_token_exp(self, token: str | None) -> int:
+        if not token or "." not in token:
+            return 0
         try:
-            await self._connect_backend(pin)
+            parts = token.split(".")
+            payload = parts[1] + "=" * (-len(parts[1]) % 4)
+            data = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8"))
+            return int(data.get("exp", 0))
+        except Exception:
+            return 0
+
+    async def _run_client(self) -> None:
+        try:
+            await self._connect_backend()
             await self._connect_livekit()
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self.backend_task = asyncio.create_task(self._backend_loop())
-            await asyncio.gather(self.heartbeat_task, self.backend_task)
+            self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
+            await asyncio.gather(self.heartbeat_task, self.backend_task, self.token_refresh_task)
         except RuntimeError as exc:
-            if str(exc) == "Invalid PIN":
-                self.signals.show_error.emit("Invalid PIN")
-                print("[publisher] runtime connection error: Invalid PIN")
-            else:
-                self.signals.show_error.emit("CONNECTION ERROR")
-                print(f"[publisher] runtime connection error: {exc}")
+            self.signals.show_error.emit("Invalid PIN" if str(exc) == "Invalid PIN" else "CONNECTION ERROR")
+            print(f"[publisher] runtime connection error: {exc}")
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self.signals.show_error.emit(f"CONNECTION ERROR")
+            self.signals.show_error.emit("CONNECTION ERROR")
             print(f"[publisher] connection error: {exc}")
 
-    async def _connect_backend(self, pin: str) -> None:
+    async def _connect_backend(self) -> None:
         self.backend_ws = await websockets.connect(self.backend_ws_url)
-        await self.backend_ws.send(json.dumps({"type": "connecting", "pin": pin, "hostname": socket.gethostname()}))
+        await self.backend_ws.send(json.dumps({"type": "connecting", "pin": self.pin, "hostname": socket.gethostname()}))
         msg = json.loads(await self.backend_ws.recv())
         if msg.get("type") == "error":
             raise RuntimeError("Invalid PIN" if msg.get("code") == "INVALID_PIN" else msg.get("code", "UNKNOWN"))
 
         self.publisher_id = msg["publisher_id"]
         self.token = msg["token"]
+        self.token_exp_ts = self._parse_token_exp(self.token)
         self.livekit_url = msg["livekit_url"]
         self.signals.set_connect_status.emit("CONNECTED", "green")
         self._apply_state(msg["state"])
@@ -524,28 +522,73 @@ class PublisherUI(QWidget):
                 with contextlib.suppress(Exception):
                     await self.backend_ws.send(json.dumps({"type": "heartbeat", "ts": time.time()}))
 
+    async def _token_refresh_loop(self) -> None:
+        while not self.shutting_down:
+            await asyncio.sleep(TOKEN_REFRESH_POLL_SECONDS)
+            if not self.room or not self.room.isconnected():
+                continue
+            if self.token_exp_ts <= 0:
+                continue
+            remaining = self.token_exp_ts - int(time.time())
+            if remaining > TOKEN_REFRESH_LEAD_SECONDS:
+                continue
+            print(f"[publisher] token refresh window reached, remaining={remaining}s")
+            await self._reconnect_livekit_with_current_token()
+            self.token_exp_ts = int(time.time()) + 24 * 3600
+
+    async def _reconnect_livekit_with_current_token(self) -> None:
+        if not self.livekit_url or not self.token:
+            return
+        active_channels = [cid for cid, rt in self.channels.items() if rt.owner == self.publisher_id and rt.desired_on_air]
+        for cid in active_channels:
+            self._set_actual_channel_status(cid, "Connecting...")
+        if self.room:
+            with contextlib.suppress(Exception):
+                await self.room.disconnect()
+        self.room = rtc.Room()
+        await self.room.connect(self.livekit_url, self.token)
+        for cid in active_channels:
+            await self._publish_track_without_reopening_device(cid)
+
+    async def _publish_track_without_reopening_device(self, channel_id: str) -> None:
+        rt = self.channels[channel_id]
+        if rt.capture_stream is None:
+            await self._ensure_streaming(channel_id)
+            return
+        rt.source = rtc.AudioSource(sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
+        rt.local_track = rtc.LocalAudioTrack.create_audio_track(channel_id, rt.source)
+        publication = await self.room.local_participant.publish_track(rt.local_track)
+        rt.track_sid = publication.sid
+        rt.streaming = True
+        self._set_actual_channel_status(channel_id, "STREAMING")
+        self._refresh_channel_controls(channel_id)
+
     async def _backend_loop(self) -> None:
         async for raw in self.backend_ws:
             if self.shutting_down:
                 return
             msg = json.loads(raw)
-            if msg.get("type") == "state":
+            msg_type = msg.get("type")
+            if msg_type == "state":
                 self._apply_state(msg["state"])
-            elif msg.get("type") == "on_air_rejected":
+            elif msg_type == "token_refresh":
+                token = msg.get("token")
+                if token:
+                    print("[publisher] got token_refresh from backend")
+                    self.token = token
+                    self.token_exp_ts = self._parse_token_exp(token)
+                    await self._reconnect_livekit_with_current_token()
+            elif msg_type == "on_air_rejected":
                 cid = msg.get("channel_id")
                 if cid in self.channels:
                     self.channels[cid].desired_on_air = False
                     self._set_actual_channel_status(cid, "ENGAGED")
                     self._refresh_channel_controls(cid)
-            elif msg.get("type") == "error":
-                if msg.get("code") == "INVALID_PIN":
-                    self.signals.show_error.emit("Invalid PIN")
-                else:
-                    self.signals.show_error.emit("CONNECTION ERROR")
+            elif msg_type == "error":
+                self.signals.show_error.emit("Invalid PIN" if msg.get("code") == "INVALID_PIN" else "CONNECTION ERROR")
 
     def _apply_state(self, state: dict) -> None:
         self.signals.set_room_info.emit(state.get("room_name", ""), state.get("room_status", ""))
-
         known = {c["channel_id"]: c for c in state.get("channels", [])}
         for cid in CHANNEL_IDS:
             self.signals.set_row_visible.emit(cid, cid in known)
@@ -553,7 +596,6 @@ class PublisherUI(QWidget):
         for channel_id, ch in known.items():
             if channel_id not in self.channels:
                 continue
-
             runtime = self.channels[channel_id]
             runtime.owner = ch.get("owner")
             runtime.label = ch.get("channel_label", "N/A")
@@ -594,7 +636,8 @@ class PublisherUI(QWidget):
             self._refresh_channel_controls(channel_id)
             return
 
-        rt.audio_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
+        if rt.audio_queue is None:
+            rt.audio_queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
 
         def callback(indata, frames, time_info, status):
             if status:
@@ -604,36 +647,41 @@ class PublisherUI(QWidget):
                 audio = np.repeat(audio, 2, axis=1)
             elif audio.shape[1] > 2:
                 audio = audio[:, :2]
-
             rms = float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
             self.signals.set_channel_sound.emit(channel_id, "SOUND OK" if rms > 0.001 else "NO SOUND")
-
             pcm = (audio[:, :2] * 32767).astype(np.int16).tobytes()
             try:
-                rt.audio_queue.put_nowait(pcm)
-            except queue.Full:
-                _ = rt.audio_queue.get_nowait()
-                rt.audio_queue.put_nowait(pcm)
+                self.loop.call_soon_threadsafe(self._queue_put_drop_oldest, rt.audio_queue, pcm)
+            except Exception as exc:
+                print(f"[audio:{channel_id}] queue error: {exc}")
 
-        rt.capture_stream = sd.InputStream(
-            device=int(device_id),
-            samplerate=SAMPLE_RATE,
-            channels=min(max_channels, 2),
-            blocksize=FRAME_SIZE,
-            dtype="float32",
-            callback=callback,
-        )
-        rt.capture_stream.start()
+        if rt.capture_stream is None:
+            rt.capture_stream = sd.InputStream(
+                device=int(device_id),
+                samplerate=SAMPLE_RATE,
+                channels=min(max_channels, 2),
+                blocksize=FRAME_SIZE,
+                dtype="float32",
+                callback=callback,
+            )
+            rt.capture_stream.start()
 
         rt.source = rtc.AudioSource(sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
         rt.local_track = rtc.LocalAudioTrack.create_audio_track(channel_id, rt.source)
         publication = await self.room.local_participant.publish_track(rt.local_track)
         rt.track_sid = publication.sid
         rt.streaming = True
-
         self._set_actual_channel_status(channel_id, "STREAMING")
         self._refresh_channel_controls(channel_id)
-        rt.sender_task = asyncio.create_task(self._sender_loop(channel_id))
+        if rt.sender_task is None or rt.sender_task.done():
+            rt.sender_task = asyncio.create_task(self._sender_loop(channel_id))
+
+    def _queue_put_drop_oldest(self, q: asyncio.Queue, pcm: bytes) -> None:
+        if q.full():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                _ = q.get_nowait()
+        with contextlib.suppress(asyncio.QueueFull):
+            q.put_nowait(pcm)
 
     async def _ensure_stopped(self, channel_id: str) -> None:
         rt = self.channels[channel_id]
@@ -642,7 +690,6 @@ class PublisherUI(QWidget):
             return
 
         rt.streaming = False
-
         if rt.sender_task:
             rt.sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -669,16 +716,11 @@ class PublisherUI(QWidget):
     async def _sender_loop(self, channel_id: str) -> None:
         rt = self.channels[channel_id]
         try:
-            while rt.streaming and not self.shutting_down:
-                if not rt.source or not rt.audio_queue:
+            while not self.shutting_down:
+                if not rt.streaming or not rt.source or not rt.audio_queue:
                     await asyncio.sleep(0.02)
                     continue
-                try:
-                    pcm = rt.audio_queue.get_nowait()
-                except queue.Empty:
-                    await asyncio.sleep(0.01)
-                    continue
-
+                pcm = await rt.audio_queue.get()
                 frame = rtc.AudioFrame(
                     data=pcm,
                     sample_rate=SAMPLE_RATE,
@@ -697,7 +739,7 @@ class PublisherUI(QWidget):
             with contextlib.suppress(Exception):
                 await self._ensure_stopped(cid)
 
-        for task in [self.heartbeat_task, self.backend_task]:
+        for task in [self.heartbeat_task, self.backend_task, self.token_refresh_task]:
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -712,6 +754,7 @@ class PublisherUI(QWidget):
                 await self.room.disconnect()
 
     def closeEvent(self, event) -> None:
+        self._save_local_state()
         future = asyncio.run_coroutine_threadsafe(self._shutdown_async(), self.loop)
         with contextlib.suppress(Exception):
             future.result(timeout=3)
