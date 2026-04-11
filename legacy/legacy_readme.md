@@ -44,6 +44,9 @@ Stage V result analysis (short):
 Include:
 * legacy/stage_v/README.md
 * legacy/stage_v/publisherv0.3/main.py
+* legacy/stage_v/backend/main.py
+* legacy/stage_v/listener/index.html
+* legacy/stage_v/listener/listener.js
 * legacy/stage_v/roadmap_stage_v_completed.md
 * legacy/stage_v/mvp_rules_stage_v.md
 * legacy/stage_v/13_mvp_status_stage_v.md
