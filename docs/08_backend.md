@@ -15,6 +15,7 @@ Persistence formalization:
 5) room name - room_name
 6) room status - room_status (close - по умолчанию во время запуска сервера)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
+8) target_capacity - целевое количество Listener для sizing/лимитов VPS (задаётся при deploy и не изменяется в runtime мероприятия)
 
 ### 9.2. Tokens and PIN
 
@@ -342,6 +343,10 @@ override reset closed
 4) Active PLAY heartbeat control:
 - Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
 - если heartbeat отсутствует `60 sec`, backend переводит listener в reconnect-required состояние.
+
+5) No-active-PLAY timeout recovery:
+- если Listener ушёл в background без активного PLAY и backend WS-сессия считается потерянной, при возврате user на страницу выполняется auto-reconnect к backend;
+- fallback допускается как auto page reload, если reconnect flow не восстановил сессию штатно.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.

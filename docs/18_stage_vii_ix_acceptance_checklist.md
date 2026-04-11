@@ -27,6 +27,7 @@ Result statuses:
 4) CSV import
 - `docs/17_csv_import_schema_v1.md` validation passes.
 - invalid CSV rejected atomically (no partial apply).
+- `target_capacity` is imported and persisted as immutable event parameter.
 
 5) Operator commands
 - room_status / recording / label / listen / override commands work without restart.
@@ -72,7 +73,17 @@ Result statuses:
 4) Active PLAY heartbeat
 - 10 sec heartbeat and 60 sec timeout path verified end-to-end.
 
-5) Browser matrix (minimum)
+5) No-active-PLAY return path
+- after background timeout with no active PLAY, return to page triggers auto-reconnect (or auto-reload fallback).
+
+6) Connection recovery state machine
+- `CONNECTED` -> `STALE` -> `RECONNECTING` transitions verified for heartbeat timeout / WS disconnect / LiveKit disconnect / token expiry.
+- channel button click always works as mandatory reconnect trigger in `STALE`.
+
+7) Mobile system player behavior
+- on Android/iOS background pause->play before heartbeat timeout resumes last selected channel.
+
+8) Browser matrix (minimum)
 - Chrome latest-1 (Windows, Android)
 - Edge latest-1 (Windows)
 - Safari latest-1 (iOS/macOS)

@@ -147,6 +147,8 @@ Rules:
 - Publisher heartbeats: `play_active` may be omitted.
 - Listener heartbeats: when active PLAY, send every 10 sec (MVP baseline).
 - heartbeat timeout behavior follows backend policy (60 sec for active PLAY).
+- when listener returns from background with no active PLAY and stale WS session, client should auto-reconnect (or auto-reload fallback).
+- listener client connection state machine (`CONNECTED`/`STALE`/`RECONNECTING`) is defined in `docs/09_listener_ui.md` section 10.10.1.
 
 ---
 
@@ -310,6 +312,7 @@ Core error codes:
 - `CHANNEL_NOT_FOUND`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
+- `RECONNECT_REQUIRED`
 
 Retry baseline:
 - retryable=false: do not auto-retry (show operator/user state).

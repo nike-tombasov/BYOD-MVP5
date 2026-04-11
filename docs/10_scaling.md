@@ -2,6 +2,12 @@
 
 1 room = 1 VPS (арендуемая мощность зависит от планируемой конференции) 
 
+`target_capacity` definition:
+- planned target number of conference participants (listeners) for one room/VPS sizing;
+- entered by admin during deploy together with room data;
+- immutable during event runtime (until next deploy/reconfiguration cycle).
+- derived limits (`max_active_listeners`, `max_new_connections_per_sec`) are calculated once in backend from `target_capacity` and remain fixed until event end.
+
 Ожидаемые пределы на 1 VPS (не должно быть предограничением системы):
 * 500-3000 users
 * до 32 channels

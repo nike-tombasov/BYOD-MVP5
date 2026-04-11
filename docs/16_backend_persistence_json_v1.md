@@ -46,6 +46,7 @@ For log files:
   "room_id": "room_main",
   "pin": "123456",
   "room_name": "Main Hall",
+  "target_capacity": 300,
   "channels": [
     {"channel_id": "channel_0", "channel_label": "Floor", "listen": false},
     {"channel_id": "channel_1", "channel_label": "English", "listen": true}
@@ -58,6 +59,7 @@ Rules:
 - `channel_id` unique.
 - `channel_0.listen` default false.
 - reserve channels follow deployment policy.
+- `target_capacity` immutable for current event runtime.
 
 ---
 

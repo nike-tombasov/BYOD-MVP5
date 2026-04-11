@@ -60,7 +60,7 @@ for VPS pilot runs.
 - canonical file: `docs/15_ws_schema_v1.md`
 11) immutable i18n library transport (must be implemented within near stages):
 - backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
-- base deploy dictionaries are immutable duringr event runtime
+- base deploy dictionaries are immutable during event runtime
 - emergency override remains separate runtime overlay mechanism
 
 ### Exit criteria
@@ -113,7 +113,10 @@ Bring Listener web app to stable production-like baseline.
 2) local pinned LiveKit client file near listener JS
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction
-5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> autoreconnect required)
+5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
+   - include return-from-background path: no-active-PLAY timeout must recover via auto-reconnect (or auto page reload fallback)
+   - follow Listener connection recovery rules: `docs/09_listener_ui.md` section 10.10.1
+   - implement Listener connection-state UX messages: `CONNECTING` / `RETRYING` / `UNAVAILABLE`
 6) cross-platform compatibility matrix (desktop/mobile major browsers)
 7) strict attach/detach race guards implementation:
 - `attachInProgress` / `detachInProgress`

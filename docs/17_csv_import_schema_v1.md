@@ -26,8 +26,10 @@ channel_id,channel_label,listen
 Optional headers:
 - `room_name` (if repeated in each row, values must be identical)
 - `pin` (if repeated in each row, values must be identical)
+- `target_capacity` (room-level value; if repeated in each row, values must be identical)
 
 If optional headers are omitted, room-level values are taken from operator input or existing persisted config.
+For deploy-time room bootstrap, `target_capacity` is REQUIRED either in CSV or explicit admin input.
 
 ---
 
@@ -46,6 +48,11 @@ If optional headers are omitted, room-level values are taken from operator input
 `listen`:
 - required
 - allowed values: `true`, `false` (lowercase)
+
+`target_capacity` (room-level):
+- integer, required for deploy bootstrap
+- minimum recommended: 50
+- immutable during event runtime after deploy
 
 Additional rule:
 - `channel_0` may be imported as `listen=false` by default; if imported as true, operator confirmation is required before applying.
@@ -69,7 +76,10 @@ Process:
 1) parse and validate all rows first;
 2) if critical error exists -> reject import and show report;
 3) if valid -> write new `room_config_v1.json` atomically;
-4) emit `csv_import_applied` event to events log.
+4) compute and persist derived backend limits from `target_capacity`:
+   - `max_active_listeners = target_capacity * 1.05`
+   - `max_new_connections_per_sec = target_capacity / 15`
+5) emit `csv_import_applied` event to events log.
 
 Error payload example:
 ```json
@@ -94,6 +104,8 @@ Error payload example:
 - `INVALID_LISTEN_VALUE`
 - `INCONSISTENT_ROOM_NAME`
 - `INCONSISTENT_PIN`
+- `MISSING_TARGET_CAPACITY`
+- `INVALID_TARGET_CAPACITY`
 
 Strict validation profile (full regex, strict reject-all policy nuances) is postponed to open issues discussion.
 
