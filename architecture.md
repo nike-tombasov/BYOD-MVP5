@@ -81,7 +81,10 @@ docs/18_stage_vii_ix_acceptance_checklist.md
 24. UX scenarios
 docs/19_ux_scenarios.md
 
-25. Legacy implementations
+25. Unresolved bugs
+docs/20_unresolved_bugs.md
+
+26. Legacy implementations
 legacy/legacy_readme.md
 
 Core rules:

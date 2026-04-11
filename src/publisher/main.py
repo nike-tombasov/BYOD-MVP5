@@ -569,8 +569,12 @@ class PublisherUI(QWidget):
         if self.room is not None:
             return
         self.room = rtc.Room()
-        await self.room.connect(self.livekit_url, self.token)
-        self._log("LiveKit connected")
+        try:
+            await self.room.connect(self.livekit_url, self.token)
+            self._log("LiveKit connected")
+        except Exception as exc:
+            self._log(f"LiveKit connect failed: {exc}")
+            raise
 
     async def _heartbeat_loop(self) -> None:
         while not self.shutting_down:
@@ -679,6 +683,12 @@ class PublisherUI(QWidget):
         rt = self.channels[channel_id]
         if rt.streaming:
             return
+        if self.room is None or not self.room.isconnected():
+            self._log(f"LiveKit unavailable on ON AIR: {channel_id}")
+            self._set_actual_channel_status(channel_id, "CONNECTION ERROR")
+            rt.desired_on_air = False
+            self._refresh_channel_controls(channel_id)
+            return
 
         dev_data = self.channel_rows[channel_id]["device_box"].currentData()
         if dev_data is None:
@@ -726,7 +736,14 @@ class PublisherUI(QWidget):
 
         rt.source = rtc.AudioSource(sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
         rt.local_track = rtc.LocalAudioTrack.create_audio_track(channel_id, rt.source)
-        publication = await self.room.local_participant.publish_track(rt.local_track)
+        try:
+            publication = await self.room.local_participant.publish_track(rt.local_track)
+        except Exception as exc:
+            self._log(f"LiveKit publish failed for {channel_id}: {exc}")
+            self._set_actual_channel_status(channel_id, "CONNECTION ERROR")
+            rt.desired_on_air = False
+            self._refresh_channel_controls(channel_id)
+            return
         rt.track_sid = publication.sid
         rt.streaming = True
         self._set_actual_channel_status(channel_id, "STREAMING")
