@@ -1,11 +1,16 @@
 import asyncio
+import csv
+import json
+import os
 import time
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 from itertools import count
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api as livekit_api
 
@@ -19,6 +24,14 @@ LIVEKIT_API_SECRET = "secret"
 JWT_LIFETIME_SECONDS = 2 * 60 * 60
 HEARTBEAT_TIMEOUT_SECONDS = 30
 SCHEMA_VERSION = 1
+TARGET_CAPACITY = 300
+MAX_ACTIVE_LISTENERS = int(TARGET_CAPACITY * 1.05)
+MAX_NEW_CONNECTIONS_PER_SEC = max(1, int(TARGET_CAPACITY / 15))
+
+DATA_DIR = Path("backend_data")
+ROOM_CONFIG_PATH = DATA_DIR / "room_config_v1.json"
+RUNTIME_STATE_PATH = DATA_DIR / "runtime_state_v1.json"
+RECORDING_STATE_PATH = DATA_DIR / "recording_state_v1.json"
 
 I18N_LIBRARY = {
     "room_name_i18n": {"en": ROOM_NAME},
@@ -81,7 +94,7 @@ class ServerState:
     listener_counter: int = 0
 
 
-app = FastAPI(title="BYOD Backend MVP Stage VII - implementation 1")
+app = FastAPI(title="BYOD Backend MVP Stage VII - implementation 2-3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -93,6 +106,8 @@ app.add_middleware(
 state = ServerState()
 state_lock = asyncio.Lock()
 request_counter = count(1)
+listener_connect_sec = int(time.time())
+listener_connect_count = 0
 
 
 @app.get("/health")
@@ -106,6 +121,141 @@ def now_ts() -> int:
 
 def next_request_id(prefix: str = "server") -> str:
     return f"{prefix}-{next(request_counter)}"
+
+
+def update_derived_limits(target_capacity: int) -> None:
+    global TARGET_CAPACITY, MAX_ACTIVE_LISTENERS, MAX_NEW_CONNECTIONS_PER_SEC
+    TARGET_CAPACITY = target_capacity
+    MAX_ACTIVE_LISTENERS = int(target_capacity * 1.05)
+    MAX_NEW_CONNECTIONS_PER_SEC = max(1, int(target_capacity / 15))
+
+
+def ensure_data_dir() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
+def current_day_suffix() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
+
+
+def get_connections_log_path() -> Path:
+    return DATA_DIR / f"connections_log_{current_day_suffix()}.jsonl"
+
+
+def get_events_log_path() -> Path:
+    return DATA_DIR / f"events_log_{current_day_suffix()}.jsonl"
+
+
+def append_jsonl(path: Path, event: dict[str, Any]) -> None:
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        f.flush()
+
+
+def load_json_if_exists(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def persist_room_config() -> None:
+    payload = {
+        "schema_version": 1,
+        "room_id": "room_main",
+        "pin": PIN,
+        "room_name": ROOM_NAME,
+        "target_capacity": TARGET_CAPACITY,
+        "channels": [
+            {
+                "channel_id": channel["channel_id"],
+                "channel_label": channel["channel_label"],
+                "listen": channel.get("listen", True),
+            }
+            for channel in state.channels
+        ],
+        "updated_ts": now_ts(),
+    }
+    atomic_write_json(ROOM_CONFIG_PATH, payload)
+
+
+def persist_runtime_state() -> None:
+    payload = {
+        "schema_version": 1,
+        "room_status": ROOM_STATUS,
+        "owners": {channel["channel_id"]: channel.get("owner") for channel in state.channels},
+        "publisher_online": {publisher_id: True for publisher_id in state.publishers.keys()},
+        "overrides": {"blocked": None, "closed": None},
+        "updated_ts": now_ts(),
+    }
+    atomic_write_json(RUNTIME_STATE_PATH, payload)
+
+
+def persist_recording_state() -> None:
+    payload = {
+        "schema_version": 1,
+        "recording_active": False,
+        "active_files": [],
+        "updated_ts": now_ts(),
+    }
+    atomic_write_json(RECORDING_STATE_PATH, payload)
+
+
+def load_from_persistence() -> None:
+    global PIN, ROOM_NAME, ROOM_STATUS
+
+    room_config = load_json_if_exists(ROOM_CONFIG_PATH)
+    if room_config:
+        PIN = str(room_config.get("pin") or PIN)
+        ROOM_NAME = str(room_config.get("room_name") or ROOM_NAME)
+        target_capacity = int(room_config.get("target_capacity") or TARGET_CAPACITY)
+        update_derived_limits(target_capacity)
+
+        persisted_channels = room_config.get("channels")
+        if isinstance(persisted_channels, list) and persisted_channels:
+            owners = {channel["channel_id"]: channel.get("owner") for channel in state.channels}
+            state.channels = []
+            for channel in persisted_channels:
+                cid = str(channel.get("channel_id") or "")
+                if not cid:
+                    continue
+                state.channels.append(
+                    {
+                        "channel_id": cid,
+                        "channel_label": str(channel.get("channel_label") or cid),
+                        "listen": bool(channel.get("listen", True)),
+                        "owner": owners.get(cid),
+                    }
+                )
+
+    runtime_state = load_json_if_exists(RUNTIME_STATE_PATH)
+    if runtime_state:
+        ROOM_STATUS = str(runtime_state.get("room_status") or ROOM_STATUS)
+        owners = runtime_state.get("owners") or {}
+        if isinstance(owners, dict):
+            for channel in state.channels:
+                channel["owner"] = owners.get(channel["channel_id"])
+
+    I18N_LIBRARY["room_name_i18n"]["en"] = ROOM_NAME
+
+
+def log_connection(event: str, **fields: Any) -> None:
+    payload = {"ts": now_ts(), "event": event, **fields}
+    append_jsonl(get_connections_log_path(), payload)
+
+
+def log_event(event: str, **fields: Any) -> None:
+    payload = {"ts": now_ts(), "event": event, **fields}
+    append_jsonl(get_events_log_path(), payload)
 
 
 def make_envelope(msg_type: str, payload: dict[str, Any], request_id: str | None = None) -> dict[str, Any]:
@@ -202,16 +352,18 @@ def find_channel(channels: list[dict[str, Any]], channel_id: str | None) -> dict
 
 def get_broadcast_snapshot() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[PublisherSession], list[WebSocket]]:
     channels_snapshot = [dict(ch) for ch in state.channels]
-    publisher_state = build_publisher_state_snapshot(channels_snapshot)
-    listener_state = build_listener_state_snapshot(channels_snapshot)
-    legacy_state = build_legacy_state_snapshot(channels_snapshot)
     return (
-        publisher_state,
-        listener_state,
-        legacy_state,
+        build_publisher_state_snapshot(channels_snapshot),
+        build_listener_state_snapshot(channels_snapshot),
+        build_legacy_state_snapshot(channels_snapshot),
         list(state.publishers.values()),
         list(state.listeners),
     )
+
+
+async def persist_state_locked() -> None:
+    persist_room_config()
+    persist_runtime_state()
 
 
 async def broadcast_states() -> None:
@@ -244,6 +396,7 @@ async def broadcast_states() -> None:
             await drop_publisher_locked(publisher_id)
         for ws in dead_listeners:
             state.listeners.discard(ws)
+        await persist_state_locked()
 
 
 async def send_connect_success(
@@ -341,6 +494,140 @@ async def drop_publisher_locked(publisher_id: str) -> None:
             channel["off_air_ts"] = now_ts()
 
     state.publishers.pop(publisher_id, None)
+    log_connection("publisher_disconnected", publisher_id=publisher_id)
+
+
+def validate_csv_rows(rows: list[dict[str, str]], headers: list[str]) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    required_headers = {"channel_id", "channel_label", "listen"}
+    optional_headers = {"room_name", "pin", "target_capacity"}
+
+    header_set = set(headers)
+    missing = required_headers - header_set
+    unknown = header_set - required_headers - optional_headers
+    if missing:
+        for field in sorted(missing):
+            errors.append({"line": 1, "field": field, "code": "MISSING_HEADER", "message": f"Header {field} is required"})
+    if unknown:
+        for field in sorted(unknown):
+            errors.append({"line": 1, "field": field, "code": "UNKNOWN_HEADER", "message": f"Header {field} is not allowed"})
+
+    seen_ids: set[str] = set()
+    room_name_values: set[str] = set()
+    pin_values: set[str] = set()
+    target_capacity_values: set[str] = set()
+
+    for idx, row in enumerate(rows, start=2):
+        channel_id = (row.get("channel_id") or "").strip()
+        channel_label = (row.get("channel_label") or "").strip()
+        listen = (row.get("listen") or "").strip()
+
+        if not channel_id.startswith("channel_") or not channel_id.replace("channel_", "", 1).isdigit():
+            errors.append({"line": idx, "field": "channel_id", "code": "INVALID_CHANNEL_ID", "message": f"Invalid channel_id: {channel_id}"})
+        if channel_id in seen_ids:
+            errors.append({"line": idx, "field": "channel_id", "code": "DUPLICATE_CHANNEL_ID", "message": f"{channel_id} already used"})
+        seen_ids.add(channel_id)
+
+        if len(channel_label) < 1 or len(channel_label) > 80:
+            errors.append({"line": idx, "field": "channel_label", "code": "EMPTY_CHANNEL_LABEL", "message": "channel_label must be 1..80 chars"})
+
+        if listen not in {"true", "false"}:
+            errors.append({"line": idx, "field": "listen", "code": "INVALID_LISTEN_VALUE", "message": f"listen must be true/false, got: {listen}"})
+
+        room_name = (row.get("room_name") or "").strip()
+        if room_name:
+            room_name_values.add(room_name)
+
+        pin = (row.get("pin") or "").strip()
+        if pin:
+            pin_values.add(pin)
+
+        target_capacity = (row.get("target_capacity") or "").strip()
+        if target_capacity:
+            target_capacity_values.add(target_capacity)
+
+    if len(room_name_values) > 1:
+        errors.append({"line": 1, "field": "room_name", "code": "INCONSISTENT_ROOM_NAME", "message": "room_name must be identical in all rows"})
+    if len(pin_values) > 1:
+        errors.append({"line": 1, "field": "pin", "code": "INCONSISTENT_PIN", "message": "pin must be identical in all rows"})
+
+    if not target_capacity_values:
+        errors.append({"line": 1, "field": "target_capacity", "code": "MISSING_TARGET_CAPACITY", "message": "target_capacity required in CSV for now"})
+    elif len(target_capacity_values) > 1:
+        errors.append({"line": 1, "field": "target_capacity", "code": "INVALID_TARGET_CAPACITY", "message": "target_capacity must be identical in all rows"})
+    else:
+        value = next(iter(target_capacity_values))
+        if not value.isdigit() or int(value) <= 0:
+            errors.append({"line": 1, "field": "target_capacity", "code": "INVALID_TARGET_CAPACITY", "message": "target_capacity must be positive integer"})
+
+    return errors
+
+
+@app.post("/admin/import_csv")
+async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    global PIN, ROOM_NAME
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_ENCODING", "message": "File must be UTF-8"}]}
+
+    reader = csv.DictReader(StringIO(text))
+    rows = list(reader)
+    headers = reader.fieldnames or []
+
+    errors = validate_csv_rows(rows, headers)
+    if errors:
+        return {"ok": False, "errors": errors}
+
+    first = rows[0]
+    imported_room_name = (first.get("room_name") or ROOM_NAME).strip() or ROOM_NAME
+    imported_pin = (first.get("pin") or PIN).strip() or PIN
+    imported_target_capacity = int((first.get("target_capacity") or TARGET_CAPACITY))
+
+    imported_channels = []
+    for row in rows:
+        imported_channels.append(
+            {
+                "channel_id": row["channel_id"].strip(),
+                "channel_label": row["channel_label"].strip(),
+                "listen": row["listen"].strip() == "true",
+                "owner": None,
+            }
+        )
+
+    async with state_lock:
+        PIN = imported_pin
+        ROOM_NAME = imported_room_name
+        I18N_LIBRARY["room_name_i18n"]["en"] = ROOM_NAME
+        update_derived_limits(imported_target_capacity)
+
+        state.channels = imported_channels
+        for session in state.publishers.values():
+            session.online = True
+
+        await persist_state_locked()
+
+    log_event(
+        "csv_import_applied",
+        request_id=next_request_id("csv-import"),
+        target_capacity=TARGET_CAPACITY,
+        max_active_listeners=MAX_ACTIVE_LISTENERS,
+        max_new_connections_per_sec=MAX_NEW_CONNECTIONS_PER_SEC,
+    )
+
+    await broadcast_states()
+    return {
+        "ok": True,
+        "applied": {
+            "room_name": ROOM_NAME,
+            "target_capacity": TARGET_CAPACITY,
+            "max_active_listeners": MAX_ACTIVE_LISTENERS,
+            "max_new_connections_per_sec": MAX_NEW_CONNECTIONS_PER_SEC,
+            "channels": len(state.channels),
+        },
+    }
 
 
 @app.websocket("/ws/publisher")
@@ -379,7 +666,9 @@ async def publisher_ws(websocket: WebSocket) -> None:
                         connected_at_ts=float(now_ts()),
                         last_seen_ts=float(now_ts()),
                     )
+                    await persist_state_locked()
                     print(f"[backend] publisher connected publisher_id={publisher_id}")
+                    log_connection("publisher_connected", publisher_id=publisher_id, hostname=hostname)
 
                 await send_connect_success(
                     websocket=websocket,
@@ -417,12 +706,16 @@ async def publisher_ws(websocket: WebSocket) -> None:
                     if owner is None:
                         channel["owner"] = publisher_id
                         channel["on_air_ts"] = now_ts()
+                        await persist_state_locked()
+                        log_event("on_air_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                         print(f"[backend] ON_AIR granted channel={channel_id} owner={publisher_id}")
                     elif owner == publisher_id:
                         channel["request_on_air_ts"] = payload.get("request_on_air_ts")
+                        log_event("on_air_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                         print(f"[backend] ON_AIR duplicate ignored channel={channel_id} owner={publisher_id}")
                     else:
                         rejected_owner = owner
+                        log_event("on_air_rejected", publisher_id=publisher_id, channel_id=channel_id, owner=owner, request_id=request_id)
                         print(
                             f"[backend] ON_AIR rejected channel={channel_id} "
                             f"owner={owner} requester={publisher_id}"
@@ -449,9 +742,12 @@ async def publisher_ws(websocket: WebSocket) -> None:
                     if owner == publisher_id:
                         channel["owner"] = None
                         channel["off_air_ts"] = now_ts()
+                        await persist_state_locked()
+                        log_event("stop_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                         print(f"[backend] STOP owner cleared channel={channel_id} owner={publisher_id}")
                     elif owner is None:
                         channel["request_off_air_ts"] = payload.get("request_off_air_ts")
+                        log_event("stop_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                         print(f"[backend] STOP duplicate ignored channel={channel_id}")
 
                 await broadcast_states()
@@ -465,11 +761,14 @@ async def publisher_ws(websocket: WebSocket) -> None:
         async with state_lock:
             if publisher_id:
                 await drop_publisher_locked(publisher_id)
+                await persist_state_locked()
         await broadcast_states()
 
 
 @app.websocket("/ws/listener")
 async def listener_ws(websocket: WebSocket) -> None:
+    global listener_connect_sec, listener_connect_count
+
     await websocket.accept()
     print("[backend] listener websocket accepted")
     try:
@@ -480,14 +779,27 @@ async def listener_ws(websocket: WebSocket) -> None:
             await send_error(websocket, "INVALID_FLOW")
             return
 
-        request_id = first.get("request_id") if isinstance(first.get("request_id"), str) else next_request_id("lst-connect")
+        now = now_ts()
+        if now != listener_connect_sec:
+            listener_connect_sec = now
+            listener_connect_count = 0
+        listener_connect_count += 1
 
         async with state_lock:
+            if len(state.listeners) >= MAX_ACTIVE_LISTENERS:
+                await send_error(websocket, "LISTENER_OVERFLOW")
+                return
+            if listener_connect_count > MAX_NEW_CONNECTIONS_PER_SEC:
+                await send_error(websocket, "CONNECTION_RATE_LIMIT")
+                return
+
             listener_id = f"listener_{state.listener_counter}"
             state.listener_counter += 1
             state.listeners.add(websocket)
             print(f"[backend] listener connected listener_id={listener_id}")
+            log_connection("listener_connected", listener_id=listener_id)
 
+        request_id = first.get("request_id") if isinstance(first.get("request_id"), str) else next_request_id("lst-connect")
         await send_connect_success(
             websocket=websocket,
             client_role="listener",
@@ -511,6 +823,7 @@ async def listener_ws(websocket: WebSocket) -> None:
     finally:
         async with state_lock:
             state.listeners.discard(websocket)
+            log_connection("listener_disconnected")
 
 
 async def monitor_timeouts() -> None:
@@ -527,10 +840,19 @@ async def monitor_timeouts() -> None:
                 await drop_publisher_locked(publisher_id)
                 print(f"[backend] heartbeat timeout publisher_id={publisher_id}")
 
+            if expired:
+                await persist_state_locked()
+
         if expired:
             await broadcast_states()
 
 
 @app.on_event("startup")
 async def startup() -> None:
+    ensure_data_dir()
+    load_from_persistence()
+    persist_room_config()
+    persist_runtime_state()
+    persist_recording_state()
+    log_event("backend_started")
     asyncio.create_task(monitor_timeouts())
