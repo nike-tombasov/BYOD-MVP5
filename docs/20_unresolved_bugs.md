@@ -7,11 +7,12 @@ Status: **unresolved**, reproducible.
 #### Reproduction path
 1) LiveKit Server is not started.
 2) Backend starts, Publisher starts.
-3) Publisher connects to backend successfully; backend registers publisher.
+3) Publisher connects to backend successfully; backend registers publisher; CONNECT button become unavailable.
 4) Publisher presses `ON AIR`; backend registers owner.
-5) Publisher later falls into connection error flow in IP/PIN block; channel row can remain stuck at `Connecting...`.
+5) Publisher later falls into connection error flow in IP/PIN block; channel row can remain stuck at `Connecting...`; CONNECT button become available.
 6) Backend eventually drops publisher by timeout.
 7) If Publisher reconnects by pressing `CONNECT`, backend registers a new publisher identity and previously owned channel may remain frozen as `ENGAGED` on Publisher UIs.
+8) as expected by interlock logic now one can ON AIR this ENGAGED channel. 
 
 #### Current impact
 - operator receives confusing UX with mixed connection/channel statuses;

@@ -12,10 +12,15 @@ hidden_imports = collect_submodules('livekit.rtc') + [
 datas = collect_data_files('livekit.rtc')
 binaries = collect_dynamic_libs('livekit.rtc')
 
+from pathlib import Path
+
+spec_dir = Path(SPECPATH).resolve()   # папка, где лежит .spec
+project_root = spec_dir.parent         # src/publisher
+main_script = project_root / "main.py"
 
 a = Analysis(
-    ['src/publisher/main.py'],
-    pathex=['src/publisher'],
+    [str(main_script)],
+    pathex=[str(project_root)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hidden_imports,
@@ -25,6 +30,7 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -39,6 +45,7 @@ exe = EXE(
     upx=True,
     console=False,
 )
+
 coll = COLLECT(
     exe,
     a.binaries,

@@ -6,14 +6,40 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "[build] Installing runtime + packaging deps"
-& $PythonExe -m pip install -r src/requirements.txt pyinstaller==6.13.0
+$scriptDir = $PSScriptRoot
+$repoRoot = Resolve-Path (Join-Path $scriptDir "..\..\..")
+
+# Проверьте, где реально лежит requirements.txt
+$requirements = Join-Path $repoRoot "src\requirements.txt"
+$spec = Join-Path $repoRoot "src\publisher\packaging\publisher_onedir.spec"
+
+if (!(Test-Path $spec)) {
+  throw "Spec file not found: $spec"
+}
+
+Write-Host "[build] Repo root: $repoRoot"
+Write-Host "[build] Spec: $spec"
+
+# Если requirements.txt отсутствует, сборка не должна молча продолжаться
+if (Test-Path $requirements) {
+  Write-Host "[build] Installing runtime + packaging deps"
+  & $PythonExe -m pip install -r $requirements pyinstaller==6.13.0
+  if ($LASTEXITCODE -ne 0) { throw "pip install failed with exit code $LASTEXITCODE" }
+} else {
+  Write-Host "[build] Requirements file not found: $requirements"
+  Write-Host "[build] Skipping pip install step"
+}
 
 Write-Host "[build] Cleaning old artifacts"
-Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $repoRoot "build") -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $repoRoot "dist") -ErrorAction SilentlyContinue
 
 Write-Host "[build] Building Publisher one-dir executable"
-& $PythonExe -m PyInstaller src/publisher/packaging/publisher_onedir.spec --noconfirm --clean
+& $PythonExe -m PyInstaller $spec --noconfirm --clean
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+
+$target = Join-Path $repoRoot "dist\BYODPublisher"
+New-Item -ItemType Directory -Force -Path $target | Out-Null
 
 $launcher = @"
 @echo off
@@ -22,7 +48,6 @@ set PIN=$Pin
 start "" BYODPublisher.exe --backend %BACKEND% --pin %PIN%
 "@
 
-$target = "dist/BYODPublisher"
-Set-Content -Path "$target/start_publisher.bat" -Value $launcher -Encoding ASCII
+Set-Content -Path (Join-Path $target "start_publisher.bat") -Value $launcher -Encoding ASCII
 
-Write-Host "[build] Done. Output folder: dist/BYODPublisher"
+Write-Host "[build] Done. Output folder: $target"
