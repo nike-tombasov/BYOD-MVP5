@@ -50,6 +50,13 @@ Stored fields:
 - `pin`
 - `device_map` (`channel_id` -> selected device label)
 
+## Runtime logs file
+
+Publisher appends timestamped important events into `logs.txt`:
+
+- packaged (`.exe`) run: `dist/BYODPublisher/logs.txt` (near `BYODPublisher.exe`)
+- source run: `src/publisher/logs.txt`
+
 ## Git policy
 
 Do **not** commit `dist/` or `build/` artifacts (already ignored by repository `.gitignore`).

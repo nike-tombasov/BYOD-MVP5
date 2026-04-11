@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -112,6 +113,7 @@ class PublisherUI(QWidget):
         self.channels: dict[str, ChannelRuntime] = {}
         self.device_items: dict[str, tuple[int, int, int] | None] = {}
         self.max_log_lines = 300
+        self.log_file_path = self._resolve_log_file_path()
 
         self._build_layout()
         self._populate_all_devices()
@@ -399,10 +401,26 @@ class PublisherUI(QWidget):
         self.console_view.verticalScrollBar().setValue(self.console_view.verticalScrollBar().maximum())
 
     def _log(self, text: str) -> None:
-        stamp = time.strftime("%H:%M:%S")
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{stamp}] {text}"
         print(f"[publisher] {text}")
+        self._append_file_log(line)
         self.signals.append_log.emit(line)
+
+    def _resolve_log_file_path(self) -> Path:
+        if getattr(sys, "frozen", False):
+            base = Path(sys.executable).resolve().parent
+        else:
+            base = Path(__file__).resolve().parent
+        return base / "logs.txt"
+
+    def _append_file_log(self, line: str) -> None:
+        try:
+            self.log_file_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_file_path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
 
     def _set_actual_channel_status(self, channel_id: str, text: str) -> None:
         color = "green"

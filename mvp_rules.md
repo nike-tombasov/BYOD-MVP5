@@ -34,6 +34,7 @@ Publisher UI hardening for VPS pilot test, without uncontrolled feature expansio
 - single room mode remains acceptable
 - console logging remains enabled for diagnostics
 - temporary important-event console block inside Publisher UI window remains enabled for diagnostics during active development
+- Publisher must append timestamped runtime events to `logs.txt` in program root folder (create file automatically if missing)
 - LiveKit API secret key for local test may still --dev (unchanged)
 
 ## Anti-overdevelopment policy
