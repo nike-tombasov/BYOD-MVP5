@@ -17,6 +17,17 @@ powershell -ExecutionPolicy Bypass -File src/publisher/packaging/build_windows_o
   -Pin 123456
 ```
 
+
+## Why previous package could fail to connect LiveKit
+
+LiveKit Python SDK loads a native FFI library from `livekit.rtc.resources` (`livekit_ffi.dll` on Windows).
+If PyInstaller spec does not collect `livekit.rtc` data/binaries, WS connect can still work, but LiveKit media connection fails.
+
+Current spec explicitly collects:
+- `collect_data_files("livekit.rtc")`
+- `collect_dynamic_libs("livekit.rtc")`
+- `collect_submodules("livekit.rtc")`
+
 ## Output
 
 Build output is created in:
