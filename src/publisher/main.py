@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -62,6 +63,7 @@ class UISignals(QObject):
     set_channel_label = Signal(str, str)
     set_device_enabled = Signal(str, bool)
     set_row_visible = Signal(str, bool)
+    append_log = Signal(str)
 
 
 class PublisherUI(QWidget):
@@ -83,6 +85,7 @@ class PublisherUI(QWidget):
         self.signals.set_channel_label.connect(self._ui_set_channel_label)
         self.signals.set_device_enabled.connect(self._ui_set_device_enabled)
         self.signals.set_row_visible.connect(self._ui_set_row_visible)
+        self.signals.append_log.connect(self._ui_append_log)
 
         self.setWindowTitle(f"BYOD Publisher UI {PUBLISHER_UI_VERSION}")
         self.resize(600, 560)
@@ -108,11 +111,13 @@ class PublisherUI(QWidget):
         self.channel_rows: dict[str, dict] = {}
         self.channels: dict[str, ChannelRuntime] = {}
         self.device_items: dict[str, tuple[int, int, int] | None] = {}
+        self.max_log_lines = 300
 
         self._build_layout()
         self._populate_all_devices()
         self._restore_saved_inputs()
         self._set_preconnect_state()
+        self._log("Publisher UI started")
 
     def _build_layout(self) -> None:
         self.setStyleSheet(
@@ -204,6 +209,16 @@ class PublisherUI(QWidget):
         channels_widget.setLayout(channels_layout)
         scroll.setWidget(channels_widget)
         root.addWidget(scroll)
+
+        self.console_label = QLabel("Console")
+        self.console_view = QTextEdit()
+        self.console_view.setReadOnly(True)
+        self.console_view.setFixedHeight(180)
+        self.console_view.setStyleSheet(
+            "QTextEdit { background-color: #1F1F1F; color: #D8D8D8; border: 1px solid #555; padding: 6px; }"
+        )
+        root.addWidget(self.console_label)
+        root.addWidget(self.console_view)
         self.setLayout(root)
 
     def _restore_saved_inputs(self) -> None:
@@ -370,6 +385,24 @@ class PublisherUI(QWidget):
     def _ui_show_error(self, text: str) -> None:
         self._ui_set_connect_status(text, "red")
         self.connect_btn.setEnabled(True)
+        self._log(f"ERROR: {text}")
+
+    def _ui_append_log(self, line: str) -> None:
+        self.console_view.append(line)
+        doc = self.console_view.document()
+        while doc.blockCount() > self.max_log_lines:
+            cursor = self.console_view.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            cursor.select(cursor.SelectionType.BlockUnderCursor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()
+        self.console_view.verticalScrollBar().setValue(self.console_view.verticalScrollBar().maximum())
+
+    def _log(self, text: str) -> None:
+        stamp = time.strftime("%H:%M:%S")
+        line = f"[{stamp}] {text}"
+        print(f"[publisher] {text}")
+        self.signals.append_log.emit(line)
 
     def _set_actual_channel_status(self, channel_id: str, text: str) -> None:
         color = "green"
@@ -412,6 +445,7 @@ class PublisherUI(QWidget):
         self.backend_ws_url = self.ip_input.text().strip() or self.default_backend_ws_url
         self.pin = self.pin_input.text().strip() or self.default_pin
         self._save_local_state()
+        self._log(f"CONNECT clicked. backend={self.backend_ws_url}")
         asyncio.run_coroutine_threadsafe(self._run_client(), self.loop)
 
     def _on_device_changed(self, channel_id: str) -> None:
@@ -442,6 +476,7 @@ class PublisherUI(QWidget):
         runtime = self.channels[channel_id]
         if self.backend_ws is None or self.publisher_id is None:
             self._set_actual_channel_status(channel_id, "CONNECTION ERROR")
+            self._log(f"ON AIR blocked by no backend connection: {channel_id}")
             return
 
         dev_data = self.channel_rows[channel_id]["device_box"].currentData()
@@ -458,9 +493,11 @@ class PublisherUI(QWidget):
             self.signals.set_button_state.emit(channel_id, "STOP", True, "pending")
             runtime.desired_on_air = True
             msg = {"type": "on_air", "publisher_id": self.publisher_id, "channel_id": channel_id, "request_on_air_ts": time.time()}
+            self._log(f"ON AIR request: {channel_id}")
         else:
             runtime.desired_on_air = False
             msg = {"type": "stop", "publisher_id": self.publisher_id, "channel_id": channel_id, "request_off_air_ts": time.time()}
+            self._log(f"STOP request: {channel_id}")
         asyncio.run_coroutine_threadsafe(self.backend_ws.send(json.dumps(msg)), self.loop)
 
     def _run_loop(self) -> None:
@@ -507,6 +544,7 @@ class PublisherUI(QWidget):
         self.token_exp_ts = self._parse_token_exp(self.token)
         self.livekit_url = msg["livekit_url"]
         self.signals.set_connect_status.emit("CONNECTED", "green")
+        self._log(f"Backend connected. publisher_id={self.publisher_id}")
         self._apply_state(msg["state"])
 
     async def _connect_livekit(self) -> None:
@@ -514,6 +552,7 @@ class PublisherUI(QWidget):
             return
         self.room = rtc.Room()
         await self.room.connect(self.livekit_url, self.token)
+        self._log("LiveKit connected")
 
     async def _heartbeat_loop(self) -> None:
         while not self.shutting_down:
@@ -532,7 +571,7 @@ class PublisherUI(QWidget):
             remaining = self.token_exp_ts - int(time.time())
             if remaining > TOKEN_REFRESH_LEAD_SECONDS:
                 continue
-            print(f"[publisher] token refresh window reached, remaining={remaining}s")
+            self._log(f"Token refresh window reached ({remaining}s)")
             await self._reconnect_livekit_with_current_token()
             self.token_exp_ts = int(time.time()) + 24 * 3600
 
@@ -547,6 +586,7 @@ class PublisherUI(QWidget):
                 await self.room.disconnect()
         self.room = rtc.Room()
         await self.room.connect(self.livekit_url, self.token)
+        self._log("LiveKit reconnected after token refresh")
         for cid in active_channels:
             await self._publish_track_without_reopening_device(cid)
 
@@ -574,7 +614,7 @@ class PublisherUI(QWidget):
             elif msg_type == "token_refresh":
                 token = msg.get("token")
                 if token:
-                    print("[publisher] got token_refresh from backend")
+                    self._log("Backend token_refresh received")
                     self.token = token
                     self.token_exp_ts = self._parse_token_exp(token)
                     await self._reconnect_livekit_with_current_token()
@@ -673,6 +713,7 @@ class PublisherUI(QWidget):
         rt.streaming = True
         self._set_actual_channel_status(channel_id, "STREAMING")
         self._refresh_channel_controls(channel_id)
+        self._log(f"Streaming started: {channel_id}")
         if rt.sender_task is None or rt.sender_task.done():
             rt.sender_task = asyncio.create_task(self._sender_loop(channel_id))
 
@@ -712,6 +753,7 @@ class PublisherUI(QWidget):
         rt.audio_queue = None
         self.signals.set_channel_sound.emit(channel_id, "NO SOUND")
         self._refresh_channel_controls(channel_id)
+        self._log(f"Streaming stopped: {channel_id}")
 
     async def _sender_loop(self, channel_id: str) -> None:
         rt = self.channels[channel_id]
@@ -748,10 +790,12 @@ class PublisherUI(QWidget):
         if self.backend_ws:
             with contextlib.suppress(Exception):
                 await self.backend_ws.close()
+                self._log("Backend websocket closed")
 
         if self.room:
             with contextlib.suppress(Exception):
                 await self.room.disconnect()
+                self._log("LiveKit room disconnected")
 
     def closeEvent(self, event) -> None:
         self._save_local_state()

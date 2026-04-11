@@ -33,6 +33,7 @@ Publisher UI hardening for VPS pilot test, without uncontrolled feature expansio
 - PIN may remain fixed for MVP runtime tests
 - single room mode remains acceptable
 - console logging remains enabled for diagnostics
+- temporary important-event console block inside Publisher UI window remains enabled for diagnostics during active development
 - LiveKit API secret key for local test may still --dev (unchanged)
 
 ## Anti-overdevelopment policy
