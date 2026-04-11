@@ -19,6 +19,7 @@ Thumbs.db
 
 # Logs
 *.log
+logs.txt
 
 # dotenv
 .env

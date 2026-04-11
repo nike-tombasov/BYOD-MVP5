@@ -31,3 +31,37 @@ Include:
 * legacy/stage_IV/ui_test_livekit.py
 * legacy/stage_IV/audio_steam.py
 * legacy/stage_IV/rms_detector.py
+
+## Stage V
+
+Stage V delivered the first stable multi-publisher + multi-listener baseline with interlock ownership and risky up-to-32 channels operation.
+
+Stage V result analysis (short):
+- core owner/interlock model worked and backend remained source of truth;
+- Publisher v0.3 was practical baseline before hardening;
+- unresolved risks were mostly around token lifecycle, race hardening, and formal WS contracts, then moved to next-stage work and docs.
+
+Include:
+* legacy/stage_v/README.md
+* legacy/stage_v/publisherv0.3/main.py
+* legacy/stage_v/backend/main.py
+* legacy/stage_v/listener/index.html
+* legacy/stage_v/listener/listener.js
+* legacy/stage_v/roadmap_stage_v_completed.md
+* legacy/stage_v/mvp_rules_stage_v.md
+* legacy/stage_v/13_mvp_status_stage_v.md
+* legacy/stage_v/14_open_issues_stage_v.md
+
+## Stage VI
+
+Stage VI completed Publisher UI hardening baseline (v0.4) with module decomposition, local JSON memory, token/i18n handling path, and Windows packaging baseline.
+
+Include:
+* legacy/stage_vi/README.md
+* legacy/stage_vi/publisherv0.4/main.py
+* legacy/stage_vi/publisherv0.4/constants.py
+* legacy/stage_vi/publisherv0.4/models.py
+* legacy/stage_vi/publisherv0.4/state_store.py
+* legacy/stage_vi/packaging/publisher_onedir.spec
+* legacy/stage_vi/packaging/build_windows_onedir.ps1
+* legacy/stage_vi/packaging/README.md

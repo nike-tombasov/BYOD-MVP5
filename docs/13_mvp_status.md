@@ -7,11 +7,12 @@
 - **Stage III** — simplified publisher recovery stage — **DONE**.
 - **Stage IV** — gradual Publisher UI v0.2 stabilization — **DONE**.
 - **Stage V** — multi-publisher + multi-listener + up to risky 32 channels with interlock logic — **DONE**.
+- **Stage VI** — Publisher UI hardening for VPS pilot — **DONE**.
 
 ### 14.2 Current active stage
 
-- **Active:** Stage VI (Publisher UI hardening for VPS pilot).
-- **Why now:** this is the highest priority before broader Listener/Backend/VPS scaling tasks.
+- **Active:** Stage VII (Backend hardening before Listener status tests).
+- **Why now:** Stage VI Publisher hardening is completed; next blocker is backend baseline hardening and operator controls.
 
 ### 14.3 Stage V completion snapshot
 
@@ -21,13 +22,14 @@ Stage V achieved:
 3) practical scaling path up to 32 channels in MVP conditions
 4) Publisher UI baseline version is **v0.3**
 
-### 14.4 Stage VI target snapshot
+### 14.4 Stage VI result snapshot
 
-Must deliver:
+Delivered:
 1) safer module decomposition in Publisher UI
 2) JSON memory for IP/PIN/device mapping
-3) silent seamless token refreshing
-4) reproducible `.exe` packaging process
+3) silent seamless token refreshing path
+4) immutable `i18n_library` receive path on connect/reconnect (`en` rendering in Publisher MVP)
+5) reproducible `.exe` packaging process (MVP onedir baseline)
 
 ### 14.5 What is intentionally postponed
 
