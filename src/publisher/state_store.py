@@ -1,10 +1,20 @@
 import json
+import os
 from pathlib import Path
 
 
 class PublisherStateStore:
     def __init__(self) -> None:
-        self.path = Path.home() / ".byod_publisher_state.json"
+        self.path = self._build_state_path()
+
+    def _build_state_path(self) -> Path:
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            base = Path(appdata) / "BYODPublisher"
+        else:
+            base = Path.home() / ".byod_publisher"
+        base.mkdir(parents=True, exist_ok=True)
+        return base / "state.json"
 
     def load(self) -> dict:
         if not self.path.exists():
