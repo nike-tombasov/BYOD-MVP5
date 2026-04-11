@@ -8,20 +8,12 @@
 
 ## Stage VI — Publisher UI hardening for VPS test (Priority 1)
 
-### Main target
-Finish Publisher UI as practical room-technician tool for VPS pilot runs.
-
-### Large-doing steps
-1) module decomposition (without changing behavior)
-2) JSON memory for last IP/PIN/device mapping
-3) silent seamless token refresh
-4) receiving immutable i18n library on initial WS connect and reconnect (reading room_name only from `en`)
-5) stable Windows `.exe` packaging (MVP: folder build; production target: one-file build)
-
-### Exit criteria
-- no manual re-entry of IP/PIN/devices after restart
-- token renewal does not stop active audio
-- `.exe` starts and works on target test PCs
+### Result (completed)
+- Publisher UI module decomposition completed (v0.4 baseline artifacts saved to legacy).
+- JSON memory for IP/PIN/device mapping completed.
+- token refresh/reconnect path completed.
+- immutable `i18n_library` receive path completed (Publisher renders `en`).
+- Windows `.exe` packaging baseline completed (MVP onedir).
 
 ---
 
