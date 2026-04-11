@@ -12,6 +12,9 @@ Publisher restart/change → auto recovery, no visible changes.
 Publisher offline/STOP steam → silence, no visible changes.  
 Page background with ACTIVE PLAY → sound continuing, system volume and player works, no visible page changes.  
 Page background with stopped channel button → return after timeout → click → sound.  
+Backend unavailable → CONNECTING (0-3s) / RETRYING (3-10s) / UNAVAILABLE (>10s) message shown.
+Backend restored → availability message hides immediately.
+Connection STALE (timeout/disconnect/expiry) → click channel button → reconnect → WAITING → sound on recovery.
 System volume adjusting → sound volume changes.  
 BLOCKED → no sound, appropriate language banner on top, buttons are clickable.  
 CLOSED → no sound, button unhighlights, UI locked, appropriate language banner on top, buttons aren't clickable.  
