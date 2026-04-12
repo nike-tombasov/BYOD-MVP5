@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,13 +17,13 @@ class ChannelWriter:
     state: str = "IDLE"
     process: asyncio.subprocess.Process | None = None
 
-    async def start(self) -> None:
+    async def start(self, ffmpeg_path: str) -> None:
         if self.process is not None:
             return
         self.state = "WAITING_TRACK"
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.process = await asyncio.create_subprocess_exec(
-            "ffmpeg",
+            ffmpeg_path,
             "-y",
             "-f",
             "s16le",
@@ -90,7 +91,9 @@ class RecorderManager:
         self._session_started_ts: int | None = None
         self._session_stamp: str | None = None
         self._writers: dict[str, ChannelWriter] = {}
-        self._stream_tasks: dict[str, asyncio.Task] = {}
+        self._stream_tasks_by_channel: dict[str, asyncio.Task] = {}
+        self._active_track_sid_by_channel: dict[str, str] = {}
+        self._ffmpeg_path = os.getenv("FFMPEG_PATH", "src/backend/bin/ffmpeg.exe")
 
     def start(self) -> None:
         if self._running:
@@ -137,21 +140,28 @@ class RecorderManager:
                     channel_id = str(getattr(publication, "name", ""))
                     if not channel_id:
                         return
+                    sid = str(getattr(publication, "sid", channel_id))
+                    old_task = self._stream_tasks_by_channel.get(channel_id)
+                    if old_task:
+                        old_task.cancel()
                     self._logger(f"track subscribed channel={channel_id}")
                     task = asyncio.create_task(
-                        self._consume_track(channel_id, track, getattr(publication, "sid", channel_id)),
+                        self._consume_track(channel_id, track, sid),
                         name=f"recorder-track-{channel_id}",
                     )
-                    self._stream_tasks[f"{channel_id}:{getattr(publication, 'sid', channel_id)}"] = task
+                    self._stream_tasks_by_channel[channel_id] = task
+                    self._active_track_sid_by_channel[channel_id] = sid
 
                 @self._room.on("track_unsubscribed")
                 def _on_track_unsubscribed(track: Any, publication: Any, participant: Any) -> None:
                     channel_id = str(getattr(publication, "name", ""))
                     sid = str(getattr(publication, "sid", channel_id))
-                    key = f"{channel_id}:{sid}"
-                    task = self._stream_tasks.pop(key, None)
-                    if task:
-                        task.cancel()
+                    active_sid = self._active_track_sid_by_channel.get(channel_id)
+                    if active_sid == sid:
+                        task = self._stream_tasks_by_channel.pop(channel_id, None)
+                        if task:
+                            task.cancel()
+                        self._active_track_sid_by_channel.pop(channel_id, None)
                     self._logger(f"track unsubscribed channel={channel_id}")
 
                 token = self._token_factory("recorder_service")
@@ -167,9 +177,10 @@ class RecorderManager:
             except Exception as exc:
                 self._logger(f"reconnect attempt due to error: {exc}")
             finally:
-                for key, task in list(self._stream_tasks.items()):
+                for key, task in list(self._stream_tasks_by_channel.items()):
                     task.cancel()
-                    self._stream_tasks.pop(key, None)
+                    self._stream_tasks_by_channel.pop(key, None)
+                self._active_track_sid_by_channel.clear()
 
             if self._running:
                 await asyncio.sleep(3)
@@ -196,11 +207,17 @@ class RecorderManager:
         if self._session_active:
             return
 
+        ok, preflight_message = await self._ffmpeg_preflight()
+        if not ok:
+            self._logger(f"session start failed: {preflight_message}")
+            return
+
         channels = self._channels_snapshot_getter()
         started_ts = int(datetime.now(timezone.utc).timestamp())
         stamp = datetime.fromtimestamp(started_ts, tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
 
         writers: dict[str, ChannelWriter] = {}
+        failed_channels: list[str] = []
         for channel in channels:
             channel_id = str(channel["channel_id"])
             label = str(channel.get("channel_label") or channel_id)
@@ -208,11 +225,21 @@ class RecorderManager:
             output_path = Path("recordings") / f"{stamp}-{channel_id}-{safe_label}.mp3"
             writer = ChannelWriter(channel_id=channel_id, channel_label=label, output_path=output_path)
             try:
-                await writer.start()
+                await writer.start(self._ffmpeg_path)
                 self._logger(f"writer created channel={channel_id} file={output_path}")
+                writers[channel_id] = writer
             except Exception as exc:
                 self._logger(f"ffmpeg error channel={channel_id} error={exc}")
-            writers[channel_id] = writer
+                failed_channels.append(channel_id)
+
+        if not writers:
+            self._logger(f"session start failed: no active writers. failed_channels={failed_channels}")
+            self._session_active = False
+            self._session_started_ts = None
+            self._session_stamp = None
+            self._writers = {}
+            self._publish_session_state()
+            return
 
         self._writers = writers
         self._session_active = True
@@ -236,6 +263,24 @@ class RecorderManager:
         self._session_stamp = None
         self._publish_session_state()
         self._logger(f"session stopped reason={reason}")
+
+    async def _ffmpeg_preflight(self) -> tuple[bool, str]:
+        ffmpeg_binary = Path(self._ffmpeg_path)
+        if not ffmpeg_binary.exists():
+            return False, f"ffmpeg not found: {self._ffmpeg_path}"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self._ffmpeg_path,
+                "-version",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            rc = await proc.wait()
+            if rc != 0:
+                return False, f"ffmpeg unavailable: exit code {rc}"
+            return True, "ok"
+        except Exception as exc:
+            return False, f"ffmpeg unavailable: {exc}"
 
     def _publish_session_state(self) -> None:
         files = [

@@ -35,7 +35,7 @@ ROOM_CONFIG_PATH = DATA_DIR / "room_config_v1.json"
 RUNTIME_STATE_PATH = DATA_DIR / "runtime_state_v1.json"
 RECORDING_STATE_PATH = DATA_DIR / "recording_state_v1.json"
 RECORDINGS_DIR = Path("recordings")
-RECORDER_LOG_PATH = Path("recorder/logs.txt")
+RECORDER_LOG_PATH = Path("recording/logs.txt")
 
 I18N_LIBRARY = {
     "room_name_i18n": {"en": ROOM_NAME},
