@@ -13,7 +13,6 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api as livekit_api
-from src.backend.recorder import RecorderManager
 
 PIN = "123456"
 ROOM_NAME = "test room"
@@ -34,8 +33,6 @@ DATA_DIR = Path("backend_data")
 ROOM_CONFIG_PATH = DATA_DIR / "room_config_v1.json"
 RUNTIME_STATE_PATH = DATA_DIR / "runtime_state_v1.json"
 RECORDING_STATE_PATH = DATA_DIR / "recording_state_v1.json"
-RECORDINGS_DIR = Path("recordings")
-RECORDER_LOG_PATH = Path("recording/logs.txt")
 
 I18N_LIBRARY = {
     "room_name_i18n": {"en": ROOM_NAME},
@@ -115,7 +112,6 @@ listener_connect_count = 0
 recording_active = False
 recording_started_ts: int | None = None
 recording_files: list[dict[str, Any]] = []
-recorder_manager: RecorderManager | None = None
 
 
 @app.get("/health")
@@ -277,25 +273,6 @@ def log_connection(event: str, **fields: Any) -> None:
 def log_event(event: str, **fields: Any) -> None:
     payload = {"ts": now_ts(), "event": event, **fields}
     append_jsonl(get_events_log_path(), payload)
-
-
-def log_recorder(message: str) -> None:
-    RECORDER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
-    with open(RECORDER_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{ts} {message}\n")
-    log_event("recorder", message=message)
-
-
-def get_channels_snapshot() -> list[dict[str, Any]]:
-    return [dict(channel) for channel in state.channels]
-
-
-def update_recording_runtime(active: bool, started_ts: int | None, files: list[dict[str, Any]]) -> None:
-    global recording_active, recording_started_ts, recording_files
-    recording_active = active
-    recording_started_ts = started_ts
-    recording_files = files
 
 
 def make_envelope(msg_type: str, payload: dict[str, Any], request_id: str | None = None) -> dict[str, Any]:
@@ -544,21 +521,23 @@ async def drop_publisher_locked(publisher_id: str) -> None:
 
 
 async def start_recording_locked(reason: str) -> None:
-    if recorder_manager is None:
-        log_recorder("recording_start_requested but recorder_manager is not initialized")
+    global recording_active, recording_started_ts, recording_files
+    if recording_active:
         return
-    await recorder_manager.start_session(reason=reason)
-    log_event("recording_started", reason=reason, files=len(recording_files))
+    recording_active = True
+    recording_started_ts = now_ts()
+    recording_files = []
+    log_event("recording_marked_active", reason=reason, note="real multitrack recording is disabled")
 
 
 async def stop_recording_locked(reason: str) -> None:
-    if recorder_manager is None:
-        log_recorder("recording_stop_requested but recorder_manager is not initialized")
+    global recording_active, recording_started_ts, recording_files
+    if not recording_active:
         return
-    prev_started_ts = recording_started_ts
-    prev_files_count = len(recording_files)
-    await recorder_manager.stop_session(reason=reason)
-    log_event("recording_stopped", reason=reason, files=prev_files_count, started_ts=prev_started_ts)
+    log_event("recording_marked_inactive", reason=reason, started_ts=recording_started_ts)
+    recording_active = False
+    recording_started_ts = None
+    recording_files = []
 
 
 async def set_room_status_locked(new_status: str, reason: str) -> bool:
@@ -707,6 +686,39 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
     }
 
 
+@app.get("/admin/check_ws_compat")
+async def check_ws_compat() -> dict[str, Any]:
+    channels_snapshot = [dict(channel) for channel in state.channels]
+    publisher_state = build_publisher_state_snapshot(channels_snapshot)
+    listener_state = build_listener_state_snapshot(channels_snapshot)
+
+    publisher_required = {"room_name", "room_status", "channels"}
+    listener_required = {"room_status", "channels"}
+
+    publisher_ok = publisher_required.issubset(set(publisher_state.keys()))
+    listener_ok = listener_required.issubset(set(listener_state.keys()))
+
+    channel_pub_ok = all(
+        {"channel_id", "channel_label", "owner", "listen"}.issubset(set(channel.keys()))
+        for channel in publisher_state["channels"]
+    )
+    channel_lst_ok = all(
+        {"channel_id", "channel_label", "listen"}.issubset(set(channel.keys()))
+        for channel in listener_state["channels"]
+    )
+
+    ok = publisher_ok and listener_ok and channel_pub_ok and channel_lst_ok
+    result = {
+        "ok": ok,
+        "publisher_state_ok": publisher_ok and channel_pub_ok,
+        "listener_state_ok": listener_ok and channel_lst_ok,
+        "publisher_schema_version": SCHEMA_VERSION,
+        "listener_schema_version": SCHEMA_VERSION,
+    }
+    log_event("ws_compat_check", **result)
+    return result
+
+
 def format_console_help() -> str:
     return (
         "Commands:\n"
@@ -720,6 +732,8 @@ def format_console_help() -> str:
         "  off_air <channel_id>\n"
         "  set_override <blocked|closed> <text>\n"
         "  clear_override <blocked|closed>\n"
+        "  emergency_override <blocked|closed> <text>\n"
+        "  emergency_override_reset <blocked|closed>\n"
     )
 
 
@@ -822,6 +836,18 @@ async def process_console_command(line: str) -> str:
         await broadcast_states()
         return f"override {key} updated"
 
+    if cmd == "emergency_override" and len(parts) >= 3:
+        key = parts[1].lower()
+        if key not in {"blocked", "closed"}:
+            return "emergency_override only supports blocked or closed."
+        text = " ".join(parts[2:]).strip()
+        async with state_lock:
+            OVERRIDES[key] = text
+            await persist_state_locked()
+            log_event("emergency_override_set", key=key, text=text, actor="console")
+        await broadcast_states()
+        return f"emergency override {key} updated"
+
     if cmd == "clear_override" and len(parts) == 2:
         key = parts[1].lower()
         if key not in {"blocked", "closed"}:
@@ -832,6 +858,17 @@ async def process_console_command(line: str) -> str:
             log_event("override_cleared", key=key, actor="console")
         await broadcast_states()
         return f"override {key} cleared"
+
+    if cmd == "emergency_override_reset" and len(parts) == 2:
+        key = parts[1].lower()
+        if key not in {"blocked", "closed"}:
+            return "emergency_override_reset only supports blocked or closed."
+        async with state_lock:
+            OVERRIDES[key] = None
+            await persist_state_locked()
+            log_event("emergency_override_cleared", key=key, actor="console")
+        await broadcast_states()
+        return f"emergency override {key} cleared"
 
     return "Unknown command. Use: help"
 
@@ -1085,20 +1122,8 @@ async def monitor_timeouts() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global recorder_manager
     ensure_data_dir()
-    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    RECORDER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     load_from_persistence()
-    recorder_manager = RecorderManager(
-        livekit_url_getter=lambda: LIVEKIT_URL,
-        token_factory=create_livekit_token,
-        room_name_getter=lambda: ROOM_NAME,
-        channels_snapshot_getter=get_channels_snapshot,
-        on_session_state=update_recording_runtime,
-        logger=log_recorder,
-    )
-    recorder_manager.start()
     async with state_lock:
         if ROOM_STATUS == "OPENED" and not recording_active:
             await start_recording_locked(reason="startup_opened")
@@ -1108,9 +1133,3 @@ async def startup() -> None:
     log_event("backend_started")
     asyncio.create_task(monitor_timeouts())
     asyncio.create_task(console_command_loop())
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    if recorder_manager is not None:
-        await recorder_manager.shutdown()
