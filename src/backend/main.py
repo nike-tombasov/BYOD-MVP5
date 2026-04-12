@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api as livekit_api
+from src.backend.recorder import RecorderManager
 
 PIN = "123456"
 ROOM_NAME = "test room"
@@ -34,6 +35,7 @@ ROOM_CONFIG_PATH = DATA_DIR / "room_config_v1.json"
 RUNTIME_STATE_PATH = DATA_DIR / "runtime_state_v1.json"
 RECORDING_STATE_PATH = DATA_DIR / "recording_state_v1.json"
 RECORDINGS_DIR = Path("recordings")
+RECORDER_LOG_PATH = Path("recorder/logs.txt")
 
 I18N_LIBRARY = {
     "room_name_i18n": {"en": ROOM_NAME},
@@ -113,6 +115,7 @@ listener_connect_count = 0
 recording_active = False
 recording_started_ts: int | None = None
 recording_files: list[dict[str, Any]] = []
+recorder_manager: RecorderManager | None = None
 
 
 @app.get("/health")
@@ -274,6 +277,25 @@ def log_connection(event: str, **fields: Any) -> None:
 def log_event(event: str, **fields: Any) -> None:
     payload = {"ts": now_ts(), "event": event, **fields}
     append_jsonl(get_events_log_path(), payload)
+
+
+def log_recorder(message: str) -> None:
+    RECORDER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).isoformat()
+    with open(RECORDER_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(f"{ts} {message}\n")
+    log_event("recorder", message=message)
+
+
+def get_channels_snapshot() -> list[dict[str, Any]]:
+    return [dict(channel) for channel in state.channels]
+
+
+def update_recording_runtime(active: bool, started_ts: int | None, files: list[dict[str, Any]]) -> None:
+    global recording_active, recording_started_ts, recording_files
+    recording_active = active
+    recording_started_ts = started_ts
+    recording_files = files
 
 
 def make_envelope(msg_type: str, payload: dict[str, Any], request_id: str | None = None) -> dict[str, Any]:
@@ -521,36 +543,22 @@ async def drop_publisher_locked(publisher_id: str) -> None:
     log_connection("publisher_disconnected", publisher_id=publisher_id)
 
 
-def sanitize_label_for_filename(label: str) -> str:
-    safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in label.strip())
-    return safe[:64] or "channel"
-
-
 async def start_recording_locked(reason: str) -> None:
-    global recording_active, recording_started_ts, recording_files
-    if recording_active:
+    if recorder_manager is None:
+        log_recorder("recording_start_requested but recorder_manager is not initialized")
         return
-    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    recording_started_ts = now_ts()
-    stamp = datetime.fromtimestamp(recording_started_ts, tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
-    recording_files = []
-    for channel in state.channels:
-        filename = f"{stamp}-{channel['channel_id']}-{sanitize_label_for_filename(channel['channel_label'])}.mp3"
-        path = RECORDINGS_DIR / filename
-        path.touch(exist_ok=True)
-        recording_files.append({"channel_id": channel["channel_id"], "path": str(path), "created_ts": now_ts()})
-    recording_active = True
+    await recorder_manager.start_session(reason=reason)
     log_event("recording_started", reason=reason, files=len(recording_files))
 
 
 async def stop_recording_locked(reason: str) -> None:
-    global recording_active, recording_started_ts, recording_files
-    if not recording_active:
+    if recorder_manager is None:
+        log_recorder("recording_stop_requested but recorder_manager is not initialized")
         return
-    recording_active = False
-    log_event("recording_stopped", reason=reason, files=len(recording_files), started_ts=recording_started_ts)
-    recording_started_ts = None
-    recording_files = []
+    prev_started_ts = recording_started_ts
+    prev_files_count = len(recording_files)
+    await recorder_manager.stop_session(reason=reason)
+    log_event("recording_stopped", reason=reason, files=prev_files_count, started_ts=prev_started_ts)
 
 
 async def set_room_status_locked(new_status: str, reason: str) -> bool:
@@ -638,7 +646,7 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
 
     content = await file.read()
     try:
-        text = content.decode("utf-8")
+        text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_ENCODING", "message": "File must be UTF-8"}]}
 
@@ -1077,9 +1085,20 @@ async def monitor_timeouts() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    global recorder_manager
     ensure_data_dir()
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    RECORDER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     load_from_persistence()
+    recorder_manager = RecorderManager(
+        livekit_url_getter=lambda: LIVEKIT_URL,
+        token_factory=create_livekit_token,
+        room_name_getter=lambda: ROOM_NAME,
+        channels_snapshot_getter=get_channels_snapshot,
+        on_session_state=update_recording_runtime,
+        logger=log_recorder,
+    )
+    recorder_manager.start()
     async with state_lock:
         if ROOM_STATUS == "OPENED" and not recording_active:
             await start_recording_locked(reason="startup_opened")
@@ -1089,3 +1108,9 @@ async def startup() -> None:
     log_event("backend_started")
     asyncio.create_task(monitor_timeouts())
     asyncio.create_task(console_command_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    if recorder_manager is not None:
+        await recorder_manager.shutdown()
