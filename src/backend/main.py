@@ -27,11 +27,13 @@ SCHEMA_VERSION = 1
 TARGET_CAPACITY = 300
 MAX_ACTIVE_LISTENERS = int(TARGET_CAPACITY * 1.05)
 MAX_NEW_CONNECTIONS_PER_SEC = max(1, int(TARGET_CAPACITY / 15))
+OVERRIDES: dict[str, str | None] = {"blocked": None, "closed": None}
 
 DATA_DIR = Path("backend_data")
 ROOM_CONFIG_PATH = DATA_DIR / "room_config_v1.json"
 RUNTIME_STATE_PATH = DATA_DIR / "runtime_state_v1.json"
 RECORDING_STATE_PATH = DATA_DIR / "recording_state_v1.json"
+RECORDINGS_DIR = Path("recordings")
 
 I18N_LIBRARY = {
     "room_name_i18n": {"en": ROOM_NAME},
@@ -108,6 +110,9 @@ state_lock = asyncio.Lock()
 request_counter = count(1)
 listener_connect_sec = int(time.time())
 listener_connect_count = 0
+recording_active = False
+recording_started_ts: int | None = None
+recording_files: list[dict[str, Any]] = []
 
 
 @app.get("/health")
@@ -194,7 +199,7 @@ def persist_runtime_state() -> None:
         "room_status": ROOM_STATUS,
         "owners": {channel["channel_id"]: channel.get("owner") for channel in state.channels},
         "publisher_online": {publisher_id: True for publisher_id in state.publishers.keys()},
-        "overrides": {"blocked": None, "closed": None},
+        "overrides": dict(OVERRIDES),
         "updated_ts": now_ts(),
     }
     atomic_write_json(RUNTIME_STATE_PATH, payload)
@@ -203,15 +208,16 @@ def persist_runtime_state() -> None:
 def persist_recording_state() -> None:
     payload = {
         "schema_version": 1,
-        "recording_active": False,
-        "active_files": [],
+        "recording_active": recording_active,
+        "recording_started_ts": recording_started_ts,
+        "active_files": recording_files,
         "updated_ts": now_ts(),
     }
     atomic_write_json(RECORDING_STATE_PATH, payload)
 
 
 def load_from_persistence() -> None:
-    global PIN, ROOM_NAME, ROOM_STATUS
+    global PIN, ROOM_NAME, ROOM_STATUS, recording_active, recording_started_ts, recording_files
 
     room_config = load_json_if_exists(ROOM_CONFIG_PATH)
     if room_config:
@@ -244,6 +250,18 @@ def load_from_persistence() -> None:
         if isinstance(owners, dict):
             for channel in state.channels:
                 channel["owner"] = owners.get(channel["channel_id"])
+        overrides = runtime_state.get("overrides") or {}
+        if isinstance(overrides, dict):
+            OVERRIDES["blocked"] = overrides.get("blocked")
+            OVERRIDES["closed"] = overrides.get("closed")
+
+    recording_state = load_json_if_exists(RECORDING_STATE_PATH)
+    if recording_state:
+        recording_active = bool(recording_state.get("recording_active", False))
+        recording_started_ts = recording_state.get("recording_started_ts")
+        files = recording_state.get("active_files")
+        if isinstance(files, list):
+            recording_files = files
 
     I18N_LIBRARY["room_name_i18n"]["en"] = ROOM_NAME
 
@@ -285,9 +303,14 @@ def build_publisher_state_snapshot(channels: list[dict[str, Any]]) -> dict[str, 
 
 
 def build_listener_state_snapshot(channels: list[dict[str, Any]]) -> dict[str, Any]:
+    custom_text = STATUS_TEXT
+    if ROOM_STATUS == "BLOCKED" and OVERRIDES.get("blocked"):
+        custom_text = str(OVERRIDES["blocked"])
+    if ROOM_STATUS == "CLOSED" and OVERRIDES.get("closed"):
+        custom_text = str(OVERRIDES["closed"])
     return {
         "room_status": ROOM_STATUS,
-        "status_custom_text": STATUS_TEXT,
+        "status_custom_text": custom_text,
         "channels": [
             {
                 "channel_id": channel["channel_id"],
@@ -364,6 +387,7 @@ def get_broadcast_snapshot() -> tuple[dict[str, Any], dict[str, Any], dict[str, 
 async def persist_state_locked() -> None:
     persist_room_config()
     persist_runtime_state()
+    persist_recording_state()
 
 
 async def broadcast_states() -> None:
@@ -497,6 +521,51 @@ async def drop_publisher_locked(publisher_id: str) -> None:
     log_connection("publisher_disconnected", publisher_id=publisher_id)
 
 
+def sanitize_label_for_filename(label: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in label.strip())
+    return safe[:64] or "channel"
+
+
+async def start_recording_locked(reason: str) -> None:
+    global recording_active, recording_started_ts, recording_files
+    if recording_active:
+        return
+    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    recording_started_ts = now_ts()
+    stamp = datetime.fromtimestamp(recording_started_ts, tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+    recording_files = []
+    for channel in state.channels:
+        filename = f"{stamp}-{channel['channel_id']}-{sanitize_label_for_filename(channel['channel_label'])}.mp3"
+        path = RECORDINGS_DIR / filename
+        path.touch(exist_ok=True)
+        recording_files.append({"channel_id": channel["channel_id"], "path": str(path), "created_ts": now_ts()})
+    recording_active = True
+    log_event("recording_started", reason=reason, files=len(recording_files))
+
+
+async def stop_recording_locked(reason: str) -> None:
+    global recording_active, recording_started_ts, recording_files
+    if not recording_active:
+        return
+    recording_active = False
+    log_event("recording_stopped", reason=reason, files=len(recording_files), started_ts=recording_started_ts)
+    recording_started_ts = None
+    recording_files = []
+
+
+async def set_room_status_locked(new_status: str, reason: str) -> bool:
+    global ROOM_STATUS
+    if new_status not in {"OPENED", "BLOCKED", "CLOSED"}:
+        return False
+    ROOM_STATUS = new_status
+    if new_status == "OPENED":
+        await start_recording_locked(reason=reason)
+    if new_status == "CLOSED":
+        await stop_recording_locked(reason=reason)
+    log_event("room_status_changed", room_status=ROOM_STATUS, reason=reason)
+    return True
+
+
 def validate_csv_rows(rows: list[dict[str, str]], headers: list[str]) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     required_headers = {"channel_id", "channel_label", "listen"}
@@ -573,7 +642,7 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
     except UnicodeDecodeError:
         return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_ENCODING", "message": "File must be UTF-8"}]}
 
-    reader = csv.DictReader(StringIO(text))
+    reader = csv.DictReader(StringIO(text), delimiter=";")
     rows = list(reader)
     headers = reader.fieldnames or []
 
@@ -628,6 +697,152 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
             "channels": len(state.channels),
         },
     }
+
+
+def format_console_help() -> str:
+    return (
+        "Commands:\n"
+        "  help\n"
+        "  status\n"
+        "  set_room_status <OPENED|BLOCKED|CLOSED>\n"
+        "  start_recording\n"
+        "  stop_recording\n"
+        "  set_channel_label <channel_id> <new_label>\n"
+        "  set_listen <channel_id> <true|false>\n"
+        "  off_air <channel_id>\n"
+        "  set_override <blocked|closed> <text>\n"
+        "  clear_override <blocked|closed>\n"
+    )
+
+
+async def process_console_command(line: str) -> str:
+    parts = line.strip().split()
+    if not parts:
+        return "Empty command. Use: help"
+    cmd = parts[0].lower()
+
+    if cmd == "help":
+        return format_console_help()
+
+    if cmd == "status":
+        return (
+            f"room_status={ROOM_STATUS}, recording_active={recording_active}, "
+            f"channels={len(state.channels)}, publishers={len(state.publishers)}, listeners={len(state.listeners)}, "
+            f"target_capacity={TARGET_CAPACITY}, max_active_listeners={MAX_ACTIVE_LISTENERS}, "
+            f"max_new_connections_per_sec={MAX_NEW_CONNECTIONS_PER_SEC}"
+        )
+
+    if cmd == "set_room_status" and len(parts) == 2:
+        async with state_lock:
+            ok = await set_room_status_locked(parts[1].upper(), reason="console")
+            if not ok:
+                return "Invalid status. Use OPENED, BLOCKED, or CLOSED."
+            await persist_state_locked()
+        await broadcast_states()
+        return f"room_status changed to {ROOM_STATUS}"
+
+    if cmd == "start_recording":
+        async with state_lock:
+            await start_recording_locked(reason="console")
+            await persist_state_locked()
+        return "recording started"
+
+    if cmd == "stop_recording":
+        async with state_lock:
+            await stop_recording_locked(reason="console")
+            await persist_state_locked()
+        return "recording stopped"
+
+    if cmd == "set_channel_label" and len(parts) >= 3:
+        channel_id = parts[1]
+        new_label = " ".join(parts[2:]).strip()
+        async with state_lock:
+            channel = find_channel(state.channels, channel_id)
+            if channel is None:
+                return f"Unknown channel_id: {channel_id}"
+            channel["channel_label"] = new_label
+            await persist_state_locked()
+            log_event("channel_label_changed", channel_id=channel_id, channel_label=new_label, actor="console")
+        await broadcast_states()
+        return f"{channel_id} label updated"
+
+    if cmd == "set_listen" and len(parts) == 3:
+        channel_id = parts[1]
+        value = parts[2].lower()
+        if value not in {"true", "false"}:
+            return "set_listen value must be true or false."
+        listen_value = value == "true"
+        async with state_lock:
+            channel = find_channel(state.channels, channel_id)
+            if channel is None:
+                return f"Unknown channel_id: {channel_id}"
+            channel["listen"] = listen_value
+            await persist_state_locked()
+            log_event("channel_listen_changed", channel_id=channel_id, listen=listen_value, actor="console")
+        await broadcast_states()
+        return f"{channel_id} listen set to {value}"
+
+    if cmd == "off_air" and len(parts) == 2:
+        channel_id = parts[1]
+        async with state_lock:
+            channel = find_channel(state.channels, channel_id)
+            if channel is None:
+                return f"Unknown channel_id: {channel_id}"
+            previous_owner = channel.get("owner")
+            channel["owner"] = None
+            channel["off_air_ts"] = now_ts()
+            await persist_state_locked()
+            log_event("off_air_forced", channel_id=channel_id, previous_owner=previous_owner, actor="console")
+
+            if previous_owner and previous_owner in state.publishers:
+                await send_json_safe(
+                    state.publishers[previous_owner].websocket,
+                    make_envelope("force_off_air", {"channel_id": channel_id, "reason": "console_off_air"}),
+                )
+        await broadcast_states()
+        return f"{channel_id} owner cleared"
+
+    if cmd == "set_override" and len(parts) >= 3:
+        key = parts[1].lower()
+        if key not in {"blocked", "closed"}:
+            return "set_override only supports blocked or closed."
+        text = " ".join(parts[2:]).strip()
+        async with state_lock:
+            OVERRIDES[key] = text
+            await persist_state_locked()
+            log_event("override_set", key=key, text=text, actor="console")
+        await broadcast_states()
+        return f"override {key} updated"
+
+    if cmd == "clear_override" and len(parts) == 2:
+        key = parts[1].lower()
+        if key not in {"blocked", "closed"}:
+            return "clear_override only supports blocked or closed."
+        async with state_lock:
+            OVERRIDES[key] = None
+            await persist_state_locked()
+            log_event("override_cleared", key=key, actor="console")
+        await broadcast_states()
+        return f"override {key} cleared"
+
+    return "Unknown command. Use: help"
+
+
+async def console_command_loop() -> None:
+    print("[backend] console command loop started. Type 'help' for commands.")
+    while True:
+        try:
+            line = await asyncio.to_thread(input, "backend> ")
+        except EOFError:
+            await asyncio.sleep(1)
+            continue
+        except Exception as exc:
+            print(f"[backend] console input error: {exc}")
+            await asyncio.sleep(1)
+            continue
+
+        result = await process_console_command(line)
+        print(f"[backend] {result}")
 
 
 @app.websocket("/ws/publisher")
@@ -695,31 +910,35 @@ async def publisher_ws(websocket: WebSocket) -> None:
             if msg_type == "on_air":
                 channel_id = payload.get("channel_id")
                 rejected_owner: str | None = None
+                unknown_channel = False
 
                 async with state_lock:
                     channel = find_channel(state.channels, channel_id)
                     if channel is None:
-                        await send_error(websocket, "UNKNOWN_CHANNEL", request_id=request_id)
-                        continue
-
-                    owner = channel["owner"]
-                    if owner is None:
-                        channel["owner"] = publisher_id
-                        channel["on_air_ts"] = now_ts()
-                        await persist_state_locked()
-                        log_event("on_air_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
-                        print(f"[backend] ON_AIR granted channel={channel_id} owner={publisher_id}")
-                    elif owner == publisher_id:
-                        channel["request_on_air_ts"] = payload.get("request_on_air_ts")
-                        log_event("on_air_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
-                        print(f"[backend] ON_AIR duplicate ignored channel={channel_id} owner={publisher_id}")
+                        unknown_channel = True
                     else:
-                        rejected_owner = owner
-                        log_event("on_air_rejected", publisher_id=publisher_id, channel_id=channel_id, owner=owner, request_id=request_id)
-                        print(
-                            f"[backend] ON_AIR rejected channel={channel_id} "
-                            f"owner={owner} requester={publisher_id}"
-                        )
+                        owner = channel["owner"]
+                        if owner is None:
+                            channel["owner"] = publisher_id
+                            channel["on_air_ts"] = now_ts()
+                            await persist_state_locked()
+                            log_event("on_air_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
+                            print(f"[backend] ON_AIR granted channel={channel_id} owner={publisher_id}")
+                        elif owner == publisher_id:
+                            channel["request_on_air_ts"] = payload.get("request_on_air_ts")
+                            log_event("on_air_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
+                            print(f"[backend] ON_AIR duplicate ignored channel={channel_id} owner={publisher_id}")
+                        else:
+                            rejected_owner = owner
+                            log_event("on_air_rejected", publisher_id=publisher_id, channel_id=channel_id, owner=owner, request_id=request_id)
+                            print(
+                                f"[backend] ON_AIR rejected channel={channel_id} "
+                                f"owner={owner} requester={publisher_id}"
+                            )
+
+                if unknown_channel:
+                    await send_error(websocket, "UNKNOWN_CHANNEL", request_id=request_id)
+                    continue
 
                 if rejected_owner is not None:
                     await send_json_safe(
@@ -732,23 +951,27 @@ async def publisher_ws(websocket: WebSocket) -> None:
 
             if msg_type == "stop":
                 channel_id = payload.get("channel_id")
+                unknown_channel = False
                 async with state_lock:
                     channel = find_channel(state.channels, channel_id)
                     if channel is None:
-                        await send_error(websocket, "UNKNOWN_CHANNEL", request_id=request_id)
-                        continue
+                        unknown_channel = True
+                    else:
+                        owner = channel["owner"]
+                        if owner == publisher_id:
+                            channel["owner"] = None
+                            channel["off_air_ts"] = now_ts()
+                            await persist_state_locked()
+                            log_event("stop_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
+                            print(f"[backend] STOP owner cleared channel={channel_id} owner={publisher_id}")
+                        elif owner is None:
+                            channel["request_off_air_ts"] = payload.get("request_off_air_ts")
+                            log_event("stop_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
+                            print(f"[backend] STOP duplicate ignored channel={channel_id}")
 
-                    owner = channel["owner"]
-                    if owner == publisher_id:
-                        channel["owner"] = None
-                        channel["off_air_ts"] = now_ts()
-                        await persist_state_locked()
-                        log_event("stop_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
-                        print(f"[backend] STOP owner cleared channel={channel_id} owner={publisher_id}")
-                    elif owner is None:
-                        channel["request_off_air_ts"] = payload.get("request_off_air_ts")
-                        log_event("stop_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
-                        print(f"[backend] STOP duplicate ignored channel={channel_id}")
+                if unknown_channel:
+                    await send_error(websocket, "UNKNOWN_CHANNEL", request_id=request_id)
+                    continue
 
                 await broadcast_states()
                 continue
@@ -785,19 +1008,24 @@ async def listener_ws(websocket: WebSocket) -> None:
             listener_connect_count = 0
         listener_connect_count += 1
 
+        reject_code: str | None = None
         async with state_lock:
             if len(state.listeners) >= MAX_ACTIVE_LISTENERS:
-                await send_error(websocket, "LISTENER_OVERFLOW")
-                return
-            if listener_connect_count > MAX_NEW_CONNECTIONS_PER_SEC:
-                await send_error(websocket, "CONNECTION_RATE_LIMIT")
-                return
+                reject_code = "LISTENER_OVERFLOW"
+            elif listener_connect_count > MAX_NEW_CONNECTIONS_PER_SEC:
+                reject_code = "CONNECTION_RATE_LIMIT"
+            if reject_code:
+                pass
+            else:
+                listener_id = f"listener_{state.listener_counter}"
+                state.listener_counter += 1
+                state.listeners.add(websocket)
+                print(f"[backend] listener connected listener_id={listener_id}")
+                log_connection("listener_connected", listener_id=listener_id)
 
-            listener_id = f"listener_{state.listener_counter}"
-            state.listener_counter += 1
-            state.listeners.add(websocket)
-            print(f"[backend] listener connected listener_id={listener_id}")
-            log_connection("listener_connected", listener_id=listener_id)
+        if reject_code:
+            await send_error(websocket, reject_code)
+            return
 
         request_id = first.get("request_id") if isinstance(first.get("request_id"), str) else next_request_id("lst-connect")
         await send_connect_success(
@@ -850,9 +1078,14 @@ async def monitor_timeouts() -> None:
 @app.on_event("startup")
 async def startup() -> None:
     ensure_data_dir()
+    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     load_from_persistence()
+    async with state_lock:
+        if ROOM_STATUS == "OPENED" and not recording_active:
+            await start_recording_locked(reason="startup_opened")
     persist_room_config()
     persist_runtime_state()
     persist_recording_state()
     log_event("backend_started")
     asyncio.create_task(monitor_timeouts())
+    asyncio.create_task(console_command_loop())
