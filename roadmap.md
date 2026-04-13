@@ -61,7 +61,7 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 - after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
 - listener keeps operating with current page session and current websocket/livekit lifecycle
 
-5) emergency override behavior
+5) override behavior
 
 ### Exit criteria
 - deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
@@ -168,5 +168,5 @@ Define and start Admin Web UI architecture and first vertical slice.
 
 ## Post-MVP deferred items (after Stage XIII, non-priority unless risk escalates)
 
-1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries + emergency override)
+1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries + override)
 2) advanced runtime language personalization (backend-side per-listener selection)

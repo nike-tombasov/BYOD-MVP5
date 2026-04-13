@@ -269,7 +269,7 @@ Rules:
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
 4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
 5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
-6) deploy dictionaries immutable during event runtime, кроме emergency override manual console command;
+6) deploy dictionaries immutable during event runtime, кроме override manual console command;
 7) override применяется независимо для BLOCKED и CLOSED текстов.
 
 Mandatory dictionaries for each event:
@@ -309,7 +309,7 @@ i18n/import and persistence consistency note:
 - MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 
 
-### 9.14. Emergency override (runtime status texts)
+### 9.14. Override (runtime status texts)
 
 Цель: временная коррекция текстов статусов во время мероприятия без redeploy.
 

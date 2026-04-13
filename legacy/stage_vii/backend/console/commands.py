@@ -20,8 +20,6 @@ def format_console_help() -> str:
         "  off_air <channel_id>\n"
         "  set_override <blocked|closed> <text>\n"
         "  clear_override <blocked|closed>\n"
-        "  emergency_override <blocked|closed> <text>\n"
-        "  emergency_override_reset <blocked|closed>\n"
     )
 
 
@@ -123,7 +121,7 @@ async def process_console_command(
         await broadcast_cb()
         return f"{channel_id} owner cleared"
 
-    if cmd in {"set_override", "emergency_override"} and len(parts) >= 3:
+    if cmd == "set_override" and len(parts) >= 3:
         key = parts[1].lower()
         if key not in {"blocked", "closed"}:
             return f"{cmd} only supports blocked or closed."
@@ -131,20 +129,18 @@ async def process_console_command(
         async with state_lock:
             state_service.runtime.overrides[key] = text
             room_service.persist_all()
-            event_name = "emergency_override_set" if cmd == "emergency_override" else "override_set"
-            room_service.storage.log_event(event_name, key=key, text=text, actor="console")
+            room_service.storage.log_event("override_set", key=key, text=text, actor="console")
         await broadcast_cb()
         return f"override {key} updated"
 
-    if cmd in {"clear_override", "emergency_override_reset"} and len(parts) == 2:
+    if cmd == "clear_override" and len(parts) == 2:
         key = parts[1].lower()
         if key not in {"blocked", "closed"}:
             return f"{cmd} only supports blocked or closed."
         async with state_lock:
             state_service.runtime.overrides[key] = None
             room_service.persist_all()
-            event_name = "emergency_override_cleared" if cmd == "emergency_override_reset" else "override_cleared"
-            room_service.storage.log_event(event_name, key=key, actor="console")
+            room_service.storage.log_event("override_cleared", key=key, actor="console")
         await broadcast_cb()
         return f"override {key} cleared"
 

@@ -6,7 +6,7 @@ Finalize Listener room status behavior (`OPENED` / `BLOCKED` / `CLOSED`) on top 
 ## Strictly IN scope
 1) Listener behavior for `BLOCKED` and `CLOSED`.
 2) Deterministic return to normal flow after status goes back to `OPENED`.
-3) Emergency override text behavior validation for Listener UI.
+3) Override text behavior validation for Listener UI.
 4) Formal Stage VIII checklist evidence updates.
 5) Documentation sync for Stage VII closure and Stage VIII activation.
 

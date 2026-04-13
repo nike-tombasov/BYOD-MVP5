@@ -58,7 +58,7 @@ Date of Stage VII closure record: **April 13, 2026**.
 3) OPENED return
 - resume without page reload.
 
-4) Emergency override texts
+4) Override texts
 - BLOCKED/CLOSED override applied independently.
 
 ---
