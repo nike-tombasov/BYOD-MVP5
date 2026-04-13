@@ -6,12 +6,12 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 
 Persistence formalization:
 - canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
-- canonical file for admin CSV import format and validation: `docs/17_csv_import_schema_v1.md`.
+- canonical file for admin JSON import format and validation: `docs/17_csv_import_schema_v1.md`.
 
 Startup/import persistence policy:
 - after restart backend must keep last successful imported room metadata;
 - only clean deploy (no import yet) uses immutable bootstrap defaults;
-- each new successful CSV import fully replaces previous room metadata snapshot (no metadata mixing).
+- each new successful JSON import fully replaces previous room metadata snapshot (no metadata mixing).
 
 1) room PIN (6-тизначный код)
 2) channel number - channel_id по форме channel_0, channel_1, channel_2...
@@ -302,9 +302,9 @@ Publisher получает полный `i18n_library`, но в MVP рендер
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
-CSV/import and persistence consistency note:
+i18n/import and persistence consistency note:
 - i18n library bootstrap/import format is formalized in:
-  - `docs/17_csv_import_schema_v1.md` (all required CSV headers including i18n fields);
+  - `docs/17_csv_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
   - `docs/16_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
 - MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 

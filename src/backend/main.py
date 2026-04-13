@@ -1,12 +1,10 @@
 import asyncio
 import contextlib
-import csv
 import json
 import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from itertools import count
 from pathlib import Path
 from typing import Any
@@ -547,159 +545,107 @@ async def set_room_status_locked(new_status: str, reason: str) -> bool:
     return True
 
 
-def validate_csv_rows(rows: list[dict[str, str]], headers: list[str]) -> list[dict[str, Any]]:
+def validate_import_json_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
-    required_headers = {
-        "channel_id",
-        "channel_label",
-        "listen",
-        "pin",
-        "target_capacity",
-        "room_name_i18n_en",
-        "room_name_i18n_ru",
-        "custom_status_text_blocked_i18n_en",
-        "custom_status_text_blocked_i18n_ru",
-        "custom_status_text_closed_i18n_en",
-        "custom_status_text_closed_i18n_ru",
-    }
-    optional_headers: set[str] = set()
+    required_fields = {"pin", "target_capacity", "channels", "i18n_library"}
+    missing_fields = required_fields - set(payload.keys())
+    for field in sorted(missing_fields):
+        errors.append({"line": 1, "field": field, "code": "MISSING_FIELD", "message": f"{field} is required"})
 
-    header_set = set(headers)
-    missing = required_headers - header_set
-    unknown = header_set - required_headers - optional_headers
-    if missing:
-        for field in sorted(missing):
-            errors.append({"line": 1, "field": field, "code": "MISSING_HEADER", "message": f"Header {field} is required"})
-    if unknown:
-        for field in sorted(unknown):
-            errors.append({"line": 1, "field": field, "code": "UNKNOWN_HEADER", "message": f"Header {field} is not allowed"})
+    pin = payload.get("pin")
+    if not isinstance(pin, str) or not pin.strip():
+        errors.append({"line": 1, "field": "pin", "code": "INVALID_PIN", "message": "pin must be non-empty string"})
 
-    seen_ids: set[str] = set()
-    pin_values: set[str] = set()
-    target_capacity_values: set[str] = set()
-    room_name_i18n_en_values: set[str] = set()
-    room_name_i18n_ru_values: set[str] = set()
-    blocked_en_values: set[str] = set()
-    blocked_ru_values: set[str] = set()
-    closed_en_values: set[str] = set()
-    closed_ru_values: set[str] = set()
+    target_capacity = payload.get("target_capacity")
+    if not isinstance(target_capacity, int) or target_capacity <= 0:
+        errors.append({"line": 1, "field": "target_capacity", "code": "INVALID_TARGET_CAPACITY", "message": "target_capacity must be positive integer"})
 
-    for idx, row in enumerate(rows, start=2):
-        channel_id = (row.get("channel_id") or "").strip()
-        channel_label = (row.get("channel_label") or "").strip()
-        listen = (row.get("listen") or "").strip()
-
-        if not channel_id.startswith("channel_") or not channel_id.replace("channel_", "", 1).isdigit():
-            errors.append({"line": idx, "field": "channel_id", "code": "INVALID_CHANNEL_ID", "message": f"Invalid channel_id: {channel_id}"})
-        if channel_id in seen_ids:
-            errors.append({"line": idx, "field": "channel_id", "code": "DUPLICATE_CHANNEL_ID", "message": f"{channel_id} already used"})
-        seen_ids.add(channel_id)
-
-        if len(channel_label) < 1 or len(channel_label) > 80:
-            errors.append({"line": idx, "field": "channel_label", "code": "EMPTY_CHANNEL_LABEL", "message": "channel_label must be 1..80 chars"})
-
-        if listen not in {"true", "false"}:
-            errors.append({"line": idx, "field": "listen", "code": "INVALID_LISTEN_VALUE", "message": f"listen must be true/false, got: {listen}"})
-
-        pin = (row.get("pin") or "").strip()
-        if pin:
-            pin_values.add(pin)
-
-        target_capacity = (row.get("target_capacity") or "").strip()
-        if target_capacity:
-            target_capacity_values.add(target_capacity)
-        room_name_i18n_en_values.add((row.get("room_name_i18n_en") or "").strip())
-        room_name_i18n_ru_values.add((row.get("room_name_i18n_ru") or "").strip())
-        blocked_en_values.add((row.get("custom_status_text_blocked_i18n_en") or "").strip())
-        blocked_ru_values.add((row.get("custom_status_text_blocked_i18n_ru") or "").strip())
-        closed_en_values.add((row.get("custom_status_text_closed_i18n_en") or "").strip())
-        closed_ru_values.add((row.get("custom_status_text_closed_i18n_ru") or "").strip())
-
-    if len(room_name_i18n_en_values) > 1:
-        errors.append({"line": 1, "field": "room_name_i18n_en", "code": "INCONSISTENT_ROOM_NAME", "message": "room_name_i18n_en must be identical in all rows"})
-    if len(room_name_i18n_ru_values) > 1:
-        errors.append({"line": 1, "field": "room_name_i18n_ru", "code": "INCONSISTENT_ROOM_NAME", "message": "room_name_i18n_ru must be identical in all rows"})
-    if len(blocked_en_values) > 1:
-        errors.append({"line": 1, "field": "custom_status_text_blocked_i18n_en", "code": "INCONSISTENT_ROOM_NAME", "message": "blocked text en must be identical in all rows"})
-    if len(blocked_ru_values) > 1:
-        errors.append({"line": 1, "field": "custom_status_text_blocked_i18n_ru", "code": "INCONSISTENT_ROOM_NAME", "message": "blocked text ru must be identical in all rows"})
-    if len(closed_en_values) > 1:
-        errors.append({"line": 1, "field": "custom_status_text_closed_i18n_en", "code": "INCONSISTENT_ROOM_NAME", "message": "closed text en must be identical in all rows"})
-    if len(closed_ru_values) > 1:
-        errors.append({"line": 1, "field": "custom_status_text_closed_i18n_ru", "code": "INCONSISTENT_ROOM_NAME", "message": "closed text ru must be identical in all rows"})
-
-    for field_name, values in (
-        ("room_name_i18n_en", room_name_i18n_en_values),
-        ("room_name_i18n_ru", room_name_i18n_ru_values),
-        ("custom_status_text_blocked_i18n_en", blocked_en_values),
-        ("custom_status_text_blocked_i18n_ru", blocked_ru_values),
-        ("custom_status_text_closed_i18n_en", closed_en_values),
-        ("custom_status_text_closed_i18n_ru", closed_ru_values),
-    ):
-        if values == {""}:
-            errors.append({"line": 1, "field": field_name, "code": "EMPTY_CHANNEL_LABEL", "message": f"{field_name} must not be empty"})
-    if len(pin_values) > 1:
-        errors.append({"line": 1, "field": "pin", "code": "INCONSISTENT_PIN", "message": "pin must be identical in all rows"})
-
-    if not target_capacity_values:
-        errors.append({"line": 1, "field": "target_capacity", "code": "MISSING_TARGET_CAPACITY", "message": "target_capacity required in CSV for now"})
-    elif len(target_capacity_values) > 1:
-        errors.append({"line": 1, "field": "target_capacity", "code": "INVALID_TARGET_CAPACITY", "message": "target_capacity must be identical in all rows"})
+    channels = payload.get("channels")
+    if not isinstance(channels, list) or not channels:
+        errors.append({"line": 1, "field": "channels", "code": "INVALID_CHANNELS", "message": "channels must be non-empty list"})
     else:
-        value = next(iter(target_capacity_values))
-        if not value.isdigit() or int(value) <= 0:
-            errors.append({"line": 1, "field": "target_capacity", "code": "INVALID_TARGET_CAPACITY", "message": "target_capacity must be positive integer"})
+        seen_ids: set[str] = set()
+        for idx, channel in enumerate(channels, start=1):
+            if not isinstance(channel, dict):
+                errors.append({"line": idx, "field": "channels", "code": "INVALID_CHANNEL", "message": "channel item must be object"})
+                continue
+            channel_id = channel.get("channel_id")
+            channel_label = channel.get("channel_label")
+            listen = channel.get("listen")
+            if not isinstance(channel_id, str) or not channel_id.startswith("channel_") or not channel_id.replace("channel_", "", 1).isdigit():
+                errors.append({"line": idx, "field": "channel_id", "code": "INVALID_CHANNEL_ID", "message": "channel_id must match channel_<number>"})
+            elif channel_id in seen_ids:
+                errors.append({"line": idx, "field": "channel_id", "code": "DUPLICATE_CHANNEL_ID", "message": f"{channel_id} already used"})
+            else:
+                seen_ids.add(channel_id)
+            if not isinstance(channel_label, str) or len(channel_label.strip()) == 0:
+                errors.append({"line": idx, "field": "channel_label", "code": "EMPTY_CHANNEL_LABEL", "message": "channel_label must be non-empty string"})
+            if not isinstance(listen, bool):
+                errors.append({"line": idx, "field": "listen", "code": "INVALID_LISTEN_VALUE", "message": "listen must be boolean"})
+
+    i18n_library = payload.get("i18n_library")
+    required_i18n_maps = {
+        "room_name_i18n",
+        "custom_status_text_blocked_i18n",
+        "custom_status_text_closed_i18n",
+    }
+    if not isinstance(i18n_library, dict):
+        errors.append({"line": 1, "field": "i18n_library", "code": "INVALID_I18N_LIBRARY", "message": "i18n_library must be object"})
+    else:
+        for map_name in required_i18n_maps:
+            lang_map = i18n_library.get(map_name)
+            if not isinstance(lang_map, dict):
+                errors.append({"line": 1, "field": map_name, "code": "INVALID_I18N_MAP", "message": f"{map_name} must be object"})
+                continue
+            for required_lang in ("en", "ru"):
+                value = lang_map.get(required_lang)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append({"line": 1, "field": f"{map_name}.{required_lang}", "code": "MISSING_REQUIRED_LANG", "message": f"{map_name} must include non-empty {required_lang}"})
+            for lang_tag, text in lang_map.items():
+                if not isinstance(lang_tag, str) or not lang_tag.strip():
+                    errors.append({"line": 1, "field": map_name, "code": "INVALID_LANGUAGE_TAG", "message": "language tag must be non-empty string"})
+                if not isinstance(text, str) or not text.strip():
+                    errors.append({"line": 1, "field": f"{map_name}.{lang_tag}", "code": "INVALID_I18N_TEXT", "message": "i18n text must be non-empty string"})
 
     return errors
 
 
-@app.post("/admin/import_csv")
-async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+@app.post("/admin/import_json")
+async def import_json(file: UploadFile = File(...)) -> dict[str, Any]:
     global PIN, ROOM_NAME, recording_active, recording_started_ts, recording_files
 
     content = await file.read()
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
-        return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_ENCODING", "message": "File must be UTF-8"}]}
+        return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_ENCODING", "message": "JSON file must be UTF-8"}]}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_JSON", "message": "Invalid JSON"}]}
+    if not isinstance(payload, dict):
+        return {"ok": False, "errors": [{"line": 1, "field": "file", "code": "INVALID_JSON", "message": "Root JSON must be object"}]}
 
-    reader = csv.DictReader(StringIO(text), delimiter=";")
-    rows = list(reader)
-    headers = reader.fieldnames or []
-
-    errors = validate_csv_rows(rows, headers)
+    errors = validate_import_json_payload(payload)
     if errors:
         return {"ok": False, "errors": errors}
-
-    first = rows[0]
-    imported_pin = (first.get("pin") or PIN).strip() or PIN
-    imported_target_capacity = int((first.get("target_capacity") or TARGET_CAPACITY))
+    imported_pin = str(payload["pin"]).strip()
+    imported_target_capacity = int(payload["target_capacity"])
     imported_i18n_library = {
-        "room_name_i18n": {
-            "en": (first.get("room_name_i18n_en") or "").strip(),
-            "ru": (first.get("room_name_i18n_ru") or "").strip(),
-        },
-        "custom_status_text_blocked_i18n": {
-            "en": (first.get("custom_status_text_blocked_i18n_en") or "").strip(),
-            "ru": (first.get("custom_status_text_blocked_i18n_ru") or "").strip(),
-        },
-        "custom_status_text_closed_i18n": {
-            "en": (first.get("custom_status_text_closed_i18n_en") or "").strip(),
-            "ru": (first.get("custom_status_text_closed_i18n_ru") or "").strip(),
-        },
+        "room_name_i18n": {str(k): str(v) for k, v in payload["i18n_library"]["room_name_i18n"].items()},
+        "custom_status_text_blocked_i18n": {str(k): str(v) for k, v in payload["i18n_library"]["custom_status_text_blocked_i18n"].items()},
+        "custom_status_text_closed_i18n": {str(k): str(v) for k, v in payload["i18n_library"]["custom_status_text_closed_i18n"].items()},
     }
-    imported_room_name = imported_i18n_library["room_name_i18n"]["en"] or ROOM_NAME
-
-    imported_channels = []
-    for row in rows:
-        imported_channels.append(
-            {
-                "channel_id": row["channel_id"].strip(),
-                "channel_label": row["channel_label"].strip(),
-                "listen": row["listen"].strip() == "true",
-                "owner": None,
-            }
-        )
+    imported_room_name = imported_i18n_library["room_name_i18n"]["en"]
+    imported_channels = [
+        {
+            "channel_id": str(channel["channel_id"]).strip(),
+            "channel_label": str(channel["channel_label"]).strip(),
+            "listen": bool(channel["listen"]),
+            "owner": None,
+        }
+        for channel in payload["channels"]
+    ]
 
     publishers_to_close: list[WebSocket] = []
     listeners_to_close: list[WebSocket] = []
@@ -729,8 +675,8 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
             await ws.close()
 
     log_event(
-        "csv_import_applied",
-        request_id=next_request_id("csv-import"),
+        "json_import_applied",
+        request_id=next_request_id("json-import"),
         target_capacity=TARGET_CAPACITY,
         max_active_listeners=MAX_ACTIVE_LISTENERS,
         max_new_connections_per_sec=MAX_NEW_CONNECTIONS_PER_SEC,

@@ -28,9 +28,9 @@ for VPS pilot runs.
 2) JSON persistence for room data / connections / events
    - schema: `docs/16_backend_persistence_json_v1.md`
    - restart must keep last imported room metadata (bootstrap defaults only before first successful import)
-3) admin import of initial room data from formalized `.csv`
+3) admin import of initial room data from formalized JSON
    - schema: `docs/17_csv_import_schema_v1.md`
-   - includes required immutable i18n library headers (`en`/`ru`) for room and status texts
+   - includes required immutable i18n library maps (`en`/`ru` required, additional language tags accepted)
 4) manual console commands:
 - change `room_status`
 - start/stop recording

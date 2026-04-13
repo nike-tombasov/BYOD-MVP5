@@ -1,116 +1,142 @@
-## 18. CSV import schema v1 (admin initial room data + i18n library)
+## 18. JSON import schema v1 (admin room config + i18n library)
 
 Goal:
-- formalize Stage VII admin import format;
-- prevent partial/ambiguous room setup;
-- include immutable deploy-time i18n library bootstrap data;
-- provide deterministic validation and error reporting.
+- replace rigid CSV import with scalable JSON import;
+- support arbitrary language tags in immutable `i18n_library`;
+- keep MVP language model unchanged.
 
 ---
 
 ### 18.1 File format
 
-- Encoding: UTF-8 (BOM allowed, backend reads `utf-8-sig`).
-- Delimiter: semicolon `;`.
-- Quote char: `"` (RFC4180 compatible).
-- First row: header required.
-- Line ending: LF or CRLF allowed.
+- Encoding: UTF-8 (`utf-8-sig` accepted).
+- Payload root: JSON object.
+- Unicode text is fully supported.
+
+Canonical admin endpoint:
+- `POST /admin/import_json`
 
 ---
 
-### 18.2 Required headers (all required)
+### 18.2 Required top-level fields
 
-```text
-channel_id;channel_label;listen;pin;target_capacity;room_name_i18n_en;room_name_i18n_ru;custom_status_text_blocked_i18n_en;custom_status_text_blocked_i18n_ru;custom_status_text_closed_i18n_en;custom_status_text_closed_i18n_ru
+```json
+{
+  "pin": "123456",
+  "target_capacity": 200,
+  "channels": [],
+  "i18n_library": {}
+}
 ```
 
-Rule:
-- every header above MUST exist in import file;
-- no optional headers in MVP profile;
-- unknown headers are rejected.
+All fields above are required.
 
 ---
 
-### 18.3 Field rules
+### 18.3 Validation rules
 
-`channel_id`:
-- required
-- expected format: `channel_<number>`
-- unique per file
+Top-level:
+- `pin`: non-empty string
+- `target_capacity`: positive integer
+- `channels`: non-empty list
+- `i18n_library`: object
 
-`channel_label`:
-- required
-- 1..80 chars
-- UTF-8 text allowed
+`channels` item rules:
+- each item must be object with required fields:
+  - `channel_id`
+  - `channel_label`
+  - `listen`
+- `channel_id` format: `channel_<number>`
+- channel ids must be unique
+- `channel_label` must be non-empty string
+- `listen` must be boolean
 
-`listen`:
-- required
-- allowed values: `true`, `false` (lowercase)
+`i18n_library` required maps:
+- `room_name_i18n`
+- `custom_status_text_blocked_i18n`
+- `custom_status_text_closed_i18n`
 
-`pin` (room-level):
-- required
-- must be identical in all rows
+Each map must be object of `{language_tag: text}`:
+- language tags are not hardcoded to only `en`/`ru`;
+- additional tags are accepted (`zh`, `zh-CN`, `ar`, etc.);
+- MVP still requires at least `en` and `ru` in each map;
+- all map values must be non-empty strings.
 
-`target_capacity` (room-level):
-- required
-- positive integer
-- must be identical in all rows
-- imported as immutable event runtime parameter
-
-i18n room/status fields (room-level):
-- `room_name_i18n_en` required, identical in all rows
-- `room_name_i18n_ru` required, identical in all rows
-- `custom_status_text_blocked_i18n_en` required, identical in all rows
-- `custom_status_text_blocked_i18n_ru` required, identical in all rows
-- `custom_status_text_closed_i18n_en` required, identical in all rows
-- `custom_status_text_closed_i18n_ru` required, identical in all rows
-
-MVP language rule:
-- backend imports and sends full immutable `i18n_library` to clients;
-- backend does not store per-user `ui_lang` and does not choose language for listener.
+MVP rule unchanged:
+- backend imports and sends full immutable `i18n_library`;
+- backend does not store per-user `ui_lang`;
+- backend does not choose language per listener.
 
 ---
 
-### 18.4 Validation and apply strategy (baseline)
+### 18.4 Apply strategy
 
 Process:
-1) parse and validate all rows first;
-2) if critical error exists -> reject import and show report;
-3) if valid -> write new `room_config_v1.json` atomically;
-4) compute and persist derived backend limits from `target_capacity`:
+1) parse JSON and validate full payload;
+2) if any critical error -> reject import;
+3) if valid -> fully replace room metadata snapshot atomically;
+4) reset runtime metadata that can mix with old channel set (owners/overrides/recording markers);
+5) compute derived limits:
    - `max_active_listeners = target_capacity * 1.05`
    - `max_new_connections_per_sec = target_capacity / 15`
-5) apply immutable `i18n_library` values from CSV as deploy/runtime dictionaries;
-6) emit `csv_import_applied` event to events log.
-
-Replacement safety rule:
-- new successful CSV import fully replaces previous room metadata snapshot;
-- previous channel metadata must not be mixed with new metadata;
-- runtime metadata depending on old channels (owners/overrides/recording markers) must be reset during apply.
+6) persist full `i18n_library` without dropping extra languages;
+7) emit `json_import_applied` event.
 
 ---
 
-### 18.5 Valid full CSV example
+### 18.5 Valid JSON example (with extra `zh` language)
 
-```csv
-channel_id;channel_label;listen;pin;target_capacity;room_name_i18n_en;room_name_i18n_ru;custom_status_text_blocked_i18n_en;custom_status_text_blocked_i18n_ru;custom_status_text_closed_i18n_en;custom_status_text_closed_i18n_ru
-channel_0;Original - FLOOR - Оригинал;false;123456;200;Conference room;Зал конференции;Stream temporarily stopped;Трансляция временно остановлена;The conference is over. Thank you for your participation;Конференция окончена. Благодарим за участие
-channel_1;Russian - RUS - Русский;true;123456;200;Conference room;Зал конференции;Stream temporarily stopped;Трансляция временно остановлена;The conference is over. Thank you for your participation;Конференция окончена. Благодарим за участие
-channel_2;English - ENG - English;true;123456;200;Conference room;Зал конференции;Stream temporarily stopped;Трансляция временно остановлена;The conference is over. Thank you for your participation;Конференция окончена. Благодарим за участие
+```json
+{
+  "pin": "123456",
+  "target_capacity": 200,
+  "channels": [
+    {"channel_id": "channel_0", "channel_label": "Original - FLOOR - Оригинал", "listen": false},
+    {"channel_id": "channel_1", "channel_label": "Russian - RUS - Русский", "listen": true},
+    {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": true}
+  ],
+  "i18n_library": {
+    "room_name_i18n": {
+      "en": "Conference room",
+      "ru": "Зал конференции",
+      "zh": "会议厅"
+    },
+    "custom_status_text_blocked_i18n": {
+      "en": "Stream temporarily stopped",
+      "ru": "Трансляция временно остановлена",
+      "zh": "传输暂时停止"
+    },
+    "custom_status_text_closed_i18n": {
+      "en": "The conference is over. Thank you for your participation",
+      "ru": "Конференция окончена. Благодарим за участие",
+      "zh": "会议结束，感谢您的参与"
+    }
+  }
+}
 ```
 
 ---
 
-### 18.6 Invalid CSV example and expected error
+### 18.6 Invalid JSON example and expected error
 
-Invalid CSV (missing required header `room_name_i18n_ru`):
+Invalid example (missing `ru` in `room_name_i18n`):
 
-```csv
-channel_id;channel_label;listen;pin;target_capacity;room_name_i18n_en;custom_status_text_blocked_i18n_en;custom_status_text_blocked_i18n_ru;custom_status_text_closed_i18n_en;custom_status_text_closed_i18n_ru
-channel_0;Floor;false;123456;200;Conference room;Blocked;Заблокировано;Closed;Закрыто
+```json
+{
+  "pin": "123456",
+  "target_capacity": 200,
+  "channels": [
+    {"channel_id": "channel_0", "channel_label": "Floor", "listen": false}
+  ],
+  "i18n_library": {
+    "room_name_i18n": {"en": "Conference room"},
+    "custom_status_text_blocked_i18n": {"en": "Blocked", "ru": "Заблокировано"},
+    "custom_status_text_closed_i18n": {"en": "Closed", "ru": "Закрыто"}
+  }
+}
 ```
 
-Expected validation response (example):
+Expected validation error example:
 
 ```json
 {
@@ -118,9 +144,9 @@ Expected validation response (example):
   "errors": [
     {
       "line": 1,
-      "field": "room_name_i18n_ru",
-      "code": "MISSING_HEADER",
-      "message": "Header room_name_i18n_ru is required"
+      "field": "room_name_i18n.ru",
+      "code": "MISSING_REQUIRED_LANG",
+      "message": "room_name_i18n must include non-empty ru"
     }
   ]
 }
@@ -130,22 +156,19 @@ Expected validation response (example):
 
 ### 18.7 Error codes (baseline)
 
-- `MISSING_HEADER`
-- `UNKNOWN_HEADER`
 - `INVALID_ENCODING`
+- `INVALID_JSON`
+- `MISSING_FIELD`
+- `INVALID_PIN`
+- `INVALID_TARGET_CAPACITY`
+- `INVALID_CHANNELS`
+- `INVALID_CHANNEL`
 - `INVALID_CHANNEL_ID`
 - `DUPLICATE_CHANNEL_ID`
 - `EMPTY_CHANNEL_LABEL`
 - `INVALID_LISTEN_VALUE`
-- `INCONSISTENT_ROOM_NAME`
-- `INCONSISTENT_PIN`
-- `MISSING_TARGET_CAPACITY`
-- `INVALID_TARGET_CAPACITY`
-
----
-
-### 18.8 Operator UX requirements
-
-- show line number + field + human-readable message;
-- provide downloadable error report (`.json`);
-- require explicit confirmation before replacing active config.
+- `INVALID_I18N_LIBRARY`
+- `INVALID_I18N_MAP`
+- `MISSING_REQUIRED_LANG`
+- `INVALID_LANGUAGE_TAG`
+- `INVALID_I18N_TEXT`
