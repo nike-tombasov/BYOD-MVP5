@@ -31,3 +31,4 @@ build/
 livekit/
 start_deploing.txt
 src/listener/vendor
+backend_data
