@@ -29,6 +29,7 @@ for VPS pilot runs.
    - schema: `docs/16_backend_persistence_json_v1.md`
 3) admin import of initial room data from formalized `.csv`
    - schema: `docs/17_csv_import_schema_v1.md`
+   - includes required immutable i18n library headers (`en`/`ru`) for room and status texts
 4) manual console commands:
 - change `room_status`
 - start/stop recording

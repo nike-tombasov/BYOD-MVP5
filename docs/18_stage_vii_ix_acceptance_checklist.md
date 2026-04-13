@@ -28,6 +28,7 @@ Result statuses:
 - `docs/17_csv_import_schema_v1.md` validation passes.
 - invalid CSV rejected atomically (no partial apply).
 - `target_capacity` is imported and persisted as immutable event parameter.
+- `i18n_library` (`room_name_i18n`, `custom_status_text_blocked_i18n`, `custom_status_text_closed_i18n`) is imported, persisted to `room_config_v1.json`, and sent on connect/reconnect to Publisher and Listener.
 
 5) Operator commands
 - room_status / recording / label / listen / override commands work without restart.

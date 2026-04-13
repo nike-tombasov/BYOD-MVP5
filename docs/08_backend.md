@@ -297,6 +297,12 @@ Publisher получает полный `i18n_library`, но в MVP рендер
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
+CSV/import and persistence consistency note:
+- i18n library bootstrap/import format is formalized in:
+  - `docs/17_csv_import_schema_v1.md` (all required CSV headers including i18n fields);
+  - `docs/16_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
+- MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
+
 
 ### 9.14. Emergency override (runtime status texts)
 
