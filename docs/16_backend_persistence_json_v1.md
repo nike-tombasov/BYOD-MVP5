@@ -108,6 +108,7 @@ Backend MUST use this immutable bootstrap default at deploy-time before first CS
 ```
 
 Bootstrap default applies only before first successful CSV import.
+After successful CSV import backend keeps imported metadata across VPS/backend restart.
 
 ---
 
@@ -167,10 +168,24 @@ Baseline policy (MVP):
 
 ### 17.8 Startup recovery order
 
-1) load `room_config_v1.json`
-2) load `runtime_state_v1.json` (if exists)
-3) rebuild in-memory state (channels, room name from i18n `en`, pin, target_capacity)
-4) open new JSONL log files for current day
-5) append `backend_started` event
+1) if `room_config_v1.json` exists -> load last imported room metadata;
+2) if `room_config_v1.json` does not exist (clean deploy) -> apply immutable bootstrap defaults and persist new `room_config_v1.json`;
+3) load `runtime_state_v1.json` (if exists)
+4) rebuild in-memory state (channels, room name from i18n `en`, pin, target_capacity)
+5) open new JSONL log files for current day
+6) append `backend_started` event
+
+Import replacement rule:
+- on each successful CSV import backend fully replaces room metadata snapshot (`room_config_v1.json`) and resets runtime metadata that can mix with old room config (owners/overrides/recording state).
+- backend does not merge old and new channel metadata.
 
 ---
+
+### 17.9 Restart policy (operator expected behavior)
+
+Expected behavior:
+1) open backend;
+2) backend runs with last imported room metadata; if there was no successful import yet, backend runs with immutable bootstrap defaults;
+3) backend can replace room metadata by new admin CSV import.
+
+This policy protects room metadata from emergency VPS reboot data loss.

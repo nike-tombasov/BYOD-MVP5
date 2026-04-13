@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import csv
 import json
 import os
@@ -654,7 +655,7 @@ def validate_csv_rows(rows: list[dict[str, str]], headers: list[str]) -> list[di
 
 @app.post("/admin/import_csv")
 async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
-    global PIN, ROOM_NAME
+    global PIN, ROOM_NAME, recording_active, recording_started_ts, recording_files
 
     content = await file.read()
     try:
@@ -700,19 +701,32 @@ async def import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
             }
         )
 
+    publishers_to_close: list[WebSocket] = []
+    listeners_to_close: list[WebSocket] = []
     async with state_lock:
+        publishers_to_close = [session.websocket for session in state.publishers.values()]
+        listeners_to_close = list(state.listeners)
+
+        state.publishers.clear()
+        state.listeners.clear()
         PIN = imported_pin
         ROOM_NAME = imported_room_name
         I18N_LIBRARY["room_name_i18n"] = dict(imported_i18n_library["room_name_i18n"])
         I18N_LIBRARY["custom_status_text_blocked_i18n"] = dict(imported_i18n_library["custom_status_text_blocked_i18n"])
         I18N_LIBRARY["custom_status_text_closed_i18n"] = dict(imported_i18n_library["custom_status_text_closed_i18n"])
+        OVERRIDES["blocked"] = None
+        OVERRIDES["closed"] = None
+        recording_active = False
+        recording_started_ts = None
+        recording_files = []
         update_derived_limits(imported_target_capacity)
 
         state.channels = imported_channels
-        for session in state.publishers.values():
-            session.online = True
-
         await persist_state_locked()
+
+    for ws in publishers_to_close + listeners_to_close:
+        with contextlib.suppress(Exception):
+            await ws.close()
 
     log_event(
         "csv_import_applied",
@@ -1172,11 +1186,15 @@ async def monitor_timeouts() -> None:
 @app.on_event("startup")
 async def startup() -> None:
     ensure_data_dir()
+    room_config_exists = ROOM_CONFIG_PATH.exists()
     load_from_persistence()
+    if not room_config_exists:
+        log_event("bootstrap_defaults_applied")
     async with state_lock:
         if ROOM_STATUS == "OPENED" and not recording_active:
             await start_recording_locked(reason="startup_opened")
-    persist_room_config()
+    if not room_config_exists:
+        persist_room_config()
     persist_runtime_state()
     persist_recording_state()
     log_event("backend_started")

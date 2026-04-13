@@ -27,6 +27,7 @@ for VPS pilot runs.
 1) backend module decomposition and service boundaries
 2) JSON persistence for room data / connections / events
    - schema: `docs/16_backend_persistence_json_v1.md`
+   - restart must keep last imported room metadata (bootstrap defaults only before first successful import)
 3) admin import of initial room data from formalized `.csv`
    - schema: `docs/17_csv_import_schema_v1.md`
    - includes required immutable i18n library headers (`en`/`ru`) for room and status texts

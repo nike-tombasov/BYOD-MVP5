@@ -83,6 +83,11 @@ Process:
 5) apply immutable `i18n_library` values from CSV as deploy/runtime dictionaries;
 6) emit `csv_import_applied` event to events log.
 
+Replacement safety rule:
+- new successful CSV import fully replaces previous room metadata snapshot;
+- previous channel metadata must not be mixed with new metadata;
+- runtime metadata depending on old channels (owners/overrides/recording markers) must be reset during apply.
+
 ---
 
 ### 18.5 Valid full CSV example
