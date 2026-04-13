@@ -24,10 +24,13 @@ Result statuses:
 - `docs/16_backend_persistence_json_v1.md` implemented.
 - restart recovery test: load persisted state and continue operation.
 
-4) CSV import
-- `docs/17_csv_import_schema_v1.md` validation passes.
-- invalid CSV rejected atomically (no partial apply).
+4) JSON import
+- `docs/17_csv_import_schema_v1.md` (JSON import spec) validation passes.
+- invalid JSON rejected atomically (no partial apply).
 - `target_capacity` is imported and persisted as immutable event parameter.
+- `i18n_library` (`room_name_i18n`, `custom_status_text_blocked_i18n`, `custom_status_text_closed_i18n`) is imported, persisted to `room_config_v1.json`, and sent on connect/reconnect to Publisher and Listener.
+- emergency restart keeps last imported room metadata (no fallback to defaults after import).
+- new successful JSON import fully replaces previous room metadata (no mixed channel metadata).
 
 5) Operator commands
 - room_status / recording / label / listen / override commands work without restart.
