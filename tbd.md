@@ -25,3 +25,7 @@ Decision direction:
 Unresolved question: Listener UX note to reload page or autoreload/reconnect after timeout?
 
 ## 6. Owner return after reconnect 
+
+## 7. VPS
+1) где будет папка с backend_data и как backend её найдёт?
+2) 
