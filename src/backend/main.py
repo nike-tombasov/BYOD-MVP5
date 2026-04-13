@@ -88,6 +88,7 @@ state_lock = asyncio.Lock()
 request_counter = count(1)
 listener_connect_sec = int(time.time())
 listener_connect_count = 0
+listener_last_connect_by_ip: dict[str, int] = {}
 recording_active = False
 recording_started_ts: int | None = None
 recording_files: list[dict[str, Any]] = []
@@ -815,6 +816,7 @@ async def process_console_command(line: str) -> str:
 
     if cmd == "off_air" and len(parts) == 2:
         channel_id = parts[1]
+        owner_ws: WebSocket | None = None
         async with state_lock:
             channel = find_channel(state.channels, channel_id)
             if channel is None:
@@ -826,10 +828,12 @@ async def process_console_command(line: str) -> str:
             log_event("off_air_forced", channel_id=channel_id, previous_owner=previous_owner, actor="console")
 
             if previous_owner and previous_owner in state.publishers:
-                await send_json_safe(
-                    state.publishers[previous_owner].websocket,
-                    make_envelope("force_off_air", {"channel_id": channel_id, "reason": "console_off_air"}),
-                )
+                owner_ws = state.publishers[previous_owner].websocket
+        if owner_ws is not None:
+            await send_json_safe(
+                owner_ws,
+                make_envelope("force_off_air", {"channel_id": channel_id, "reason": "console_off_air"}),
+            )
         await broadcast_states()
         return f"{channel_id} owner cleared"
 
@@ -1048,6 +1052,7 @@ async def listener_ws(websocket: WebSocket) -> None:
 
     await websocket.accept()
     print("[backend] listener websocket accepted")
+    client_ip = websocket.client.host if websocket.client else "unknown"
     try:
         first = await websocket.receive_json()
         schema_error = validate_message_envelope(first)
@@ -1064,6 +1069,9 @@ async def listener_ws(websocket: WebSocket) -> None:
 
         reject_code: str | None = None
         async with state_lock:
+            last_connect = listener_last_connect_by_ip.get(client_ip)
+            if last_connect is not None and now - last_connect <= 2:
+                reject_code = "RECONNECT_TOO_FAST"
             if len(state.listeners) >= MAX_ACTIVE_LISTENERS:
                 reject_code = "LISTENER_OVERFLOW"
             elif listener_connect_count > MAX_NEW_CONNECTIONS_PER_SEC:
@@ -1071,11 +1079,12 @@ async def listener_ws(websocket: WebSocket) -> None:
             if reject_code:
                 pass
             else:
+                listener_last_connect_by_ip[client_ip] = now
                 listener_id = f"listener_{state.listener_counter}"
                 state.listener_counter += 1
                 state.listeners.add(websocket)
                 print(f"[backend] listener connected listener_id={listener_id}")
-                log_connection("listener_connected", listener_id=listener_id)
+                log_connection("listener_connected", listener_id=listener_id, ip=client_ip)
 
         if reject_code:
             await send_error(websocket, reject_code)
