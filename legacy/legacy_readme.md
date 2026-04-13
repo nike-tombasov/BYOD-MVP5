@@ -65,3 +65,20 @@ Include:
 * legacy/stage_vi/packaging/publisher_onedir.spec
 * legacy/stage_vi/packaging/build_windows_onedir.ps1
 * legacy/stage_vi/packaging/README.md
+
+## Stage VII
+
+Stage VII completed backend hardening baseline with decomposition, JSON import/persistence, WS baseline hardening, listener protections, and operator command set.
+
+Include:
+* legacy/stage_vii/README.md
+* legacy/stage_vii/backend/main.py
+* legacy/stage_vii/backend/config.py
+* legacy/stage_vii/backend/domain/models.py
+* legacy/stage_vii/backend/importers/room_config_json.py
+* legacy/stage_vii/backend/persistence/storage.py
+* legacy/stage_vii/backend/services/state_service.py
+* legacy/stage_vii/backend/services/room_service.py
+* legacy/stage_vii/backend/transport/admin_api.py
+* legacy/stage_vii/backend/transport/ws_handlers.py
+* legacy/stage_vii/backend/console/commands.py

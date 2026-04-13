@@ -1,48 +1,39 @@
-# MVP rules for current stage (Stage VI)
+# MVP rules for current stage (Stage VIII)
 
 ## Stage goal
-Publisher UI hardening for VPS pilot test, without uncontrolled feature expansion.
+Finalize Listener room status behavior (`OPENED` / `BLOCKED` / `CLOSED`) on top of completed Stage VII backend baseline.
 
 ## Strictly IN scope
-1) Publisher module decomposition (behaviour-preserving refactor only)
-2) JSON memory:
-- last backend IP
-- last PIN
-- channel_id -> device mapping
-3) seamless publisher token refresh without audio interruption
-4) reproducible Windows `.exe` packaging
-5) documentation updates for new workflow
+1) Listener behavior for `BLOCKED` and `CLOSED`.
+2) Deterministic return to normal flow after status goes back to `OPENED`.
+3) Emergency override text behavior validation for Listener UI.
+4) Formal Stage VIII checklist evidence updates.
+5) Documentation sync for Stage VII closure and Stage VIII activation.
 
-## Strictly OUT of scope for Stage VI
-- Listener BLOCKED/CLOSED advanced behaviour changes
-- Listener CDN fallback and race overhaul
-- backend recording implementation
-- admin web UI implementation
-- security stack implementation (rate-limit, Cloudflare, etc.)
+## Strictly OUT of scope for Stage VIII
+- real backend multitrack recording implementation (moved to future features after MVP pilots)
+- Admin Web UI implementation
+- security stack implementation (rate-limit/CDN/WAF full stack)
 - stress-test framework implementation
-- large-scale performance optimization beyond blocking bugs
+- large deploy automation changes
 
 ## Hard constraints
-- Preserve all hard rules from `hard_rules.md`
-- Keep LiveKit version focus: `1.9.11`
-- Do not break working Stage V engine behaviour
-- Sound must work after each development step
-- Any refactor must include behaviour check after step
+- Preserve all hard rules from `hard_rules.md`.
+- Keep LiveKit version focus: `1.9.11`.
+- Do not break completed Stage VII backend behavior.
+- Sound must work after each development step.
+- Any refactor must include behavior check after step.
 
 ## Temporary fixed values (until changed by dedicated stage)
-- PIN may remain fixed for MVP runtime tests
-- single room mode remains acceptable
-- console logging remains enabled for diagnostics
-- temporary important-event console block inside Publisher UI window remains enabled for diagnostics during active development
-- Publisher must append timestamped runtime events to `logs.txt` in program root folder (create file automatically if missing)
-- LiveKit API secret key for local test may still --dev (unchanged)
+- single-room mode is acceptable for MVP.
+- diagnostics console logging remains enabled.
+- immutable deploy/import `i18n_library` remains baseline.
 
 ## Anti-overdevelopment policy
-If a task is not required for Stage VI exit criteria, postpone it to next stage and document it in roadmap/open issues.
-
+If task is not required for Stage VIII exit criteria, postpone it to roadmap/future features with a short reason.
 
 ## Pinned protocol decisions
 - Backend state transport uses separated payloads: `publisher_state` and `listener_state`.
-- Publisher packaging mode: MVP = folder build, production target = one-file build.
-- NTP time sync on VPS is mandatory for JWT timing stability.
-- Protocol compatibility validation should use formal acceptance checklist document.
+- Backend remains source of truth for channel ownership/interlock.
+- Backend sends full immutable `i18n_library` on connect/reconnect.
+- Backend does not select language per user.

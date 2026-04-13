@@ -48,7 +48,7 @@ By decision, previous items 15.1–15.8 are moved out of open unresolved backlog
 - missing strict metrics set (latency/jitter/reconnect/error budget/CPU-RAM thresholds);
 - missing pass/fail numeric thresholds and mandatory report template fields.
 
-3) CSV strict validation rules are still open for final freeze:
+3) JSON strict validation rules are still open for final freeze:
 - whether to keep strict regex/atomic reject-all policy or simplify for operator UX in first VPS cycle.
 
 4) Persistence schema versioning format is still open:

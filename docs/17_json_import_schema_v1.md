@@ -1,7 +1,7 @@
 ## 18. JSON import schema v1 (admin room config + i18n library)
 
 Goal:
-- replace rigid CSV import with scalable JSON import;
+- replace old rigid import approach with scalable JSON import;
 - support arbitrary language tags in immutable `i18n_library`;
 - keep MVP language model unchanged.
 

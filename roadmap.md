@@ -1,8 +1,10 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on April 7, 2026
-- Stage V is completed and considered stable for core multi-publisher / multi-listener engine up to risky 32 channels.
-- Stage dependency update: Listener room_status behavior validation depends on backend console commands.
+## Status on April 13, 2026
+- Stage V is completed and stable for core multi-publisher / multi-listener baseline.
+- Stage VI is completed (Publisher UI hardening).
+- Stage VII is completed (backend decomposition, JSON import/persistence, WS hardening baseline, operator commands, listener protection).
+- Active stage is Stage VIII.
 
 ---
 
@@ -19,48 +21,18 @@
 
 ## Stage VII — Backend hardening before Listener status tests (Priority 2)
 
-### Main target
-Finish backend baseline MVP develop 
-for VPS pilot runs.
+### Result (completed)
+Short conclusion:
+1) backend monolith decomposition completed;
+2) JSON persistence + JSON import flow completed;
+3) WS envelope/state compatibility checks and listener protection completed;
+4) operator console commands completed.
 
-### Large-doing steps
-1) backend module decomposition and service boundaries
-2) JSON persistence for room data / connections / events
-   - schema: `docs/16_backend_persistence_json_v1.md`
-   - restart must keep last imported room metadata (bootstrap defaults only before first successful import)
-3) admin import of initial room data from formalized JSON
-   - schema: `docs/17_csv_import_schema_v1.md`
-   - includes required immutable i18n library maps (`en`/`ru` required, additional language tags accepted)
-4) manual console commands:
-- change `room_status`
-- start/stop recording
-- change `channel_label`
-- change `listen`
-5) channel multi-track recording to `recordings/`
-6) listener overflow protection (backend side):
-- hard limit `max_active_listeners = target_capacity * 1.05`
-- connection rate-limit: max `target_capacity / 15` new connections per second
-- minimal reconnect interval per listener: > 2 sec
-7) compatibility checks for separated WS states:
-- backend <-> publisher (`publisher_state`)
-- backend <-> listener (`listener_state`)
-8) emergency override manual console command
-9) websocket broadcast lock policy fix in backend event loop:
-- `lock -> copy immutable snapshot -> unlock -> send`
-- network sending is forbidden while state lock is held
-10) formal WS schema document (v1):
-- message types, required fields, validation rules
-- compatibility checklist for `publisher_state` and `listener_state`
-- canonical file: `docs/15_ws_schema_v1.md`
-11) immutable i18n library transport (must be implemented within near stages):
-- backend sends `i18n_library` payload to both Publisher and Listener on initial WS connect and reconnect
-- base deploy dictionaries are immutable during event runtime
-- emergency override remains separate runtime overlay mechanism
+Note:
+- real backend multi-track recording was intentionally moved to future features after MVP pilot cycle.
 
-### Exit criteria
-- operator can change room status and verify effects without code edits/restarts
-- compatibility checks for both state channels are passed by formal acceptance checklist document
-- checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VII section)
+Checklist artifact:
+- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VII marked PASS).
 
 ---
 
@@ -173,6 +145,7 @@ Topics:
 - reconnection after VPS reset
 - noise gate, audio processing, RMS visualizer
 - statistics, room dashboard, pre-warm publishing
+- backend real multi-track recording and recording file management policy
 - LiveKit version policy matrix and upgrade rules:
   - server version policy
   - Python SDK/API compatibility matrix

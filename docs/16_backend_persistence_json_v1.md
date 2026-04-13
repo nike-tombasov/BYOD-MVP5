@@ -31,10 +31,10 @@ For non-log files:
 2) flush + fsync
 3) atomic rename to target file
 
-For log files:
+For log files (current Stage VII implementation):
 - append-only write;
-- flush at least every N events or 1 second (configurable);
-- on startup ignore last corrupted partial line if crash occurred.
+- flush on every appended event line;
+- startup partial-line recovery/truncation is not implemented yet (known limitation for next stages).
 
 ---
 
