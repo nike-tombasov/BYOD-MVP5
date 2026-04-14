@@ -60,11 +60,23 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 4) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
 - after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
 - listener keeps operating with current page session and current websocket/livekit lifecycle
+- if in BLOCKED button channel pushed (highlighted) and status changes to OPENED sound of the channel must starts immidietly.
 
 5) override behavior
+- override blocked listener behaviour works as well as main blocked but using overrided text;
+- override closed listener behaviour works as well as main closed but using overrided text;
+- override do not stops/starts recording.  
+
+6) autodetection users system language
+- autodetection must take from i18n library only corresponding language set for room_name and statuses or fallback to default language (en);
+- add to current page logging of autodetected users system language name;
+- if users system language unknown and language going to be default (en) log the fact;
+- if users system language absent in i18n library and language going to be default (en) log the fact.
 
 ### Exit criteria
 - deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
+- correct override behavior
+- corresponding language set from i18n library by language autodetection
 - checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII section)
 
 ---
