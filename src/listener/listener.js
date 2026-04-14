@@ -5,6 +5,7 @@ let room = null;
 let currentState = null;
 let previousRoomStatus = null;
 let i18nLibrary = null;
+let wsMode = 'unknown'; // unknown | schema | legacy
 
 let selectedChannel = null;
 let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
@@ -20,6 +21,12 @@ const buttonsEl = document.getElementById('buttons');
 const statusBox = document.getElementById('statusBox');
 const logEl = document.getElementById('log');
 
+const languageContext = {
+  detectedRaw: 'unknown',
+  candidates: [],
+  uiLanguage: 'en',
+};
+
 function log(message) {
   console.log(`[listener] ${message}`);
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
@@ -27,6 +34,92 @@ function log(message) {
 
 function nowTs() {
   return Math.floor(Date.now() / 1000);
+}
+
+function normalizeLanguageTag(tag) {
+  if (typeof tag !== 'string') return '';
+  return tag.trim().replaceAll('_', '-').toLowerCase();
+}
+
+function languageBase(tag) {
+  return normalizeLanguageTag(tag).split('-')[0] || '';
+}
+
+function initLanguageDetection() {
+  const browserLanguages = [];
+
+  if (Array.isArray(navigator.languages)) {
+    browserLanguages.push(...navigator.languages);
+  }
+  if (typeof navigator.language === 'string') {
+    browserLanguages.push(navigator.language);
+  }
+
+  const normalized = browserLanguages
+    .map(normalizeLanguageTag)
+    .filter((value) => value !== '');
+
+  const candidates = [];
+  const seen = new Set();
+
+  for (const tag of normalized) {
+    const base = languageBase(tag);
+    for (const candidate of [tag, base]) {
+      if (candidate && !seen.has(candidate)) {
+        seen.add(candidate);
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  languageContext.candidates = candidates;
+
+  if (candidates.length === 0) {
+    languageContext.detectedRaw = 'unknown';
+    log('language autodetect: detected=unknown');
+    return;
+  }
+
+  languageContext.detectedRaw = candidates[0];
+  log(`language autodetect: detected=${languageBase(candidates[0]) || 'unknown'}`);
+}
+
+function chooseUiLanguage(i18n) {
+  const tags = new Set();
+
+  const maps = [
+    i18n?.room_name_i18n,
+    i18n?.custom_status_text_blocked_i18n,
+    i18n?.custom_status_text_closed_i18n,
+  ];
+
+  for (const map of maps) {
+    if (!map || typeof map !== 'object') continue;
+    for (const key of Object.keys(map)) {
+      const normalized = normalizeLanguageTag(key);
+      if (normalized) {
+        tags.add(normalized);
+      }
+    }
+  }
+
+  for (const candidate of languageContext.candidates) {
+    if (tags.has(candidate)) {
+      languageContext.uiLanguage = languageBase(candidate) || 'en';
+      log(`language autodetect: ui=${languageContext.uiLanguage}`);
+      return;
+    }
+  }
+
+  if (tags.has('en')) {
+    languageContext.uiLanguage = 'en';
+    log('language autodetect: ui=en');
+    return;
+  }
+
+  const firstAvailable = tags.values().next().value;
+  languageContext.uiLanguage = languageBase(firstAvailable || 'en') || 'en';
+  log(`language autodetect: ui=${languageContext.uiLanguage}`);
 }
 
 function makeEnvelope(type, payload = {}) {
@@ -44,6 +137,32 @@ function getPayload(message) {
     return message.payload;
   }
   return message || {};
+}
+
+function resolveTextByUiLanguage(map, fallbackText = '') {
+  if (!map || typeof map !== 'object') {
+    return fallbackText;
+  }
+
+  const normalizedMap = new Map();
+  Object.entries(map).forEach(([key, value]) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      normalizedMap.set(normalizeLanguageTag(key), value);
+    }
+  });
+
+  const uiLang = languageContext.uiLanguage || 'en';
+
+  if (normalizedMap.has(uiLang)) {
+    return normalizedMap.get(uiLang);
+  }
+
+  if (normalizedMap.has('en')) {
+    return normalizedMap.get('en');
+  }
+
+  const firstValue = normalizedMap.values().next().value;
+  return firstValue || fallbackText;
 }
 
 function isLiveKitReady() {
@@ -74,7 +193,6 @@ function getAudioPublications(participant) {
       return kind === LivekitClient.Track.Kind.Audio || kind === 'audio';
     });
   }
-
   return listValues(participant?.audioTrackPublications);
 }
 
@@ -106,7 +224,6 @@ function cachePublication(publication) {
   if (publication.track) {
     trackByChannel.set(trackName, publication.track);
   }
-
   return trackName;
 }
 
@@ -158,76 +275,16 @@ async function attachSelectedIfPossible() {
   log(`attach done channel=${selectedChannel}`);
 }
 
-function browserLanguageCandidates() {
-  const fromLanguages = Array.isArray(navigator.languages) ? navigator.languages : [];
-  const fromSingle = navigator.language ? [navigator.language] : [];
-  const all = [...fromLanguages, ...fromSingle].filter((x) => typeof x === 'string' && x.trim() !== '');
-
-  const seen = new Set();
-  const result = [];
-  for (const lang of all) {
-    const exact = lang.trim();
-    const base = exact.split('-')[0];
-    for (const tag of [exact, base]) {
-      const normalized = tag.toLowerCase();
-      if (normalized && !seen.has(normalized)) {
-        seen.add(normalized);
-        result.push(normalized);
-      }
-    }
-  }
-  return result;
-}
-
-function resolveTextByLanguage(map, fieldName, fallbackText = '') {
-  if (!map || typeof map !== 'object') {
-    return fallbackText;
-  }
-
-  const normalizedMap = new Map();
-  Object.entries(map).forEach(([k, v]) => {
-    if (typeof v === 'string' && v.trim() !== '') {
-      normalizedMap.set(k.toLowerCase(), v);
-    }
-  });
-
-  const candidates = browserLanguageCandidates();
-
-  if (candidates.length === 0) {
-    log(`language autodetect: browser language unknown, fallback=en for ${fieldName}`);
-  }
-
-  for (const candidate of candidates) {
-    if (normalizedMap.has(candidate)) {
-      const value = normalizedMap.get(candidate);
-      log(`language autodetect: ${fieldName} uses ${candidate}`);
-      return value;
-    }
-  }
-
-  if (candidates.length > 0) {
-    log(`language autodetect: browser language not present in i18n, fallback=en for ${fieldName}`);
-  }
-
-  if (normalizedMap.has('en')) {
-    return normalizedMap.get('en');
-  }
-
-  const firstValue = normalizedMap.values().next().value;
-  return firstValue || fallbackText;
-}
-
 function getLocalizedRoomName(fallbackName) {
-  const roomNameMap = i18nLibrary?.room_name_i18n;
-  return resolveTextByLanguage(roomNameMap, 'room_name', fallbackName || 'Room');
+  return resolveTextByUiLanguage(i18nLibrary?.room_name_i18n, fallbackName || 'Room');
 }
 
 function getLocalizedStatusText(status, fallbackText) {
   if (status === 'BLOCKED') {
-    return resolveTextByLanguage(i18nLibrary?.custom_status_text_blocked_i18n, 'status_blocked', fallbackText || 'BLOCKED');
+    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, fallbackText || 'BLOCKED');
   }
   if (status === 'CLOSED') {
-    return resolveTextByLanguage(i18nLibrary?.custom_status_text_closed_i18n, 'status_closed', fallbackText || 'CLOSED');
+    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_closed_i18n, fallbackText || 'CLOSED');
   }
   return '';
 }
@@ -436,12 +493,26 @@ async function connectLiveKit(livekitUrl, token) {
   await attachSelectedIfPossible();
 }
 
+function markWsMode(message) {
+  const hasSchema = typeof message?.schema_version === 'number';
+  if (hasSchema && wsMode !== 'schema') {
+    wsMode = 'schema';
+    log('ws mode: schema');
+    return;
+  }
+  if (!hasSchema && wsMode === 'unknown') {
+    wsMode = 'legacy';
+    log('ws mode: legacy');
+  }
+}
+
 async function handleBackendMessage(msg) {
   const msgType = msg?.type;
   const payload = getPayload(msg);
+  markWsMode(msg);
   log(`backend message type=${msgType}`);
 
-  if (msgType === 'connected') {
+  if (msgType === 'connected' && wsMode !== 'schema') {
     renderState(payload.state || msg.state || payload || {});
     try {
       await connectLiveKit(msg.livekit_url || payload.livekit_url, msg.token || payload.token);
@@ -462,6 +533,7 @@ async function handleBackendMessage(msg) {
 
   if (msgType === 'i18n_library') {
     i18nLibrary = payload;
+    chooseUiLanguage(i18nLibrary);
     log('i18n_library received');
     if (currentState) {
       renderState(currentState);
@@ -469,7 +541,16 @@ async function handleBackendMessage(msg) {
     return;
   }
 
-  if (msgType === 'listener_state' || msgType === 'state') {
+  if (msgType === 'listener_state') {
+    renderState(payload);
+    if (room) {
+      syncSubscriptions();
+      await attachSelectedIfPossible();
+    }
+    return;
+  }
+
+  if (msgType === 'state' && wsMode !== 'schema') {
     const statePayload = payload.channels ? payload : (msg.state || {});
     renderState(statePayload);
     if (room) {
@@ -510,6 +591,7 @@ async function connectBackend() {
   };
 }
 
+initLanguageDetection();
 connectBackend().catch((error) => {
   log(`Fatal error: ${error.message}`);
 });
