@@ -3,6 +3,8 @@ const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws:
 let backendWs = null;
 let room = null;
 let currentState = null;
+let previousRoomStatus = null;
+let i18nLibrary = null;
 
 let selectedChannel = null;
 let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
@@ -21,6 +23,27 @@ const logEl = document.getElementById('log');
 function log(message) {
   console.log(`[listener] ${message}`);
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
+}
+
+function nowTs() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function makeEnvelope(type, payload = {}) {
+  return {
+    type,
+    schema_version: 1,
+    ts: nowTs(),
+    request_id: `${type}-${crypto.randomUUID()}`,
+    payload,
+  };
+}
+
+function getPayload(message) {
+  if (message && typeof message.payload === 'object' && message.payload !== null) {
+    return message.payload;
+  }
+  return message || {};
 }
 
 function isLiveKitReady() {
@@ -53,6 +76,18 @@ function getAudioPublications(participant) {
   }
 
   return listValues(participant?.audioTrackPublications);
+}
+
+function isRoomOpened() {
+  return currentState?.room_status === 'OPENED';
+}
+
+function isRoomBlocked() {
+  return currentState?.room_status === 'BLOCKED';
+}
+
+function isRoomClosed() {
+  return currentState?.room_status === 'CLOSED';
 }
 
 function stopPlayback() {
@@ -88,14 +123,14 @@ function syncSubscriptions() {
 
   refreshPublicationsFromRoom();
   for (const [trackName, publication] of publicationByChannel.entries()) {
-    const shouldSubscribe = selectedChannel !== null && trackName === selectedChannel;
+    const shouldSubscribe = isRoomOpened() && selectedChannel !== null && trackName === selectedChannel;
     publication.setSubscribed(shouldSubscribe);
     log(`setSubscribed(${shouldSubscribe}) track=${trackName}`);
   }
 }
 
 async function attachSelectedIfPossible() {
-  if (!selectedChannel) {
+  if (!selectedChannel || !isRoomOpened()) {
     return;
   }
 
@@ -123,20 +158,134 @@ async function attachSelectedIfPossible() {
   log(`attach done channel=${selectedChannel}`);
 }
 
+function browserLanguageCandidates() {
+  const fromLanguages = Array.isArray(navigator.languages) ? navigator.languages : [];
+  const fromSingle = navigator.language ? [navigator.language] : [];
+  const all = [...fromLanguages, ...fromSingle].filter((x) => typeof x === 'string' && x.trim() !== '');
+
+  const seen = new Set();
+  const result = [];
+  for (const lang of all) {
+    const exact = lang.trim();
+    const base = exact.split('-')[0];
+    for (const tag of [exact, base]) {
+      const normalized = tag.toLowerCase();
+      if (normalized && !seen.has(normalized)) {
+        seen.add(normalized);
+        result.push(normalized);
+      }
+    }
+  }
+  return result;
+}
+
+function resolveTextByLanguage(map, fieldName, fallbackText = '') {
+  if (!map || typeof map !== 'object') {
+    return fallbackText;
+  }
+
+  const normalizedMap = new Map();
+  Object.entries(map).forEach(([k, v]) => {
+    if (typeof v === 'string' && v.trim() !== '') {
+      normalizedMap.set(k.toLowerCase(), v);
+    }
+  });
+
+  const candidates = browserLanguageCandidates();
+
+  if (candidates.length === 0) {
+    log(`language autodetect: browser language unknown, fallback=en for ${fieldName}`);
+  }
+
+  for (const candidate of candidates) {
+    if (normalizedMap.has(candidate)) {
+      const value = normalizedMap.get(candidate);
+      log(`language autodetect: ${fieldName} uses ${candidate}`);
+      return value;
+    }
+  }
+
+  if (candidates.length > 0) {
+    log(`language autodetect: browser language not present in i18n, fallback=en for ${fieldName}`);
+  }
+
+  if (normalizedMap.has('en')) {
+    return normalizedMap.get('en');
+  }
+
+  const firstValue = normalizedMap.values().next().value;
+  return firstValue || fallbackText;
+}
+
+function getLocalizedRoomName(fallbackName) {
+  const roomNameMap = i18nLibrary?.room_name_i18n;
+  return resolveTextByLanguage(roomNameMap, 'room_name', fallbackName || 'Room');
+}
+
+function getLocalizedStatusText(status, fallbackText) {
+  if (status === 'BLOCKED') {
+    return resolveTextByLanguage(i18nLibrary?.custom_status_text_blocked_i18n, 'status_blocked', fallbackText || 'BLOCKED');
+  }
+  if (status === 'CLOSED') {
+    return resolveTextByLanguage(i18nLibrary?.custom_status_text_closed_i18n, 'status_closed', fallbackText || 'CLOSED');
+  }
+  return '';
+}
+
+function enforceRoomStatusRules(state) {
+  const nextStatus = state.room_status || 'OPENED';
+
+  if (nextStatus === 'BLOCKED') {
+    if (currentTrack || currentTrackName) {
+      log('room_status BLOCKED: stop audio immediately, keep buttons clickable');
+    }
+    stopPlayback();
+    syncSubscriptions();
+    return;
+  }
+
+  if (nextStatus === 'CLOSED') {
+    if (selectedChannel !== null || currentTrack || currentTrackName) {
+      log('room_status CLOSED: stop audio, unpush current button, lock controls');
+    }
+    selectedChannel = null;
+    stopPlayback();
+    syncSubscriptions();
+    return;
+  }
+
+  if (nextStatus === 'OPENED' && previousRoomStatus === 'BLOCKED' && selectedChannel) {
+    log(`room_status OPENED after BLOCKED: resume selected channel=${selectedChannel}`);
+    playbackState = 'WAITING';
+    syncSubscriptions();
+    attachSelectedIfPossible().catch((error) => {
+      log(`resume attach error: ${error.message}`);
+    });
+  }
+}
+
 function renderState(state) {
   currentState = state;
-  roomNameEl.textContent = state.room_name || 'Room';
+  enforceRoomStatusRules(state);
+
+  const roomName = getLocalizedRoomName(state.room_name || 'Room');
+  roomNameEl.textContent = roomName;
 
   if (state.room_status && state.room_status !== 'OPENED') {
     statusBox.style.display = 'block';
-    statusBox.textContent = state.status_custom_text || state.room_status;
+
+    const hasOverride = typeof state.status_custom_text === 'string' && state.status_custom_text.trim() !== '';
+    statusBox.textContent = hasOverride
+      ? state.status_custom_text
+      : getLocalizedStatusText(state.room_status, state.room_status);
   } else {
     statusBox.style.display = 'none';
+    statusBox.textContent = '';
   }
 
   const allowedChannels = new Set((state.channels || []).filter((ch) => ch.listen).map((ch) => ch.channel_id));
-  if (selectedChannel && (!allowedChannels.has(selectedChannel) || state.room_status === 'BLOCKED' || state.room_status === 'CLOSED')) {
-    log(`forced stop channel=${selectedChannel}`);
+  if (selectedChannel && !allowedChannels.has(selectedChannel)) {
+    log(`forced stop, selected channel became hidden: ${selectedChannel}`);
     selectedChannel = null;
     syncSubscriptions();
     stopPlayback();
@@ -152,10 +301,11 @@ function renderState(state) {
     if (selectedChannel === channel.channel_id) {
       button.classList.add('active');
     }
+    button.disabled = isRoomClosed();
 
     button.onclick = async () => {
-      if (currentState?.room_status && currentState.room_status !== 'OPENED') {
-        log(`click ignored, room_status=${currentState.room_status}`);
+      if (isRoomClosed()) {
+        log('click ignored, room_status=CLOSED');
         return;
       }
 
@@ -163,7 +313,6 @@ function renderState(state) {
       log(`button click action=${nextAction} channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
 
       if (selectedChannel === channel.channel_id) {
-        // STOP ACTION
         selectedChannel = null;
         syncSubscriptions();
         stopPlayback();
@@ -171,11 +320,15 @@ function renderState(state) {
         return;
       }
 
-      // PLAY ACTION
       selectedChannel = channel.channel_id;
       playbackState = 'WAITING';
       renderState(currentState);
       syncSubscriptions();
+
+      if (isRoomBlocked()) {
+        log('room_status BLOCKED: keep highlighted button, no audio attach');
+        return;
+      }
 
       try {
         await attachSelectedIfPossible();
@@ -186,11 +339,18 @@ function renderState(state) {
 
     buttonsEl.appendChild(button);
   }
+
+  previousRoomStatus = state.room_status || null;
 }
 
 async function connectLiveKit(livekitUrl, token) {
   if (!isLiveKitReady()) {
     throw new Error('LiveKit client script is not loaded');
+  }
+
+  if (room) {
+    await room.disconnect();
+    room = null;
   }
 
   room = new LivekitClient.Room({
@@ -203,7 +363,7 @@ async function connectLiveKit(livekitUrl, token) {
     const trackName = cachePublication(publication);
     log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
     syncSubscriptions();
-    if (trackName && selectedChannel === trackName) {
+    if (trackName && selectedChannel === trackName && isRoomOpened()) {
       await attachSelectedIfPossible();
     }
   });
@@ -217,7 +377,7 @@ async function connectLiveKit(livekitUrl, token) {
       log(`TrackSubscribed track=${trackName}`);
     }
 
-    if (trackName && selectedChannel === trackName) {
+    if (trackName && selectedChannel === trackName && isRoomOpened()) {
       await attachSelectedIfPossible();
     }
   });
@@ -235,8 +395,10 @@ async function connectLiveKit(livekitUrl, token) {
       player.srcObject = null;
       currentTrack = null;
       currentTrackName = null;
-      playbackState = 'WAITING';
-      await attachSelectedIfPossible();
+      playbackState = isRoomOpened() ? 'WAITING' : 'IDLE';
+      if (isRoomOpened()) {
+        await attachSelectedIfPossible();
+      }
     }
   });
 
@@ -252,7 +414,7 @@ async function connectLiveKit(livekitUrl, token) {
       player.srcObject = null;
       currentTrack = null;
       currentTrackName = null;
-      playbackState = 'WAITING';
+      playbackState = isRoomOpened() ? 'WAITING' : 'IDLE';
     }
   });
 
@@ -274,35 +436,68 @@ async function connectLiveKit(livekitUrl, token) {
   await attachSelectedIfPossible();
 }
 
+async function handleBackendMessage(msg) {
+  const msgType = msg?.type;
+  const payload = getPayload(msg);
+  log(`backend message type=${msgType}`);
+
+  if (msgType === 'connected') {
+    renderState(payload.state || msg.state || payload || {});
+    try {
+      await connectLiveKit(msg.livekit_url || payload.livekit_url, msg.token || payload.token);
+    } catch (error) {
+      log(`LiveKit connect failed: ${error.message}`);
+    }
+    return;
+  }
+
+  if (msgType === 'connecting' && payload.ok === true && payload.client_role === 'listener') {
+    try {
+      await connectLiveKit(payload.livekit_url, payload.token);
+    } catch (error) {
+      log(`LiveKit connect failed: ${error.message}`);
+    }
+    return;
+  }
+
+  if (msgType === 'i18n_library') {
+    i18nLibrary = payload;
+    log('i18n_library received');
+    if (currentState) {
+      renderState(currentState);
+    }
+    return;
+  }
+
+  if (msgType === 'listener_state' || msgType === 'state') {
+    const statePayload = payload.channels ? payload : (msg.state || {});
+    renderState(statePayload);
+    if (room) {
+      syncSubscriptions();
+      await attachSelectedIfPossible();
+    }
+    return;
+  }
+
+  if (msgType === 'error') {
+    log(`backend error code=${payload.code || msg.code || 'UNKNOWN'}`);
+  }
+}
+
 async function connectBackend() {
   backendWs = new WebSocket(backendUrl);
 
   backendWs.onopen = () => {
     log(`backend websocket opened: ${backendUrl}`);
-    backendWs.send(JSON.stringify({ type: 'connecting' }));
+    backendWs.send(JSON.stringify(makeEnvelope('connecting', { client_role: 'listener' })));
   };
 
   backendWs.onmessage = async (event) => {
-    const msg = JSON.parse(event.data);
-    log(`backend message type=${msg.type}`);
-
-    if (msg.type === 'connected') {
-      renderState(msg.state);
-      try {
-        await connectLiveKit(msg.livekit_url, msg.token);
-      } catch (error) {
-        log(`LiveKit connect failed: ${error.message}`);
-      }
-      return;
-    }
-
-    if (msg.type === 'state') {
-      renderState(msg.state);
-      if (room) {
-        syncSubscriptions();
-        await attachSelectedIfPossible();
-      }
-      return;
+    try {
+      const msg = JSON.parse(event.data);
+      await handleBackendMessage(msg);
+    } catch (error) {
+      log(`backend message parse/handle error: ${error.message}`);
     }
   };
 
