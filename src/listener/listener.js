@@ -6,6 +6,10 @@ let currentState = null;
 let previousRoomStatus = null;
 let i18nLibrary = null;
 let wsMode = 'unknown'; // unknown | schema | legacy
+const latestStatusTextByStatus = {
+  BLOCKED: '',
+  CLOSED: '',
+};
 
 let selectedChannel = null;
 let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
@@ -280,6 +284,11 @@ function getLocalizedRoomName(fallbackName) {
 }
 
 function getLocalizedStatusText(status, fallbackText) {
+  const cached = latestStatusTextByStatus[status];
+  if (typeof cached === 'string' && cached.trim() !== '') {
+    return cached;
+  }
+
   if (status === 'BLOCKED') {
     return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, fallbackText || 'BLOCKED');
   }
@@ -332,6 +341,10 @@ function renderState(state) {
     statusBox.style.display = 'block';
 
     const hasOverride = typeof state.status_custom_text === 'string' && state.status_custom_text.trim() !== '';
+    if (hasOverride && (state.room_status === 'BLOCKED' || state.room_status === 'CLOSED')) {
+      latestStatusTextByStatus[state.room_status] = state.status_custom_text;
+      log(`status text source=${state.room_status.toLowerCase()} custom`);
+    }
     statusBox.textContent = hasOverride
       ? state.status_custom_text
       : getLocalizedStatusText(state.room_status, state.room_status);
@@ -542,6 +555,13 @@ async function handleBackendMessage(msg) {
   }
 
   if (msgType === 'listener_state') {
+    if (
+      (payload.room_status === 'BLOCKED' || payload.room_status === 'CLOSED') &&
+      typeof payload.status_custom_text === 'string' &&
+      payload.status_custom_text.trim() !== ''
+    ) {
+      latestStatusTextByStatus[payload.room_status] = payload.status_custom_text;
+    }
     renderState(payload);
     if (room) {
       syncSubscriptions();
@@ -552,6 +572,14 @@ async function handleBackendMessage(msg) {
 
   if (msgType === 'state' && wsMode !== 'schema') {
     const statePayload = payload.channels ? payload : (msg.state || {});
+    if (
+      (statePayload.room_status === 'BLOCKED' || statePayload.room_status === 'CLOSED') &&
+      typeof latestStatusTextByStatus[statePayload.room_status] === 'string' &&
+      latestStatusTextByStatus[statePayload.room_status].trim() !== ''
+    ) {
+      statePayload.status_custom_text = latestStatusTextByStatus[statePayload.room_status];
+      log(`status text source=${statePayload.room_status.toLowerCase()} cached`);
+    }
     renderState(statePayload);
     if (room) {
       syncSubscriptions();
