@@ -6,7 +6,7 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 
 Persistence formalization:
 - canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
-- canonical file for admin JSON import format and validation: `docs/17_csv_import_schema_v1.md`.
+- canonical file for admin JSON import format and validation: `docs/17_json_import_schema_v1.md`.
 
 Startup/import persistence policy:
 - after restart backend must keep last successful imported room metadata;
@@ -269,7 +269,7 @@ Rules:
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
 4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
 5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
-6) deploy dictionaries immutable during event runtime, кроме emergency override manual console command;
+6) deploy dictionaries immutable during event runtime, кроме override manual console command;
 7) override применяется независимо для BLOCKED и CLOSED текстов.
 
 Mandatory dictionaries for each event:
@@ -304,12 +304,12 @@ JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
 i18n/import and persistence consistency note:
 - i18n library bootstrap/import format is formalized in:
-  - `docs/17_csv_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
+  - `docs/17_json_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
   - `docs/16_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
 - MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 
 
-### 9.14. Emergency override (runtime status texts)
+### 9.14. Override (runtime status texts)
 
 Цель: временная коррекция текстов статусов во время мероприятия без redeploy.
 

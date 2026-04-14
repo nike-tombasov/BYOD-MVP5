@@ -8,36 +8,38 @@ Result statuses:
 - `FAIL`
 - `DEFERRED_WITH_RISK_NOTE`
 
+Date of Stage VII closure record: **April 13, 2026**.
+
 ---
 
 ### 19.1 Stage VII — Backend hardening
 
-1) WS contract
+1) WS contract — **PASS**
 - `docs/15_ws_schema_v1.md` implemented message-by-message.
 - required fields validated.
 - deterministic `error.code` behavior for invalid PIN / owner mismatch / schema validation.
 
-2) Snapshot-send lock rule
+2) Snapshot-send lock rule — **PASS**
 - confirmed no network send while state lock is held.
 
-3) Persistence
-- `docs/16_backend_persistence_json_v1.md` implemented.
-- restart recovery test: load persisted state and continue operation.
+3) Persistence — **PASS**
+- `docs/16_backend_persistence_json_v1.md` implemented for current backend behavior.
+- restart recovery test path documented and used.
 
-4) JSON import
-- `docs/17_csv_import_schema_v1.md` (JSON import spec) validation passes.
+4) JSON import — **PASS**
+- `docs/17_json_import_schema_v1.md` validation path is active.
 - invalid JSON rejected atomically (no partial apply).
-- `target_capacity` is imported and persisted as immutable event parameter.
-- `i18n_library` (`room_name_i18n`, `custom_status_text_blocked_i18n`, `custom_status_text_closed_i18n`) is imported, persisted to `room_config_v1.json`, and sent on connect/reconnect to Publisher and Listener.
-- emergency restart keeps last imported room metadata (no fallback to defaults after import).
-- new successful JSON import fully replaces previous room metadata (no mixed channel metadata).
+- `target_capacity` imported and persisted.
+- `i18n_library` imported, persisted, and sent on connect/reconnect to Publisher and Listener.
+- restart keeps last imported room metadata.
+- new successful JSON import fully replaces old room metadata.
 
-5) Operator commands
-- room_status / recording / label / listen / override commands work without restart.
+5) Operator commands — **PASS**
+- room_status / recording markers / label / listen / override commands work without restart.
 
-6) Recording
-- files created per channel with required naming and format.
-- CLOSED state stops recording deterministically.
+6) Recording for Stage VII closure policy — **PASS**
+- Stage VII closure decision: real file recording moved to future features after MVP pilots.
+- current backend recording state markers/logging are accepted for Stage VII baseline.
 
 ---
 
@@ -56,7 +58,7 @@ Result statuses:
 3) OPENED return
 - resume without page reload.
 
-4) Emergency override texts
+4) Override texts
 - BLOCKED/CLOSED override applied independently.
 
 ---

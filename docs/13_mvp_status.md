@@ -8,85 +8,35 @@
 - **Stage IV** — gradual Publisher UI v0.2 stabilization — **DONE**.
 - **Stage V** — multi-publisher + multi-listener + up to risky 32 channels with interlock logic — **DONE**.
 - **Stage VI** — Publisher UI hardening for VPS pilot — **DONE**.
+- **Stage VII** — Backend hardening baseline — **DONE** (April 13, 2026).
 
 ### 14.2 Current active stage
 
-- **Active:** Stage VII (Backend hardening before Listener status tests).
-- **Why now:** Stage VI Publisher hardening is completed; next blocker is backend baseline hardening and operator controls.
+- **Active:** Stage VIII (Listener room_status rules finalization).
+- **Why now:** Stage VII backend baseline is closed; next blocking scope is deterministic Listener behavior for BLOCKED/CLOSED/OPENED transitions.
 
-### 14.3 Stage V completion snapshot
+### 14.3 Stage VII completion snapshot
 
-Stage V achieved:
-1) stable publish/listen flow for multi-publisher multi-channel scenarios
-2) backend state remains source of truth for owner/interlock logic
-3) practical scaling path up to 32 channels in MVP conditions
-4) Publisher UI baseline version is **v0.3**
+Delivered in Stage VII:
+1) backend decomposition and clear module boundaries
+2) JSON import flow with validation and full replacement apply model
+3) JSON persistence + atomic write for non-log files
+4) websocket envelope/schema hardening baseline and separated state channels
+5) listener protection limits (capacity/rate/reconnect interval)
+6) operator console commands for runtime control
 
-### 14.4 Stage VI result snapshot
+Known limitation moved to future features:
+- real backend multi-track recording is not implemented yet; current backend only keeps recording state markers.
 
-Delivered:
-1) safer module decomposition in Publisher UI
-2) JSON memory for IP/PIN/device mapping
-3) silent seamless token refreshing path
-4) immutable `i18n_library` receive path on connect/reconnect (`en` rendering in Publisher MVP)
-5) reproducible `.exe` packaging process (MVP onedir baseline)
+### 14.4 Current postponements
 
-### 14.5 What is intentionally postponed
+- Unresolved bug **20.1** is marked as **POSTPONED until VPS pilots end**.
+- Real backend recording implementation is moved from Stage VII closure scope to future features.
 
-Moved to next stages (not Stage VI):
-- Listener BLOCKED/CLOSED final rules
-- Listener CDN fallback + race hardening
-- backend persistence/recording/operator console
-- one-action Ubuntu VPS deployment package
-- high-load stress framework
-- advanced media/security technologies discussion implementation
-- Admin Web UI realization
+### 14.5 Confirmed architecture pins
 
-
-### 14.6 Check of former Stage V open issues and specification pinning
-
-Former Stage V issues were reviewed and pinned as follows:
-
-1) JWT token generation risk
-- pinned in backend specification with identity/grants/lifetime requirements and connect flow.
-
-2) Multi-publisher listener switching/subscription risk
-- pinned in hard rules + listener algorithms: `autoSubscribe=false`, selective subscribe, single audio element, existing publications check, `trackUnsubscribed -> trackSubscribed` recovery flow.
-
-3) CPU/RAM overload risk
-- moved to explicit stress/load validation stages (Stage XI) with telemetry requirement.
-
-4) Race condition risk
-- moved to dedicated listener/backend hardening stages (Stage IX + Stage VII/VIII dependencies) with mandatory audit/fixes before production readiness.
-
-
-### 14.7 Confirmed architectural resolutions (April 7, 2026)
-
-1) Room status text model
-- status texts are immutable after deploy for MVP event runtime (except in-memory emergency override manual console command, independent for BLOCKED/CLOSED).
-
-2) Multi-language transport model
-- backend sends immutable `i18n_library` (full i18n maps) on initial WS connect and reconnect for both Publisher and Listener;
-- backend does not receive `ui_lang` and does not select language for clients;
-- Listener page performs detection and local selection; Publisher renders `en` in MVP.
-
-3) State model
-- use separated payloads: `publisher_state` and `listener_state` with independent integer `schema_version`.
-
-4) Token refresh policy
-- pinned only in backend spec: `docs/08_backend.md` section 9.2.
-
-5) Build mode policy
-- MVP packaging: folder build (`onedir`).
-- Production packaging target: one-file build (`onefile`).
-
-6) Localization scope limits
-- automatic channel_label localization is restricted;
-- multi-language event labels are entered manually using agreed event format.
-
-
-7) Infrastructure requirement
-- NTP time sync on VPS is mandatory for stable JWT expiry/refresh behavior.
-
-8) Validation artifact preference
-- for Stage VII protocol compatibility, formal acceptance checklist document is preferred.
+1) Backend remains source of truth for owner/interlock.
+2) Backend sends immutable `i18n_library` on connect/reconnect.
+3) Backend does not select language per listener.
+4) Separated payloads are kept: `publisher_state` and `listener_state`.
+5) LiveKit baseline stays pinned to `1.9.11` policy.

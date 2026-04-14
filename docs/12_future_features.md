@@ -1,11 +1,12 @@
 ## 13. Будущие функционал и этапы:
 
+- real backend channel multi-track recording (moved from Stage VII closing scope; implement after MVP pilots)
+- recording files lifecycle/rotation/download operator workflow
 - noise gate
 - audio processing
 - RMS visualizer
 - statistics
 - room dashboard
-- server recording 
 - защита, безопасноть, кибербезопасность 
 - адаптация/перенос локальной работы LiveKit Server и backend под Windows на работу с VPS под Ubuntu
 - MVP в полевых условиях, симуляция максимальной нагрузки

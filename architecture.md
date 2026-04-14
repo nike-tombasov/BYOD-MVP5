@@ -73,7 +73,7 @@ docs/15_ws_schema_v1.md
 docs/16_backend_persistence_json_v1.md
 
 22. JSON import schema v1
-docs/17_csv_import_schema_v1.md
+docs/17_json_import_schema_v1.md
 
 23. Stage VII-IX acceptance checklist
 docs/18_stage_vii_ix_acceptance_checklist.md

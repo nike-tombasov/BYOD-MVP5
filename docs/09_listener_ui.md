@@ -204,7 +204,7 @@ Implementation priority note:
 1.1) Эти словари приходят как immutable `i18n_library` base payload (state-independent).
 2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
 3) Выбор языка выполняется только в Listener web page.
-4) Status texts после deploy считаются фиксированными; изменение допускается только emergency override через manual console command (независимо для BLOCKED/CLOSED).
+4) Status texts после deploy считаются фиксированными; изменение допускается только override через manual console command (независимо для BLOCKED/CLOSED).
 
 #### 10.9.1 Обязательные языки
 
@@ -250,7 +250,7 @@ else:
 
 Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
 
-Emergency override details: см. docs/08_backend.md, раздел 9.14.
+Override details: см. docs/08_backend.md, раздел 9.14.
 
 
 

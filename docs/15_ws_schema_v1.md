@@ -254,7 +254,7 @@ Notes:
 Sent on:
 - initial connect success
 - reconnect success
-- emergency override update/reset events (same message type, updated payload)
+- override update/reset events (same message type, updated payload)
 
 ```json
 {
@@ -282,7 +282,7 @@ Sent on:
 
 Rules:
 - base deploy dictionaries are immutable during event runtime;
-- emergency override modifies runtime payload only (in-memory backend override);
+- override modifies runtime payload only (in-memory backend override);
 - Publisher receives full library but renders `en` in MVP;
 - Listener performs language detection and local fallback (`exact tag -> base tag -> en`).
 
