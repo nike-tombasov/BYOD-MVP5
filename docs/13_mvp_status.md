@@ -9,11 +9,12 @@
 - **Stage V** — multi-publisher + multi-listener + up to risky 32 channels with interlock logic — **DONE**.
 - **Stage VI** — Publisher UI hardening for VPS pilot — **DONE**.
 - **Stage VII** — Backend hardening baseline — **DONE** (April 13, 2026).
+- **Stage VIII** — Listener room_status rules finalization — **DONE** (April 14, 2026).
 
 ### 14.2 Current active stage
 
-- **Active:** Stage VIII (Listener room_status rules finalization).
-- **Why now:** Stage VII backend baseline is closed; next blocking scope is deterministic Listener behavior for BLOCKED/CLOSED/OPENED transitions.
+- **Active:** Stage IX (Listener resilience & compatibility).
+- **Why now:** Stage VIII core behavior is closed; next blocking scope is reconnect resilience, SDK wiring, race guards, and browser matrix validation.
 
 ### 14.3 Stage VII completion snapshot
 

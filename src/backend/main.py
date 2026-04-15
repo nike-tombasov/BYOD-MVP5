@@ -27,7 +27,6 @@ runtime_config = RuntimeConfig(
     target_capacity=DEFAULT_ROOM_CONFIG["target_capacity"],
     max_active_listeners=int(DEFAULT_ROOM_CONFIG["target_capacity"] * 1.05),
     max_new_connections_per_sec=max(1, int(DEFAULT_ROOM_CONFIG["target_capacity"] / 15)),
-    overrides={"blocked": None, "closed": None},
     i18n_library=DEFAULT_ROOM_CONFIG["i18n_library"],
 )
 state_service = StateService(channels=DEFAULT_ROOM_CONFIG["channels"], runtime_config=runtime_config)

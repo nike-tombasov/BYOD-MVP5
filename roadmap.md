@@ -1,10 +1,11 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on April 13, 2026
+## Status on April 14, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
 - Stage VII is completed (backend decomposition, JSON import/persistence, WS hardening baseline, operator commands, listener protection).
-- Active stage is Stage VIII.
+- Stage VIII is completed.
+- Active stage is Stage IX.
 
 ---
 
@@ -62,12 +63,7 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 - listener keeps operating with current page session and current websocket/livekit lifecycle
 - if in BLOCKED button channel pushed (highlighted) and status changes to OPENED sound of the channel must starts immidietly.
 
-5) override behavior
-- override blocked listener behaviour works as well as main blocked but using overrided text;
-- override closed listener behaviour works as well as main closed but using overrided text;
-- override do not stops/starts recording.  
-
-6) autodetection users system language
+5) autodetection users system language
 - autodetection must take from i18n library only corresponding language set for room_name and statuses or fallback to default language (en);
 - add to current page logging of autodetected users system language name;
 - if users system language unknown and language going to be default (en) log the fact;
@@ -75,9 +71,16 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 
 ### Exit criteria
 - deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
-- correct override behavior
+- immutable status texts from deploy/import i18n payload
 - corresponding language set from i18n library by language autodetection
 - checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII section)
+
+### Result (completed on April 14, 2026)
+Delivered:
+1) Listener BLOCKED/CLOSED/OPENED behavior baseline finalized for no-reload transitions;
+2) language autodetection and i18n rendering baseline finalized for room/status texts;
+3) checklist updated with Stage VIII pass marks.
+
 
 ---
 
@@ -180,5 +183,5 @@ Define and start Admin Web UI architecture and first vertical slice.
 
 ## Post-MVP deferred items (after Stage XIII, non-priority unless risk escalates)
 
-1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries + override)
+1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries)
 2) advanced runtime language personalization (backend-side per-listener selection)

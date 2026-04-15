@@ -433,11 +433,11 @@ class PublisherUI(QWidget):
             self.room_name_label.setText(str(room_name_en))
         self._log("i18n_library received (Publisher uses en)")
 
-    def _resolve_room_name(self, state: dict) -> str:
+    def _resolve_room_name(self) -> str:
         room_name_i18n = self.i18n_library.get("room_name_i18n", {})
         if isinstance(room_name_i18n, dict) and isinstance(room_name_i18n.get("en"), str):
             return room_name_i18n["en"]
-        return state.get("room_name", "")
+        return ""
 
     def _set_actual_channel_status(self, channel_id: str, text: str) -> None:
         color = "green"
@@ -527,11 +527,17 @@ class PublisherUI(QWidget):
             self.signals.set_device_enabled.emit(channel_id, False)
             self.signals.set_button_state.emit(channel_id, "STOP", True, "pending")
             runtime.desired_on_air = True
-            msg = {"type": "on_air", "publisher_id": self.publisher_id, "channel_id": channel_id, "request_on_air_ts": time.time()}
+            msg = self._make_envelope(
+                "on_air",
+                {"publisher_id": self.publisher_id, "channel_id": channel_id, "request_on_air_ts": time.time()},
+            )
             self._log(f"ON AIR request: {channel_id}")
         else:
             runtime.desired_on_air = False
-            msg = {"type": "stop", "publisher_id": self.publisher_id, "channel_id": channel_id, "request_off_air_ts": time.time()}
+            msg = self._make_envelope(
+                "stop",
+                {"publisher_id": self.publisher_id, "channel_id": channel_id, "request_off_air_ts": time.time()},
+            )
             self._log(f"STOP request: {channel_id}")
         asyncio.run_coroutine_threadsafe(self.backend_ws.send(json.dumps(msg)), self.loop)
 
@@ -549,6 +555,24 @@ class PublisherUI(QWidget):
             return int(data.get("exp", 0))
         except Exception:
             return 0
+
+    def _make_envelope(self, msg_type: str, payload: dict) -> dict:
+        return {
+            "type": msg_type,
+            "schema_version": 1,
+            "ts": int(time.time()),
+            "request_id": f"pub-{msg_type}-{int(time.time() * 1000)}",
+            "payload": payload,
+        }
+
+    def _validate_envelope(self, msg: dict) -> bool:
+        return (
+            isinstance(msg, dict)
+            and isinstance(msg.get("type"), str)
+            and msg.get("schema_version") == 1
+            and isinstance(msg.get("request_id"), str)
+            and isinstance(msg.get("payload"), dict)
+        )
 
     async def _run_client(self) -> None:
         try:
@@ -569,20 +593,41 @@ class PublisherUI(QWidget):
 
     async def _connect_backend(self) -> None:
         self.backend_ws = await websockets.connect(self.backend_ws_url)
-        await self.backend_ws.send(json.dumps({"type": "connecting", "pin": self.pin, "hostname": socket.gethostname()}))
-        msg = json.loads(await self.backend_ws.recv())
-        if msg.get("type") == "error":
-            raise RuntimeError("Invalid PIN" if msg.get("code") == "INVALID_PIN" else msg.get("code", "UNKNOWN"))
+        await self.backend_ws.send(
+            json.dumps(
+                self._make_envelope(
+                    "connecting",
+                    {"client_role": "publisher", "pin": self.pin, "hostname": socket.gethostname()},
+                )
+            )
+        )
 
-        self.publisher_id = msg["publisher_id"]
-        self.token = msg["token"]
+        connect_msg = json.loads(await self.backend_ws.recv())
+        if not self._validate_envelope(connect_msg):
+            raise RuntimeError("PROTOCOL_ERROR")
+        if connect_msg.get("type") == "error":
+            code = connect_msg["payload"].get("code", "UNKNOWN")
+            raise RuntimeError("Invalid PIN" if code == "INVALID_PIN" else code)
+        if connect_msg.get("type") != "connecting":
+            raise RuntimeError("PROTOCOL_ERROR")
+
+        connect_payload = connect_msg["payload"]
+        self.publisher_id = connect_payload["publisher_id"]
+        self.token = connect_payload["token"]
         self.token_exp_ts = self._parse_token_exp(self.token)
-        self.livekit_url = msg["livekit_url"]
+        self.livekit_url = connect_payload["livekit_url"]
         self.signals.set_connect_status.emit("CONNECTED", "green")
         self._log(f"Backend connected. publisher_id={self.publisher_id}")
-        if isinstance(msg.get("i18n_library"), dict):
-            self._apply_i18n_library(msg["i18n_library"])
-        self._apply_state(msg["state"])
+
+        i18n_msg = json.loads(await self.backend_ws.recv())
+        if not self._validate_envelope(i18n_msg) or i18n_msg.get("type") != "i18n_library":
+            raise RuntimeError("PROTOCOL_ERROR")
+        self._apply_i18n_library(i18n_msg["payload"])
+
+        state_msg = json.loads(await self.backend_ws.recv())
+        if not self._validate_envelope(state_msg) or state_msg.get("type") != "publisher_state":
+            raise RuntimeError("PROTOCOL_ERROR")
+        self._apply_state(state_msg["payload"])
 
     async def _connect_livekit(self) -> None:
         if self.room is not None:
@@ -600,7 +645,14 @@ class PublisherUI(QWidget):
             await asyncio.sleep(HEARTBEAT_SECONDS)
             if self.backend_ws:
                 with contextlib.suppress(Exception):
-                    await self.backend_ws.send(json.dumps({"type": "heartbeat", "ts": time.time()}))
+                    await self.backend_ws.send(
+                        json.dumps(
+                            self._make_envelope(
+                                "heartbeat",
+                                {"client_role": "publisher", "client_id": self.publisher_id or ""},
+                            )
+                        )
+                    )
 
     async def _token_refresh_loop(self) -> None:
         while not self.shutting_down:
@@ -649,31 +701,24 @@ class PublisherUI(QWidget):
             if self.shutting_down:
                 return
             msg = json.loads(raw)
-            msg_type = msg.get("type")
-            if msg_type == "state":
-                self._apply_state(msg["state"])
-            elif msg_type == "publisher_state":
-                self._apply_state(msg.get("payload", {}))
+            if not self._validate_envelope(msg):
+                self._log("Protocol error: invalid envelope")
+                continue
+            msg_type = msg["type"]
+            payload = msg["payload"]
+            if msg_type == "publisher_state":
+                self._apply_state(payload)
             elif msg_type == "i18n_library":
-                self._apply_i18n_library(msg.get("payload", {}))
-            elif msg_type == "token_refresh":
-                token = msg.get("token")
-                if token:
-                    self._log("Backend token_refresh received")
-                    self.token = token
-                    self.token_exp_ts = self._parse_token_exp(token)
-                    await self._reconnect_livekit_with_current_token()
-            elif msg_type == "on_air_rejected":
-                cid = msg.get("channel_id")
-                if cid in self.channels:
-                    self.channels[cid].desired_on_air = False
-                    self._set_actual_channel_status(cid, "ENGAGED")
-                    self._refresh_channel_controls(cid)
+                self._apply_i18n_library(payload)
             elif msg_type == "error":
-                self.signals.show_error.emit("Invalid PIN" if msg.get("code") == "INVALID_PIN" else "CONNECTION ERROR")
+                self.signals.show_error.emit("Invalid PIN" if payload.get("code") == "INVALID_PIN" else "CONNECTION ERROR")
+            elif msg_type == "connecting":
+                continue
+            else:
+                self._log(f"Protocol error: unsupported message type {msg_type}")
 
     def _apply_state(self, state: dict) -> None:
-        room_name = self._resolve_room_name(state)
+        room_name = self._resolve_room_name()
         self.signals.set_room_info.emit(room_name, state.get("room_status", ""))
         known = {c["channel_id"]: c for c in state.get("channels", [])}
         for cid in CHANNEL_IDS:

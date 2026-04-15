@@ -5,15 +5,10 @@ let room = null;
 let currentState = null;
 let previousRoomStatus = null;
 let i18nLibrary = null;
-let pendingToken = null;
-let pendingLivekitUrl = null;
-let hasConnectingOk = false;
-let hasI18nLibrary = false;
-let hasListenerState = false;
-let livekitConnected = false;
+let wsMode = 'unknown'; // unknown | schema | legacy
 
 let selectedChannel = null;
-let playbackState = 'IDLE';
+let playbackState = 'IDLE'; // IDLE | WAITING | PLAYING
 let currentTrack = null;
 let currentTrackName = null;
 
@@ -26,17 +21,19 @@ const buttonsEl = document.getElementById('buttons');
 const statusBox = document.getElementById('statusBox');
 const logEl = document.getElementById('log');
 
-const languageContext = { detectedRaw: 'unknown', candidates: [], uiLanguage: 'en' };
+const languageContext = {
+  detectedRaw: 'unknown',
+  candidates: [],
+  uiLanguage: 'en',
+};
 
 function log(message) {
   console.log(`[listener] ${message}`);
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
-function nowTs() { return Math.floor(Date.now() / 1000); }
-
-function makeEnvelope(type, payload = {}) {
-  return { type, schema_version: 1, ts: nowTs(), request_id: `${type}-${crypto.randomUUID()}`, payload };
+function nowTs() {
+  return Math.floor(Date.now() / 1000);
 }
 
 function normalizeLanguageTag(tag) {
@@ -44,16 +41,27 @@ function normalizeLanguageTag(tag) {
   return tag.trim().replaceAll('_', '-').toLowerCase();
 }
 
-function languageBase(tag) { return normalizeLanguageTag(tag).split('-')[0] || ''; }
+function languageBase(tag) {
+  return normalizeLanguageTag(tag).split('-')[0] || '';
+}
 
 function initLanguageDetection() {
   const browserLanguages = [];
-  if (Array.isArray(navigator.languages)) browserLanguages.push(...navigator.languages);
-  if (typeof navigator.language === 'string') browserLanguages.push(navigator.language);
 
-  const normalized = browserLanguages.map(normalizeLanguageTag).filter((value) => value !== '');
+  if (Array.isArray(navigator.languages)) {
+    browserLanguages.push(...navigator.languages);
+  }
+  if (typeof navigator.language === 'string') {
+    browserLanguages.push(navigator.language);
+  }
+
+  const normalized = browserLanguages
+    .map(normalizeLanguageTag)
+    .filter((value) => value !== '');
+
   const candidates = [];
   const seen = new Set();
+
   for (const tag of normalized) {
     const base = languageBase(tag);
     for (const candidate of [tag, base]) {
@@ -65,6 +73,7 @@ function initLanguageDetection() {
   }
 
   languageContext.candidates = candidates;
+
   if (candidates.length === 0) {
     languageContext.detectedRaw = 'unknown';
     log('language autodetect: detected=unknown');
@@ -77,12 +86,20 @@ function initLanguageDetection() {
 
 function chooseUiLanguage(i18n) {
   const tags = new Set();
-  const maps = [i18n?.room_name_i18n, i18n?.custom_status_text_blocked_i18n, i18n?.custom_status_text_closed_i18n];
+
+  const maps = [
+    i18n?.room_name_i18n,
+    i18n?.custom_status_text_blocked_i18n,
+    i18n?.custom_status_text_closed_i18n,
+  ];
+
   for (const map of maps) {
     if (!map || typeof map !== 'object') continue;
     for (const key of Object.keys(map)) {
       const normalized = normalizeLanguageTag(key);
-      if (normalized) tags.add(normalized);
+      if (normalized) {
+        tags.add(normalized);
+      }
     }
   }
 
@@ -94,12 +111,38 @@ function chooseUiLanguage(i18n) {
     }
   }
 
-  languageContext.uiLanguage = tags.has('en') ? 'en' : languageBase(tags.values().next().value || 'en');
+  if (tags.has('en')) {
+    languageContext.uiLanguage = 'en';
+    log('language autodetect: ui=en');
+    return;
+  }
+
+  const firstAvailable = tags.values().next().value;
+  languageContext.uiLanguage = languageBase(firstAvailable || 'en') || 'en';
   log(`language autodetect: ui=${languageContext.uiLanguage}`);
 }
 
+function makeEnvelope(type, payload = {}) {
+  return {
+    type,
+    schema_version: 1,
+    ts: nowTs(),
+    request_id: `${type}-${crypto.randomUUID()}`,
+    payload,
+  };
+}
+
+function getPayload(message) {
+  if (message && typeof message.payload === 'object' && message.payload !== null) {
+    return message.payload;
+  }
+  return message || {};
+}
+
 function resolveTextByUiLanguage(map, fallbackText = '') {
-  if (!map || typeof map !== 'object') return fallbackText;
+  if (!map || typeof map !== 'object') {
+    return fallbackText;
+  }
 
   const normalizedMap = new Map();
   Object.entries(map).forEach(([key, value]) => {
@@ -109,24 +152,17 @@ function resolveTextByUiLanguage(map, fallbackText = '') {
   });
 
   const uiLang = languageContext.uiLanguage || 'en';
-  if (normalizedMap.has(uiLang)) return normalizedMap.get(uiLang);
-  if (normalizedMap.has('en')) return normalizedMap.get('en');
+
+  if (normalizedMap.has(uiLang)) {
+    return normalizedMap.get(uiLang);
+  }
+
+  if (normalizedMap.has('en')) {
+    return normalizedMap.get('en');
+  }
+
   const firstValue = normalizedMap.values().next().value;
   return firstValue || fallbackText;
-}
-
-function getLocalizedRoomName() {
-  return resolveTextByUiLanguage(i18nLibrary?.room_name_i18n, 'Room');
-}
-
-function getLocalizedStatusText(status) {
-  if (status === 'BLOCKED') {
-    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, 'BLOCKED');
-  }
-  if (status === 'CLOSED') {
-    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_closed_i18n, 'CLOSED');
-  }
-  return '';
 }
 
 function isLiveKitReady() {
@@ -160,9 +196,17 @@ function getAudioPublications(participant) {
   return listValues(participant?.audioTrackPublications);
 }
 
-function isRoomOpened() { return currentState?.room_status === 'OPENED'; }
-function isRoomBlocked() { return currentState?.room_status === 'BLOCKED'; }
-function isRoomClosed() { return currentState?.room_status === 'CLOSED'; }
+function isRoomOpened() {
+  return currentState?.room_status === 'OPENED';
+}
+
+function isRoomBlocked() {
+  return currentState?.room_status === 'BLOCKED';
+}
+
+function isRoomClosed() {
+  return currentState?.room_status === 'CLOSED';
+}
 
 function stopPlayback() {
   player.pause();
@@ -175,8 +219,11 @@ function stopPlayback() {
 function cachePublication(publication) {
   const trackName = getTrackName(publication);
   if (!trackName) return null;
+
   publicationByChannel.set(trackName, publication);
-  if (publication.track) trackByChannel.set(trackName, publication.track);
+  if (publication.track) {
+    trackByChannel.set(trackName, publication.track);
+  }
   return trackName;
 }
 
@@ -190,6 +237,7 @@ function refreshPublicationsFromRoom() {
 
 function syncSubscriptions() {
   if (!room) return;
+
   refreshPublicationsFromRoom();
   for (const [trackName, publication] of publicationByChannel.entries()) {
     const shouldSubscribe = isRoomOpened() && selectedChannel !== null && trackName === selectedChannel;
@@ -199,38 +247,64 @@ function syncSubscriptions() {
 }
 
 async function attachSelectedIfPossible() {
-  if (!selectedChannel || !isRoomOpened()) return;
+  if (!selectedChannel || !isRoomOpened()) {
+    return;
+  }
 
   const publication = publicationByChannel.get(selectedChannel);
   const track = trackByChannel.get(selectedChannel) || publication?.track || null;
+
   if (!track) {
     playbackState = 'WAITING';
     log(`attach waiting channel=${selectedChannel}`);
     return;
   }
 
-  if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') return;
+  if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') {
+    return;
+  }
 
   const mediaStream = new MediaStream([track.mediaStreamTrack]);
   player.pause();
   player.srcObject = mediaStream;
   await player.play();
+
   currentTrack = track;
   currentTrackName = selectedChannel;
   playbackState = 'PLAYING';
   log(`attach done channel=${selectedChannel}`);
 }
 
+function getLocalizedRoomName(fallbackName) {
+  return resolveTextByUiLanguage(i18nLibrary?.room_name_i18n, fallbackName || 'Room');
+}
+
+function getLocalizedStatusText(status, fallbackText) {
+  if (status === 'BLOCKED') {
+    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, fallbackText || 'BLOCKED');
+  }
+  if (status === 'CLOSED') {
+    return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_closed_i18n, fallbackText || 'CLOSED');
+  }
+  return '';
+}
+
 function enforceRoomStatusRules(state) {
   const nextStatus = state.room_status || 'OPENED';
 
   if (nextStatus === 'BLOCKED') {
+    if (currentTrack || currentTrackName) {
+      log('room_status BLOCKED: stop audio immediately, keep buttons clickable');
+    }
     stopPlayback();
     syncSubscriptions();
     return;
   }
 
   if (nextStatus === 'CLOSED') {
+    if (selectedChannel !== null || currentTrack || currentTrackName) {
+      log('room_status CLOSED: stop audio, unpush current button, lock controls');
+    }
     selectedChannel = null;
     stopPlayback();
     syncSubscriptions();
@@ -238,9 +312,12 @@ function enforceRoomStatusRules(state) {
   }
 
   if (nextStatus === 'OPENED' && previousRoomStatus === 'BLOCKED' && selectedChannel) {
+    log(`room_status OPENED after BLOCKED: resume selected channel=${selectedChannel}`);
     playbackState = 'WAITING';
     syncSubscriptions();
-    attachSelectedIfPossible().catch((error) => log(`resume attach error: ${error.message}`));
+    attachSelectedIfPossible().catch((error) => {
+      log(`resume attach error: ${error.message}`);
+    });
   }
 }
 
@@ -248,11 +325,16 @@ function renderState(state) {
   currentState = state;
   enforceRoomStatusRules(state);
 
-  roomNameEl.textContent = getLocalizedRoomName();
+  const roomName = getLocalizedRoomName(state.room_name || 'Room');
+  roomNameEl.textContent = roomName;
 
   if (state.room_status && state.room_status !== 'OPENED') {
     statusBox.style.display = 'block';
-    statusBox.textContent = getLocalizedStatusText(state.room_status);
+
+    const hasOverride = typeof state.status_custom_text === 'string' && state.status_custom_text.trim() !== '';
+    statusBox.textContent = hasOverride
+      ? state.status_custom_text
+      : getLocalizedStatusText(state.room_status, state.room_status);
   } else {
     statusBox.style.display = 'none';
     statusBox.textContent = '';
@@ -260,6 +342,7 @@ function renderState(state) {
 
   const allowedChannels = new Set((state.channels || []).filter((ch) => ch.listen).map((ch) => ch.channel_id));
   if (selectedChannel && !allowedChannels.has(selectedChannel)) {
+    log(`forced stop, selected channel became hidden: ${selectedChannel}`);
     selectedChannel = null;
     syncSubscriptions();
     stopPlayback();
@@ -272,11 +355,19 @@ function renderState(state) {
     const button = document.createElement('button');
     button.className = 'btn';
     button.textContent = `${channel.channel_id} — ${channel.channel_label}`;
-    if (selectedChannel === channel.channel_id) button.classList.add('active');
+    if (selectedChannel === channel.channel_id) {
+      button.classList.add('active');
+    }
     button.disabled = isRoomClosed();
 
     button.onclick = async () => {
-      if (isRoomClosed()) return;
+      if (isRoomClosed()) {
+        log('click ignored, room_status=CLOSED');
+        return;
+      }
+
+      const nextAction = selectedChannel === channel.channel_id ? 'STOP' : 'PLAY';
+      log(`button click action=${nextAction} channel=${channel.channel_id} current=${selectedChannel} playbackState=${playbackState}`);
 
       if (selectedChannel === channel.channel_id) {
         selectedChannel = null;
@@ -290,8 +381,17 @@ function renderState(state) {
       playbackState = 'WAITING';
       renderState(currentState);
       syncSubscriptions();
-      if (isRoomBlocked()) return;
-      await attachSelectedIfPossible();
+
+      if (isRoomBlocked()) {
+        log('room_status BLOCKED: keep highlighted button, no audio attach');
+        return;
+      }
+
+      try {
+        await attachSelectedIfPossible();
+      } catch (error) {
+        log(`attach error: ${error.message}`);
+      }
     };
 
     buttonsEl.appendChild(button);
@@ -301,31 +401,49 @@ function renderState(state) {
 }
 
 async function connectLiveKit(livekitUrl, token) {
-  if (!isLiveKitReady()) throw new Error('LiveKit client script is not loaded');
+  if (!isLiveKitReady()) {
+    throw new Error('LiveKit client script is not loaded');
+  }
 
   if (room) {
     await room.disconnect();
     room = null;
   }
 
-  room = new LivekitClient.Room({ adaptiveStream: false, dynacast: false, autoSubscribe: false });
+  room = new LivekitClient.Room({
+    adaptiveStream: false,
+    dynacast: false,
+    autoSubscribe: false,
+  });
 
-  room.on(LivekitClient.RoomEvent.TrackPublished, async (publication) => {
+  room.on(LivekitClient.RoomEvent.TrackPublished, async (publication, participant) => {
     const trackName = cachePublication(publication);
+    log(`TrackPublished participant=${participant?.identity} track=${trackName}`);
     syncSubscriptions();
-    if (trackName && selectedChannel === trackName && isRoomOpened()) await attachSelectedIfPossible();
+    if (trackName && selectedChannel === trackName && isRoomOpened()) {
+      await attachSelectedIfPossible();
+    }
   });
 
   room.on(LivekitClient.RoomEvent.TrackSubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
+
     const trackName = cachePublication(publication);
-    if (trackName) trackByChannel.set(trackName, track);
-    if (trackName && selectedChannel === trackName && isRoomOpened()) await attachSelectedIfPossible();
+    if (trackName) {
+      trackByChannel.set(trackName, track);
+      log(`TrackSubscribed track=${trackName}`);
+    }
+
+    if (trackName && selectedChannel === trackName && isRoomOpened()) {
+      await attachSelectedIfPossible();
+    }
   });
 
   room.on(LivekitClient.RoomEvent.TrackUnsubscribed, async (track, publication) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
+
     const trackName = getTrackName(publication);
+    log(`TrackUnsubscribed track=${trackName}`);
     if (!trackName) return;
 
     trackByChannel.delete(trackName);
@@ -335,13 +453,17 @@ async function connectLiveKit(livekitUrl, token) {
       currentTrack = null;
       currentTrackName = null;
       playbackState = isRoomOpened() ? 'WAITING' : 'IDLE';
-      if (isRoomOpened()) await attachSelectedIfPossible();
+      if (isRoomOpened()) {
+        await attachSelectedIfPossible();
+      }
     }
   });
 
-  room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication) => {
+  room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
     const trackName = getTrackName(publication);
+    log(`TrackUnpublished participant=${participant?.identity} track=${trackName}`);
     if (!trackName) return;
+
     publicationByChannel.delete(trackName);
     trackByChannel.delete(trackName);
     if (selectedChannel === trackName && currentTrackName === trackName) {
@@ -364,7 +486,6 @@ async function connectLiveKit(livekitUrl, token) {
   });
 
   await room.connect(livekitUrl, token);
-  livekitConnected = true;
   log('Connected to LiveKit');
 
   refreshPublicationsFromRoom();
@@ -372,64 +493,76 @@ async function connectLiveKit(livekitUrl, token) {
   await attachSelectedIfPossible();
 }
 
-async function maybeInitializeListener() {
-  if (!hasConnectingOk || !hasI18nLibrary || !hasListenerState) return;
-  if (!livekitConnected) {
-    await connectLiveKit(pendingLivekitUrl, pendingToken);
+function markWsMode(message) {
+  const hasSchema = typeof message?.schema_version === 'number';
+  if (hasSchema && wsMode !== 'schema') {
+    wsMode = 'schema';
+    log('ws mode: schema');
+    return;
   }
-  if (currentState) {
-    renderState(currentState);
+  if (!hasSchema && wsMode === 'unknown') {
+    wsMode = 'legacy';
+    log('ws mode: legacy');
   }
-}
-
-function validateEnvelope(msg) {
-  return msg
-    && typeof msg.type === 'string'
-    && msg.schema_version === 1
-    && typeof msg.request_id === 'string'
-    && typeof msg.payload === 'object'
-    && msg.payload !== null;
 }
 
 async function handleBackendMessage(msg) {
-  if (!validateEnvelope(msg)) {
-    throw new Error('Protocol error: invalid envelope');
-  }
+  const msgType = msg?.type;
+  const payload = getPayload(msg);
+  markWsMode(msg);
+  log(`backend message type=${msgType}`);
 
-  const payload = msg.payload;
-
-  if (msg.type === 'connecting') {
-    if (payload.ok === true && payload.client_role === 'listener') {
-      hasConnectingOk = true;
-      pendingToken = payload.token;
-      pendingLivekitUrl = payload.livekit_url;
-      await maybeInitializeListener();
-      return;
+  if (msgType === 'connected' && wsMode !== 'schema') {
+    renderState(payload.state || msg.state || payload || {});
+    try {
+      await connectLiveKit(msg.livekit_url || payload.livekit_url, msg.token || payload.token);
+    } catch (error) {
+      log(`LiveKit connect failed: ${error.message}`);
     }
-    throw new Error('Protocol error: invalid connecting payload');
+    return;
   }
 
-  if (msg.type === 'i18n_library') {
+  if (msgType === 'connecting' && payload.ok === true && payload.client_role === 'listener') {
+    try {
+      await connectLiveKit(payload.livekit_url, payload.token);
+    } catch (error) {
+      log(`LiveKit connect failed: ${error.message}`);
+    }
+    return;
+  }
+
+  if (msgType === 'i18n_library') {
     i18nLibrary = payload;
-    hasI18nLibrary = true;
     chooseUiLanguage(i18nLibrary);
-    await maybeInitializeListener();
+    log('i18n_library received');
+    if (currentState) {
+      renderState(currentState);
+    }
     return;
   }
 
-  if (msg.type === 'listener_state') {
-    currentState = payload;
-    hasListenerState = true;
-    await maybeInitializeListener();
+  if (msgType === 'listener_state') {
+    renderState(payload);
+    if (room) {
+      syncSubscriptions();
+      await attachSelectedIfPossible();
+    }
     return;
   }
 
-  if (msg.type === 'error') {
-    log(`backend error code=${payload.code || 'UNKNOWN'}`);
+  if (msgType === 'state' && wsMode !== 'schema') {
+    const statePayload = payload.channels ? payload : (msg.state || {});
+    renderState(statePayload);
+    if (room) {
+      syncSubscriptions();
+      await attachSelectedIfPossible();
+    }
     return;
   }
 
-  throw new Error(`Protocol error: unsupported message type ${msg.type}`);
+  if (msgType === 'error') {
+    log(`backend error code=${payload.code || msg.code || 'UNKNOWN'}`);
+  }
 }
 
 async function connectBackend() {
@@ -445,8 +578,7 @@ async function connectBackend() {
       const msg = JSON.parse(event.data);
       await handleBackendMessage(msg);
     } catch (error) {
-      log(`backend protocol error: ${error.message}`);
-      backendWs.close();
+      log(`backend message parse/handle error: ${error.message}`);
     }
   };
 

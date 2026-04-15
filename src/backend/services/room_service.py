@@ -58,7 +58,6 @@ class RoomService:
             "publisher_online": {
                 publisher_id: True for publisher_id in self.state_service.state.publishers.keys()
             },
-            "overrides": dict(runtime.overrides or {}),
             "updated_ts": self.storage.now_ts(),
         }
 
@@ -126,11 +125,6 @@ class RoomService:
             if isinstance(owners, dict):
                 for channel in self.state_service.state.channels:
                     channel["owner"] = owners.get(channel["channel_id"])
-            overrides = runtime_state.get("overrides") or {}
-            if isinstance(overrides, dict):
-                runtime.overrides["blocked"] = overrides.get("blocked")
-                runtime.overrides["closed"] = overrides.get("closed")
-
         recording_state = self.storage.load_recording_state()
         if recording_state:
             self.state_service.recording_active = bool(recording_state.get("recording_active", False))
@@ -158,8 +152,6 @@ class RoomService:
             runtime.i18n_library["room_name_i18n"] = dict(config.i18n_library.room_name_i18n)
             runtime.i18n_library["custom_status_text_blocked_i18n"] = dict(config.i18n_library.custom_status_text_blocked_i18n)
             runtime.i18n_library["custom_status_text_closed_i18n"] = dict(config.i18n_library.custom_status_text_closed_i18n)
-            runtime.overrides["blocked"] = None
-            runtime.overrides["closed"] = None
 
             self.state_service.recording_active = False
             self.state_service.recording_started_ts = None

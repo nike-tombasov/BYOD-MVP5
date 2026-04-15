@@ -17,7 +17,6 @@ async def send_json_safe(ws: WebSocket, payload: dict[str, Any]) -> bool:
 
 
 async def send_error(ws: WebSocket, state_service: StateService, code: str, request_id: str | None = None) -> None:
-    await send_json_safe(ws, {"type": "error", "code": code})
     await send_json_safe(
         ws,
         state_service.make_envelope("error", {"ok": False, "code": code}, request_id=request_id),
@@ -32,26 +31,20 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             channels_snapshot = [dict(ch) for ch in state_service.state.channels]
             publisher_state = state_service.build_publisher_state_snapshot(channels_snapshot)
             listener_state = state_service.build_listener_state_snapshot(channels_snapshot)
-            legacy_state = state_service.build_legacy_state_snapshot(channels_snapshot)
             publishers = list(state_service.state.publishers.values())
             listeners = list(state_service.state.listeners)
 
         publisher_payload = state_service.make_envelope("publisher_state", publisher_state)
         listener_payload = state_service.make_envelope("listener_state", listener_state)
-        legacy_payload = {"type": "state", "state": legacy_state}
 
         dead_publishers: list[str] = []
         for session in publishers:
-            ok_new = await send_json_safe(session.websocket, publisher_payload)
-            ok_legacy = await send_json_safe(session.websocket, legacy_payload)
-            if not ok_new and not ok_legacy:
+            if not await send_json_safe(session.websocket, publisher_payload):
                 dead_publishers.append(session.publisher_id)
 
         dead_listeners: list[WebSocket] = []
         for ws in listeners:
-            ok_new = await send_json_safe(ws, listener_payload)
-            ok_legacy = await send_json_safe(ws, legacy_payload)
-            if not ok_new and not ok_legacy:
+            if not await send_json_safe(ws, listener_payload):
                 dead_listeners.append(ws)
 
         if not dead_publishers and not dead_listeners:
@@ -77,18 +70,9 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
 
         publisher_state = state_service.build_publisher_state_snapshot(channels_snapshot)
         listener_state = state_service.build_listener_state_snapshot(channels_snapshot)
-        legacy_state = state_service.build_legacy_state_snapshot(channels_snapshot)
+        i18n_library = state_service.build_i18n_library_payload()
 
         if client_role == "publisher":
-            await websocket.send_json(
-                {
-                    "type": "connected",
-                    "publisher_id": publisher_id,
-                    "token": token,
-                    "livekit_url": room_service.livekit_url,
-                    "state": legacy_state,
-                }
-            )
             await websocket.send_json(
                 state_service.make_envelope(
                     "connecting",
@@ -98,25 +82,14 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                         "publisher_id": publisher_id,
                         "token": token,
                         "livekit_url": room_service.livekit_url,
-                        "room_name": state_service.runtime.room_name,
-                        "room_status": state_service.runtime.room_status,
                     },
                     request_id=request_id,
                 )
             )
-            await websocket.send_json(state_service.make_envelope("i18n_library", state_service.runtime.i18n_library))
+            await websocket.send_json(state_service.make_envelope("i18n_library", i18n_library))
             await websocket.send_json(state_service.make_envelope("publisher_state", publisher_state))
             return
 
-        await websocket.send_json(
-            {
-                "type": "connected",
-                "listener_id": listener_id,
-                "token": token,
-                "livekit_url": room_service.livekit_url,
-                "state": legacy_state,
-            }
-        )
         await websocket.send_json(
             state_service.make_envelope(
                 "connecting",
@@ -126,29 +99,32 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     "listener_id": listener_id,
                     "token": token,
                     "livekit_url": room_service.livekit_url,
-                    "room_status": state_service.runtime.room_status,
                 },
                 request_id=request_id,
             )
         )
-        await websocket.send_json(state_service.make_envelope("i18n_library", state_service.runtime.i18n_library))
+        await websocket.send_json(state_service.make_envelope("i18n_library", i18n_library))
         await websocket.send_json(state_service.make_envelope("listener_state", listener_state))
 
     @router.websocket("/ws/publisher")
     async def publisher_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         publisher_id: str | None = None
+        allowed_types = {"connecting", "heartbeat", "on_air", "stop"}
         try:
             while True:
                 message = await websocket.receive_json()
                 schema_error = state_service.validate_message_envelope(message)
+                request_id = message.get("request_id") if isinstance(message.get("request_id"), str) else None
+                msg_type = message.get("type")
                 if schema_error is not None:
-                    await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR")
+                    await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR", request_id=request_id)
+                    continue
+                if msg_type not in allowed_types:
+                    await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR", request_id=request_id)
                     continue
 
                 payload = state_service.get_payload(message)
-                msg_type = message.get("type")
-                request_id = message.get("request_id") if isinstance(message.get("request_id"), str) else None
 
                 if msg_type == "connecting":
                     pin = str(payload.get("pin") or "")
@@ -161,9 +137,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                         session = state_service.add_publisher(websocket=websocket, hostname=hostname)
                         publisher_id = session.publisher_id
                         room_service.persist_all()
-                        room_service.storage.log_connection(
-                            "publisher_connected", publisher_id=publisher_id, hostname=hostname
-                        )
+                        room_service.storage.log_connection("publisher_connected", publisher_id=publisher_id, hostname=hostname)
 
                     await send_connect_success(
                         websocket=websocket,
@@ -200,37 +174,17 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                                 channel["owner"] = publisher_id
                                 channel["on_air_ts"] = state_service.now_ts()
                                 room_service.persist_all()
-                                room_service.storage.log_event(
-                                    "on_air_granted",
-                                    publisher_id=publisher_id,
-                                    channel_id=channel_id,
-                                    request_id=request_id,
-                                )
+                                room_service.storage.log_event("on_air_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                             elif owner == publisher_id:
                                 channel["request_on_air_ts"] = payload.get("request_on_air_ts")
-                                room_service.storage.log_event(
-                                    "on_air_duplicate",
-                                    publisher_id=publisher_id,
-                                    channel_id=channel_id,
-                                    request_id=request_id,
-                                )
+                                room_service.storage.log_event("on_air_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                             else:
                                 rejected_owner = owner
-                                room_service.storage.log_event(
-                                    "on_air_rejected",
-                                    publisher_id=publisher_id,
-                                    channel_id=channel_id,
-                                    owner=owner,
-                                    request_id=request_id,
-                                )
+                                room_service.storage.log_event("on_air_rejected", publisher_id=publisher_id, channel_id=channel_id, owner=owner, request_id=request_id)
                     if unknown_channel:
                         await send_error(websocket, state_service, "UNKNOWN_CHANNEL", request_id=request_id)
                         continue
                     if rejected_owner is not None:
-                        await send_json_safe(
-                            websocket,
-                            {"type": "on_air_rejected", "channel_id": channel_id, "owner": rejected_owner},
-                        )
                         await send_error(websocket, state_service, "OWNER_MISMATCH", request_id=request_id)
                     await broadcast_states()
                     continue
@@ -248,27 +202,15 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                                 channel["owner"] = None
                                 channel["off_air_ts"] = state_service.now_ts()
                                 room_service.persist_all()
-                                room_service.storage.log_event(
-                                    "stop_granted",
-                                    publisher_id=publisher_id,
-                                    channel_id=channel_id,
-                                    request_id=request_id,
-                                )
+                                room_service.storage.log_event("stop_granted", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                             elif owner is None:
                                 channel["request_off_air_ts"] = payload.get("request_off_air_ts")
-                                room_service.storage.log_event(
-                                    "stop_duplicate",
-                                    publisher_id=publisher_id,
-                                    channel_id=channel_id,
-                                    request_id=request_id,
-                                )
+                                room_service.storage.log_event("stop_duplicate", publisher_id=publisher_id, channel_id=channel_id, request_id=request_id)
                     if unknown_channel:
                         await send_error(websocket, state_service, "UNKNOWN_CHANNEL", request_id=request_id)
                         continue
                     await broadcast_states()
                     continue
-
-                await send_error(websocket, state_service, "UNKNOWN_MESSAGE_TYPE", request_id=request_id)
         except WebSocketDisconnect:
             pass
         finally:
@@ -283,11 +225,13 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
         await websocket.accept()
         client_ip = websocket.client.host if websocket.client else "unknown"
         listener_id = ""
+        allowed_types = {"connecting", "heartbeat"}
         try:
             first = await websocket.receive_json()
+            request_id = first.get("request_id") if isinstance(first.get("request_id"), str) else None
             schema_error = state_service.validate_message_envelope(first)
             if schema_error is not None or first.get("type") != "connecting":
-                await send_error(websocket, state_service, "INVALID_FLOW")
+                await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR", request_id=request_id)
                 return
 
             now = state_service.now_ts()
@@ -313,26 +257,25 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     room_service.storage.log_connection("listener_connected", listener_id=listener_id, ip=client_ip)
 
             if reject_code:
-                await send_error(websocket, state_service, reject_code)
+                await send_error(websocket, state_service, reject_code, request_id=request_id)
                 return
 
-            request_id = first.get("request_id") if isinstance(first.get("request_id"), str) else state_service.next_request_id("lst-connect")
             await send_connect_success(
                 websocket=websocket,
                 client_role="listener",
                 listener_id=listener_id,
                 token=room_service.create_livekit_token(listener_id),
-                request_id=request_id,
+                request_id=request_id or state_service.next_request_id("lst-connect"),
             )
 
             while True:
                 msg = await websocket.receive_json()
+                request_id = msg.get("request_id") if isinstance(msg.get("request_id"), str) else None
                 schema_error = state_service.validate_message_envelope(msg)
-                if schema_error is not None:
-                    await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR")
+                msg_type = msg.get("type")
+                if schema_error is not None or msg_type not in allowed_types:
+                    await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR", request_id=request_id)
                     continue
-                if msg.get("type") == "heartbeat":
-                    await websocket.send_json({"type": "heartbeat_ack", "ts": state_service.now_ts()})
 
         except WebSocketDisconnect:
             pass

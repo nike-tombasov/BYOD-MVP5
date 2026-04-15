@@ -14,9 +14,9 @@ Root folder:
 
 Files:
 - `room_config_v1.json` — room static/semi-static config (PIN, channels, labels, listen flags, immutable i18n library, capacity).
-- `runtime_state_v1.json` — current runtime snapshot (room_status, owner map, overrides).
+- `runtime_state_v1.json` — current runtime snapshot (room_status, owner map).
 - `connections_log_YYYYMMDD.jsonl` — append-only connection events (publisher/listener connect/disconnect).
-- `events_log_YYYYMMDD.jsonl` — append-only operational events (on_air/stop/status changes/override commands).
+- `events_log_YYYYMMDD.jsonl` — append-only operational events (on_air/stop/status changes).
 - `recording_state_v1.json` — recording on/off snapshot and active files metadata.
 
 JSONL format:
@@ -125,10 +125,6 @@ After successful JSON import backend keeps imported metadata across VPS/backend 
   "publisher_online": {
     "hostA_0": true
   },
-  "overrides": {
-    "blocked": null,
-    "closed": null
-  },
   "updated_ts": 1710000100
 }
 ```
@@ -176,7 +172,7 @@ Baseline policy (MVP):
 6) append `backend_started` event
 
 Import replacement rule:
-- on each successful JSON import backend fully replaces room metadata snapshot (`room_config_v1.json`) and resets runtime metadata that can mix with old room config (owners/overrides/recording state).
+- on each successful JSON import backend fully replaces room metadata snapshot (`room_config_v1.json`) and resets runtime metadata that can mix with old room config (owners/recording state).
 - backend does not merge old and new channel metadata.
 
 ---

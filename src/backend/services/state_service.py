@@ -16,8 +16,6 @@ class RuntimeConfig:
     target_capacity: int
     max_active_listeners: int
     max_new_connections_per_sec: int
-    status_text: str = ""
-    overrides: dict[str, str | None] | None = None
     i18n_library: dict[str, dict[str, str]] | None = None
 
 
@@ -32,8 +30,6 @@ class StateService:
         self.recording_active = False
         self.recording_started_ts: int | None = None
         self.recording_files: list[dict[str, Any]] = []
-        if self.runtime.overrides is None:
-            self.runtime.overrides = {"blocked": None, "closed": None}
         if self.runtime.i18n_library is None:
             self.runtime.i18n_library = {}
 
@@ -64,8 +60,6 @@ class StateService:
         return message
 
     def validate_message_envelope(self, message: dict[str, Any]) -> str | None:
-        if "payload" not in message:
-            return None
         if not isinstance(message.get("type"), str):
             return "INVALID_TYPE"
         if message.get("schema_version") != 1:
@@ -78,7 +72,6 @@ class StateService:
 
     def build_publisher_state_snapshot(self, channels: list[dict[str, Any]]) -> dict[str, Any]:
         return {
-            "room_name": self.runtime.room_name,
             "room_status": self.runtime.room_status,
             "channels": [
                 {
@@ -92,14 +85,8 @@ class StateService:
         }
 
     def build_listener_state_snapshot(self, channels: list[dict[str, Any]]) -> dict[str, Any]:
-        custom_text = self.runtime.status_text
-        if self.runtime.room_status == "BLOCKED" and self.runtime.overrides and self.runtime.overrides.get("blocked"):
-            custom_text = str(self.runtime.overrides["blocked"])
-        if self.runtime.room_status == "CLOSED" and self.runtime.overrides and self.runtime.overrides.get("closed"):
-            custom_text = str(self.runtime.overrides["closed"])
         return {
             "room_status": self.runtime.room_status,
-            "status_custom_text": custom_text,
             "channels": [
                 {
                     "channel_id": channel["channel_id"],
@@ -110,13 +97,8 @@ class StateService:
             ],
         }
 
-    def build_legacy_state_snapshot(self, channels: list[dict[str, Any]]) -> dict[str, Any]:
-        return {
-            "room_name": self.runtime.room_name,
-            "room_status": self.runtime.room_status,
-            "status_custom_text": self.runtime.status_text,
-            "channels": channels,
-        }
+    def build_i18n_library_payload(self) -> dict[str, Any]:
+        return dict(self.runtime.i18n_library or {})
 
     def find_channel(self, channel_id: str | None) -> dict[str, Any] | None:
         for channel in self.state.channels:
