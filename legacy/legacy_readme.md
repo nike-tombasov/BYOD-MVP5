@@ -82,3 +82,12 @@ Include:
 * legacy/stage_vii/backend/transport/admin_api.py
 * legacy/stage_vii/backend/transport/ws_handlers.py
 * legacy/stage_vii/backend/console/commands.py
+
+## Stage VIII
+
+Stage VIII completed Listener room-status behavior baseline (`OPENED`/`BLOCKED`/`CLOSED`) and language autodetection path.
+
+Include:
+* legacy/stage_viii/README.md
+* legacy/stage_viii/listener/index.html
+* legacy/stage_viii/listener/listener.js

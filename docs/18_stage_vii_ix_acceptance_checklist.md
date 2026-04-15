@@ -45,21 +45,26 @@ Date of Stage VII closure record: **April 13, 2026**.
 
 ### 19.2 Stage VIII — Listener BLOCKED/CLOSED behavior
 
-1) BLOCKED
+Date of Stage VIII closure record: **April 14, 2026**.
+
+1) BLOCKED — **PASS**
 - immediate audio stop.
 - buttons remain clickable.
 - no audio until OPENED.
 
-2) CLOSED
+2) CLOSED — **PASS**
 - immediate audio stop.
 - current button unpushed.
 - controls locked.
 
-3) OPENED return
+3) OPENED return — **PASS**
 - resume without page reload.
 
-4) Override texts
+4) Override texts — **DEFERRED_WITH_RISK_NOTE (nonprofit)**
 - BLOCKED/CLOSED override applied independently.
+- current project branch does not restore reliable override text update path for Listener;
+- temporary decision: continue without override runtime restoration in MVP flow;
+- restore task moved to open issues as nonprofit follow-up before any next architecture revision.
 
 ---
 

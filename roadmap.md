@@ -1,10 +1,11 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on April 13, 2026
+## Status on April 14, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
 - Stage VII is completed (backend decomposition, JSON import/persistence, WS hardening baseline, operator commands, listener protection).
-- Active stage is Stage VIII.
+- Stage VIII is completed with one deferred nonprofit item (Listener override restore).
+- Active stage is Stage IX.
 
 ---
 
@@ -78,6 +79,15 @@ Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
 - correct override behavior
 - corresponding language set from i18n library by language autodetection
 - checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII section)
+
+### Result (completed on April 14, 2026)
+Delivered:
+1) Listener BLOCKED/CLOSED/OPENED behavior baseline finalized for no-reload transitions;
+2) language autodetection and i18n rendering baseline finalized for room/status texts;
+3) checklist updated with Stage VIII pass marks.
+
+Deferred nonprofit item:
+- Listener runtime override text restoration is deferred with risk note and moved to open issues.
 
 ---
 

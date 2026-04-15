@@ -9,11 +9,12 @@
 - **Stage V** — multi-publisher + multi-listener + up to risky 32 channels with interlock logic — **DONE**.
 - **Stage VI** — Publisher UI hardening for VPS pilot — **DONE**.
 - **Stage VII** — Backend hardening baseline — **DONE** (April 13, 2026).
+- **Stage VIII** — Listener room_status rules finalization — **DONE** (April 14, 2026, with one deferred nonprofit override item).
 
 ### 14.2 Current active stage
 
-- **Active:** Stage VIII (Listener room_status rules finalization).
-- **Why now:** Stage VII backend baseline is closed; next blocking scope is deterministic Listener behavior for BLOCKED/CLOSED/OPENED transitions.
+- **Active:** Stage IX (Listener resilience & compatibility).
+- **Why now:** Stage VIII core behavior is closed; next blocking scope is reconnect resilience, SDK wiring, race guards, and browser matrix validation.
 
 ### 14.3 Stage VII completion snapshot
 
@@ -32,6 +33,7 @@ Known limitation moved to future features:
 
 - Unresolved bug **20.1** is marked as **POSTPONED until VPS pilots end**.
 - Real backend recording implementation is moved from Stage VII closure scope to future features.
+- Listener override restoration is moved to unresolved nonprofit follow-up (`docs/14_open_issues.md` section 15.5).
 
 ### 14.5 Confirmed architecture pins
 
