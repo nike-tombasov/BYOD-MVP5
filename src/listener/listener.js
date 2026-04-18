@@ -23,6 +23,8 @@ let activeToken = null;
 let lastBackendActivityMs = Date.now();
 let heartbeatIntervalId = null;
 let heartbeatMonitorId = null;
+let connectionBannerIntervalId = null;
+let backendUnavailableSinceMs = Date.now();
 
 const CONNECTION_STATE = {
   CONNECTED: 'CONNECTED',
@@ -44,6 +46,7 @@ const trackByChannel = new Map();
 const player = document.getElementById('player');
 const roomNameEl = document.getElementById('roomName');
 const buttonsEl = document.getElementById('buttons');
+const connectionBox = document.getElementById('connectionBox');
 const statusBox = document.getElementById('statusBox');
 const logEl = document.getElementById('log');
 
@@ -71,6 +74,34 @@ function hasActivePlayRequest() {
 
 function hasAudioOpInProgress() {
   return attachInProgress || detachInProgress;
+}
+
+function getAvailabilityText(elapsedMs) {
+  if (elapsedMs < 3_000) return 'Connecting...';
+  if (elapsedMs < 10_000) return 'Trying to reconnect...';
+  return 'Unable to connect. Waiting for service...';
+}
+
+function refreshConnectionBanner() {
+  if (connectionState === CONNECTION_STATE.CONNECTED) {
+    backendUnavailableSinceMs = null;
+    connectionBox.style.display = 'none';
+    connectionBox.textContent = '';
+    return;
+  }
+
+  if (backendUnavailableSinceMs === null) {
+    backendUnavailableSinceMs = Date.now();
+  }
+  const elapsedMs = Math.max(0, Date.now() - backendUnavailableSinceMs);
+  connectionBox.style.display = 'block';
+  connectionBox.textContent = getAvailabilityText(elapsedMs);
+}
+
+function startConnectionBannerLoop() {
+  if (connectionBannerIntervalId) return;
+  connectionBannerIntervalId = setInterval(refreshConnectionBanner, 500);
+  refreshConnectionBanner();
 }
 
 function runWithTimeout(promiseFactory, timeoutMs, timeoutLabel) {
@@ -278,8 +309,12 @@ function isRoomClosed() { return currentState?.room_status === 'CLOSED'; }
 
 function setConnectionState(nextState, reason = '') {
   if (connectionState === nextState) return;
+  if (nextState !== CONNECTION_STATE.CONNECTED && connectionState === CONNECTION_STATE.CONNECTED) {
+    backendUnavailableSinceMs = Date.now();
+  }
   connectionState = nextState;
   log(`connection state -> ${nextState}${reason ? ` (${reason})` : ''}`);
+  refreshConnectionBanner();
 }
 
 function markConnectionStale(reason) {
@@ -774,6 +809,7 @@ async function reconnectListener(reason) {
 
 initLanguageDetection();
 startHeartbeatLoops();
+startConnectionBannerLoop();
 ensureLiveKitClientLoaded()
   .then(() => connectBackend('initial'))
   .catch((error) => {
