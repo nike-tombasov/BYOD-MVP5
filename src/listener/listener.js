@@ -13,6 +13,8 @@ let hasListenerState = false;
 let livekitConnected = false;
 let suppressBackendCloseEvent = false;
 let reconnectPromise = null;
+let tokenGeneration = 0;
+let activeToken = null;
 
 const CONNECTION_STATE = {
   CONNECTED: 'CONNECTED',
@@ -356,7 +358,12 @@ function renderState(state) {
       playbackState = 'WAITING';
       renderState(currentState);
       if (connectionState === CONNECTION_STATE.STALE) {
-        await reconnectListener('channel click');
+        try {
+          await reconnectListener('channel click');
+        } catch (error) {
+          log(`reconnect error: ${error.message}`);
+          return;
+        }
       }
       syncSubscriptions();
       if (isRoomBlocked()) return;
@@ -474,9 +481,22 @@ async function handleBackendMessage(msg) {
 
   if (msg.type === 'connecting') {
     if (payload.ok === true && payload.client_role === 'listener') {
+      if (typeof payload.token !== 'string' || payload.token.trim() === '') {
+        throw new Error('Protocol error: token is missing');
+      }
+      if (typeof payload.livekit_url !== 'string' || payload.livekit_url.trim() === '') {
+        throw new Error('Protocol error: livekit_url is missing');
+      }
       hasConnectingOk = true;
       pendingToken = payload.token;
       pendingLivekitUrl = payload.livekit_url;
+      if (activeToken !== pendingToken) {
+        tokenGeneration += 1;
+        activeToken = pendingToken;
+        log(`token updated generation=${tokenGeneration}`);
+      } else {
+        log(`token reused generation=${tokenGeneration}`);
+      }
       await maybeInitializeListener();
       return;
     }
@@ -506,12 +526,27 @@ async function handleBackendMessage(msg) {
   throw new Error(`Protocol error: unsupported message type ${msg.type}`);
 }
 
-async function connectBackend() {
-  return new Promise((resolve) => {
+async function connectBackend(reason = 'connect') {
+  return new Promise((resolve, reject) => {
     backendWs = new WebSocket(backendUrl);
+    let isSettled = false;
+    const openTimeout = setTimeout(() => {
+      if (isSettled) return;
+      isSettled = true;
+      try {
+        backendWs.close();
+      } catch (error) {
+        log(`backend timeout close warning: ${error.message}`);
+      }
+      reject(new Error('backend websocket open timeout'));
+    }, 5000);
 
     backendWs.onopen = () => {
+      if (isSettled) return;
+      isSettled = true;
+      clearTimeout(openTimeout);
       log(`backend websocket opened: ${backendUrl}`);
+      log(`backend connect reason=${reason}`);
       backendWs.send(JSON.stringify(makeEnvelope('connecting', { client_role: 'listener' })));
       resolve();
     };
@@ -527,6 +562,7 @@ async function connectBackend() {
     };
 
     backendWs.onclose = () => {
+      clearTimeout(openTimeout);
       log('Backend WS closed');
       if (suppressBackendCloseEvent) {
         suppressBackendCloseEvent = false;
@@ -536,12 +572,21 @@ async function connectBackend() {
     };
 
     backendWs.onerror = (event) => {
+      clearTimeout(openTimeout);
       log(`Backend WS error: ${event.type}`);
+      if (!isSettled) {
+        isSettled = true;
+        reject(new Error(`backend websocket error: ${event.type}`));
+      }
     };
   });
 }
 
 async function reconnectListener(reason) {
+  if (connectionState === CONNECTION_STATE.CONNECTED) {
+    log(`reconnect skipped: already CONNECTED (${reason})`);
+    return;
+  }
   if (reconnectPromise) {
     log(`reconnect already running (${reason})`);
     return reconnectPromise;
@@ -552,11 +597,14 @@ async function reconnectListener(reason) {
     await closeBackendSocketForReconnect();
     await closeLiveKitForReconnect();
     resetHandshakeFlagsForReconnect();
-    await connectBackend();
+    await connectBackend(`reconnect:${reason}`);
   })();
 
   try {
     await reconnectPromise;
+  } catch (error) {
+    markConnectionStale(`reconnect failed: ${error.message}`);
+    throw error;
   } finally {
     reconnectPromise = null;
   }
@@ -564,7 +612,7 @@ async function reconnectListener(reason) {
 
 initLanguageDetection();
 ensureLiveKitClientLoaded()
-  .then(() => connectBackend())
+  .then(() => connectBackend('initial'))
   .catch((error) => {
     log(`Fatal error: ${error.message}`);
   });
