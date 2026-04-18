@@ -11,6 +11,15 @@ let hasConnectingOk = false;
 let hasI18nLibrary = false;
 let hasListenerState = false;
 let livekitConnected = false;
+let suppressBackendCloseEvent = false;
+let reconnectPromise = null;
+
+const CONNECTION_STATE = {
+  CONNECTED: 'CONNECTED',
+  STALE: 'STALE',
+  RECONNECTING: 'RECONNECTING',
+};
+let connectionState = CONNECTION_STATE.RECONNECTING;
 
 let selectedChannel = null;
 let playbackState = 'IDLE';
@@ -176,6 +185,51 @@ function isRoomOpened() { return currentState?.room_status === 'OPENED'; }
 function isRoomBlocked() { return currentState?.room_status === 'BLOCKED'; }
 function isRoomClosed() { return currentState?.room_status === 'CLOSED'; }
 
+function setConnectionState(nextState, reason = '') {
+  if (connectionState === nextState) return;
+  connectionState = nextState;
+  log(`connection state -> ${nextState}${reason ? ` (${reason})` : ''}`);
+}
+
+function markConnectionStale(reason) {
+  setConnectionState(CONNECTION_STATE.STALE, reason);
+  livekitConnected = false;
+}
+
+function resetHandshakeFlagsForReconnect() {
+  hasConnectingOk = false;
+  hasI18nLibrary = false;
+  hasListenerState = false;
+  livekitConnected = false;
+  pendingToken = null;
+  pendingLivekitUrl = null;
+}
+
+async function closeBackendSocketForReconnect() {
+  if (!backendWs) return;
+  suppressBackendCloseEvent = true;
+  try {
+    backendWs.close();
+  } catch (error) {
+    log(`backend close warning: ${error.message}`);
+  }
+  backendWs = null;
+}
+
+async function closeLiveKitForReconnect() {
+  if (!room) return;
+  try {
+    await room.disconnect();
+  } catch (error) {
+    log(`livekit disconnect warning: ${error.message}`);
+  }
+  room = null;
+  publicationByChannel.clear();
+  trackByChannel.clear();
+  currentTrack = null;
+  currentTrackName = null;
+}
+
 function stopPlayback() {
   player.pause();
   player.srcObject = null;
@@ -301,6 +355,9 @@ function renderState(state) {
       selectedChannel = channel.channel_id;
       playbackState = 'WAITING';
       renderState(currentState);
+      if (connectionState === CONNECTION_STATE.STALE) {
+        await reconnectListener('channel click');
+      }
       syncSubscriptions();
       if (isRoomBlocked()) return;
       await attachSelectedIfPossible();
@@ -321,6 +378,10 @@ async function connectLiveKit(livekitUrl, token) {
   }
 
   room = new LivekitClient.Room({ adaptiveStream: false, dynacast: false, autoSubscribe: false });
+
+  room.on(LivekitClient.RoomEvent.Disconnected, () => {
+    markConnectionStale('livekit disconnected');
+  });
 
   room.on(LivekitClient.RoomEvent.TrackPublished, async (publication) => {
     const trackName = cachePublication(publication);
@@ -392,6 +453,7 @@ async function maybeInitializeListener() {
   if (currentState) {
     renderState(currentState);
   }
+  setConnectionState(CONNECTION_STATE.CONNECTED, 'ready');
 }
 
 function validateEnvelope(msg) {
@@ -445,30 +507,59 @@ async function handleBackendMessage(msg) {
 }
 
 async function connectBackend() {
-  backendWs = new WebSocket(backendUrl);
+  return new Promise((resolve) => {
+    backendWs = new WebSocket(backendUrl);
 
-  backendWs.onopen = () => {
-    log(`backend websocket opened: ${backendUrl}`);
-    backendWs.send(JSON.stringify(makeEnvelope('connecting', { client_role: 'listener' })));
-  };
+    backendWs.onopen = () => {
+      log(`backend websocket opened: ${backendUrl}`);
+      backendWs.send(JSON.stringify(makeEnvelope('connecting', { client_role: 'listener' })));
+      resolve();
+    };
 
-  backendWs.onmessage = async (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      await handleBackendMessage(msg);
-    } catch (error) {
-      log(`backend protocol error: ${error.message}`);
-      backendWs.close();
-    }
-  };
+    backendWs.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        await handleBackendMessage(msg);
+      } catch (error) {
+        log(`backend protocol error: ${error.message}`);
+        backendWs.close();
+      }
+    };
 
-  backendWs.onclose = () => {
-    log('Backend WS closed');
-  };
+    backendWs.onclose = () => {
+      log('Backend WS closed');
+      if (suppressBackendCloseEvent) {
+        suppressBackendCloseEvent = false;
+        return;
+      }
+      markConnectionStale('backend websocket closed');
+    };
 
-  backendWs.onerror = (event) => {
-    log(`Backend WS error: ${event.type}`);
-  };
+    backendWs.onerror = (event) => {
+      log(`Backend WS error: ${event.type}`);
+    };
+  });
+}
+
+async function reconnectListener(reason) {
+  if (reconnectPromise) {
+    log(`reconnect already running (${reason})`);
+    return reconnectPromise;
+  }
+
+  reconnectPromise = (async () => {
+    setConnectionState(CONNECTION_STATE.RECONNECTING, reason);
+    await closeBackendSocketForReconnect();
+    await closeLiveKitForReconnect();
+    resetHandshakeFlagsForReconnect();
+    await connectBackend();
+  })();
+
+  try {
+    await reconnectPromise;
+  } finally {
+    reconnectPromise = null;
+  }
 }
 
 initLanguageDetection();
@@ -477,3 +568,15 @@ ensureLiveKitClientLoaded()
   .catch((error) => {
     log(`Fatal error: ${error.message}`);
   });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && connectionState === CONNECTION_STATE.STALE) {
+    reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
+  }
+});
+
+window.addEventListener('online', () => {
+  if (connectionState === CONNECTION_STATE.STALE) {
+    reconnectListener('network online').catch((error) => log(`reconnect error: ${error.message}`));
+  }
+});
