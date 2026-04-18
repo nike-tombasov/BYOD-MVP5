@@ -1,4 +1,7 @@
 const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws://127.0.0.1:8000/ws/listener';
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const HEARTBEAT_TIMEOUT_MS = 60_000;
+const HEARTBEAT_MONITOR_INTERVAL_MS = 1_000;
 
 let backendWs = null;
 let room = null;
@@ -15,6 +18,9 @@ let suppressBackendCloseEvent = false;
 let reconnectPromise = null;
 let tokenGeneration = 0;
 let activeToken = null;
+let lastBackendActivityMs = Date.now();
+let heartbeatIntervalId = null;
+let heartbeatMonitorId = null;
 
 const CONNECTION_STATE = {
   CONNECTED: 'CONNECTED',
@@ -45,6 +51,19 @@ function log(message) {
 }
 
 function nowTs() { return Math.floor(Date.now() / 1000); }
+
+function isBackendWsOpen() {
+  return backendWs && backendWs.readyState === WebSocket.OPEN;
+}
+
+function noteBackendActivity(source) {
+  lastBackendActivityMs = Date.now();
+  log(`backend activity source=${source}`);
+}
+
+function hasActivePlayRequest() {
+  return selectedChannel !== null && playbackState !== 'IDLE';
+}
 
 function makeEnvelope(type, payload = {}) {
   return { type, schema_version: 1, ts: nowTs(), request_id: `${type}-${crypto.randomUUID()}`, payload };
@@ -216,6 +235,38 @@ async function closeBackendSocketForReconnect() {
     log(`backend close warning: ${error.message}`);
   }
   backendWs = null;
+}
+
+function sendHeartbeatIfNeeded() {
+  if (connectionState !== CONNECTION_STATE.CONNECTED) return;
+  if (!hasActivePlayRequest()) return;
+  if (!isBackendWsOpen()) return;
+  backendWs.send(JSON.stringify(makeEnvelope('heartbeat', {
+    client_role: 'listener',
+    selected_channel: selectedChannel,
+    playback_state: playbackState,
+  })));
+  log(`heartbeat sent channel=${selectedChannel} playback=${playbackState}`);
+}
+
+function monitorHeartbeatTimeout() {
+  if (connectionState !== CONNECTION_STATE.CONNECTED) return;
+  if (!hasActivePlayRequest()) return;
+  const idleMs = Date.now() - lastBackendActivityMs;
+  if (idleMs < HEARTBEAT_TIMEOUT_MS) return;
+
+  markConnectionStale(`heartbeat timeout ${idleMs}ms`);
+  reconnectListener('heartbeat timeout')
+    .catch((error) => log(`reconnect error: ${error.message}`));
+}
+
+function startHeartbeatLoops() {
+  if (!heartbeatIntervalId) {
+    heartbeatIntervalId = setInterval(sendHeartbeatIfNeeded, HEARTBEAT_INTERVAL_MS);
+  }
+  if (!heartbeatMonitorId) {
+    heartbeatMonitorId = setInterval(monitorHeartbeatTimeout, HEARTBEAT_MONITOR_INTERVAL_MS);
+  }
 }
 
 async function closeLiveKitForReconnect() {
@@ -547,12 +598,14 @@ async function connectBackend(reason = 'connect') {
       clearTimeout(openTimeout);
       log(`backend websocket opened: ${backendUrl}`);
       log(`backend connect reason=${reason}`);
+      noteBackendActivity('ws_open');
       backendWs.send(JSON.stringify(makeEnvelope('connecting', { client_role: 'listener' })));
       resolve();
     };
 
     backendWs.onmessage = async (event) => {
       try {
+        noteBackendActivity('ws_message');
         const msg = JSON.parse(event.data);
         await handleBackendMessage(msg);
       } catch (error) {
@@ -611,6 +664,7 @@ async function reconnectListener(reason) {
 }
 
 initLanguageDetection();
+startHeartbeatLoops();
 ensureLiveKitClientLoaded()
   .then(() => connectBackend('initial'))
   .catch((error) => {
