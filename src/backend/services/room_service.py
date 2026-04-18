@@ -187,12 +187,23 @@ class RoomService:
         if session is None:
             return
         session.online = False
+        released_channels: list[str] = []
         for channel in self.state_service.state.channels:
             if channel.get("owner") == publisher_id:
                 channel["owner"] = None
                 channel["off_air_ts"] = self.state_service.now_ts()
+                released_channels.append(channel["channel_id"])
+                self.storage.log_event(
+                    "channel_released_on_disconnect",
+                    publisher_id=publisher_id,
+                    channel_id=channel["channel_id"],
+                )
         self.state_service.state.publishers.pop(publisher_id, None)
-        self.storage.log_connection("publisher_disconnected", publisher_id=publisher_id)
+        self.storage.log_connection(
+            "publisher_disconnected",
+            publisher_id=publisher_id,
+            released_channels=released_channels,
+        )
 
     async def start_recording_locked(self, reason: str) -> None:
         if self.state_service.recording_active:
