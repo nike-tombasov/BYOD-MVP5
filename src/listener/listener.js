@@ -133,6 +133,18 @@ function isLiveKitReady() {
   return typeof window.LivekitClient !== 'undefined' && typeof LivekitClient.Room === 'function';
 }
 
+async function ensureLiveKitClientLoaded() {
+  if (window.__livekitLoadPromise && typeof window.__livekitLoadPromise.then === 'function') {
+    await window.__livekitLoadPromise;
+  }
+  if (!isLiveKitReady()) {
+    throw new Error('LiveKit client script is not loaded');
+  }
+  if (window.__livekitSdkSource) {
+    log(`LiveKit SDK source=${window.__livekitSdkSource}`);
+  }
+}
+
 function listValues(collection) {
   if (!collection) return [];
   if (typeof collection.values === 'function') return Array.from(collection.values());
@@ -460,6 +472,8 @@ async function connectBackend() {
 }
 
 initLanguageDetection();
-connectBackend().catch((error) => {
-  log(`Fatal error: ${error.message}`);
-});
+ensureLiveKitClientLoaded()
+  .then(() => connectBackend())
+  .catch((error) => {
+    log(`Fatal error: ${error.message}`);
+  });
