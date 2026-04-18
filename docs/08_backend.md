@@ -170,6 +170,11 @@ publishers sets UI channel status FREE
 5) Publisher/offline  
 Если отсутствие heartbeats 30 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
 
+Forced OFF AIR policy:
+- console command `off_air <channel_id>` performs backend state transition only;
+- backend sets `owner = null` and `off_air_ts`, persists state, then broadcasts normal `publisher_state`/`listener_state`;
+- backend does not send any extra direct WS command for this flow.
+
 ### 9.8. Взаимодействие с Listener по WebSocket
 
 Listener использует WebSocket для:

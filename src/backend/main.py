@@ -9,7 +9,7 @@ from backend.persistence.storage import JsonStorage
 from backend.services.room_service import RoomService
 from backend.services.state_service import RuntimeConfig, StateService
 from backend.transport.admin_api import build_admin_router
-from backend.transport.ws_handlers import build_ws_router, send_json_safe
+from backend.transport.ws_handlers import build_ws_router
 
 app = FastAPI(title="BYOD Backend MVP Stage VII - implementation 2-3")
 app.add_middleware(
@@ -65,6 +65,5 @@ async def startup() -> None:
             room_service=room_service,
             state_lock=state_lock,
             broadcast_cb=broadcast_states,
-            send_json_safe=send_json_safe,
         )
     )

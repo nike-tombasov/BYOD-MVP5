@@ -177,6 +177,14 @@ Envelope is required.
 Publisher only.
 Envelope is required.
 
+Forced channel release rule:
+- no `force_off_air` WS message exists;
+- backend performs forced release as state transition only:
+  - set channel `owner = null`
+  - broadcast normal `publisher_state`
+- Publisher reacts only to `publisher_state` and stops local streaming when owner is no longer equal to own `publisher_id`;
+- Listener is not involved in forced off-air logic.
+
 ---
 
 ### 16.10 `error`

@@ -167,6 +167,10 @@ UI channel status “Device error. Check system samplerate (48000 Hz only)” о
 
 Другие room Publisher на основе полученного нового `publisher_state` (где owner != self publisher_id) меняют UI channel status на ENGAGED. Кнопка ON AIR становится не кликабельной, синего цвета.
 
+Forced release behavior (state-driven only):
+- Publisher does not expect any separate WS command for forced off-air;
+- if incoming `publisher_state` shows owner changed from self to another value or `null`, Publisher stops local streaming for that channel and updates UI.
+
 При нажатии на STOP:
 
 STOP

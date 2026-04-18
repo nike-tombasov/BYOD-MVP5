@@ -194,6 +194,7 @@ Implementation priority note:
 * Listener MUST NOT rely only on trackSubscribed
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
+* Listener does not receive or process any separate forced off-air command; it reacts only to regular room/channel state transitions.
 
 ### 10.9. Спецификация автоопределения языка Listener UI (MVP)
 
