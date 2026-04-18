@@ -39,5 +39,4 @@ Network timeout drop → connection status Connection lost, ownership lost, all 
 
 change status  
 change listen flag  
-override text  
 start recording
