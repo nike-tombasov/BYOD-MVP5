@@ -15,6 +15,5 @@
 * dedupe replay protection
 * token abuse protection
 * IP rate limiting hardening
-* audit logging for override commands
 * console command protection model
 * secret rotation policies

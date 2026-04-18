@@ -1,5 +1,8 @@
 ## 9. Backend - FastAPI
 
+WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+This file describes backend semantics/operations and must not conflict with canonical wire schema.
+
 pip install fastapi uvicorn websockets pyjwt livekit-api
 
 ### 9.1. Содержание базы данных Backend, управляемых admin
@@ -119,7 +122,7 @@ backend sets owner(channel_id)
 ↓
 backend sets channel_on_air(channel_id) = on_air
 ↓
-backend broadcasts state
+backend broadcasts `publisher_state`
 ↓
 publishers update UI 
 ↓
@@ -141,7 +144,7 @@ backend sets owner(channel_id) = null
 ↓
 backend sets channel_on_air(channel_id) = free
 ↓
-backend broadcasts state
+backend broadcasts `publisher_state`
 ↓
 publishers update UI
 ↓
@@ -166,6 +169,11 @@ publishers sets UI channel status FREE
 
 5) Publisher/offline  
 Если отсутствие heartbeats 30 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
+
+Forced OFF AIR policy:
+- console command `off_air <channel_id>` performs backend state transition only;
+- backend sets `owner = null` and `off_air_ts`, persists state, then broadcasts normal `publisher_state`/`listener_state`;
+- backend does not send any extra direct WS command for this flow.
 
 ### 9.8. Взаимодействие с Listener по WebSocket
 
@@ -205,7 +213,7 @@ Admin управляет backend в web UI. Функциональные воз�
 3) изменение room status (OPENED, CLOSED, BLOCKED)
 4) визуальный room control - суммарное количество listener (counter), суммарное общее количество subscribed listeners (active  users), длительность статуса OPENED (stopwatch), recording status (on/off)
 5) визуальный контроль channels status по каждому channel_id - текущий owner, длительность последнего on_air (stopwatch), количество subscribed listeners (active user), общее количество subscribes (counter)
-6) возможность OFF AIR по каждому channel_id(owner == null, рассылка state)
+6) возможность OFF AIR по каждому channel_id(owner == null, рассылка `publisher_state`/`listener_state`)
 7) ручной старт/стоп channel multi-track recording (автоматически запускается при переходе комнаты в статус OPENED и останавливается при переходе в CLOSED)
 8) состояние room VPS или всех VPS мероприятия (online, CPU, RAM, SSD, LAN/WAN)
 9) визуальный контроль отдельного списка всех Publisher (publisher_id, publisher_online, publisher_connection_ts, last_seen_ts, publisher_ip, number of on air channels)
@@ -215,7 +223,7 @@ Admin управляет backend в web UI. Функциональные воз�
 
 ### 9.11. State (separated)
 
-Backend рассылает **два разных state**:
+Backend рассылает **два разных state-сообщения**:
 
 1) `publisher_state`:
 - room_name (English)
@@ -225,13 +233,9 @@ Backend рассылает **два разных state**:
 2) `listener_state`:
 - room_status
 - channels (channel_id, channel_label, listen)
-- i18n maps:
-  - room_name_i18n
-  - custom_status_text_blocked_i18n
-  - custom_status_text_closed_i18n
 
-Schema evolution rule:
-- `publisher_state` и `listener_state` используют независимые `schema_version` (integer) для будущей разработки.
+Schema rule:
+- `publisher_state` и `listener_state` используют общий envelope schema v1 из `docs/15_ws_schema_v1.md`.
 
 Publisher использует owner для interlock логики.
 Listener НЕ использует owner для управления аудио.
@@ -269,8 +273,7 @@ Rules:
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
 4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
 5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
-6) deploy dictionaries immutable during event runtime, кроме override manual console command;
-7) override применяется независимо для BLOCKED и CLOSED текстов.
+6) deploy dictionaries immutable during event runtime.
 
 Mandatory dictionaries for each event:
 - `en` (required)
@@ -309,33 +312,10 @@ i18n/import and persistence consistency note:
 - MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 
 
-### 9.14. Override (runtime status texts)
+### 9.14. Status texts policy
 
-Цель: временная коррекция текстов статусов во время мероприятия без redeploy.
-
-Правила:
-- Override хранится только в памяти backend (in-memory only).
-- Override применяется ко всем listeners текущей комнаты.
-- Override сбрасывается при restart backend.
-- Override для BLOCKED и CLOSED независимы друг от друга.
-- Override reset применяется ко всем listeners текущей комнаты и рассылает исходные словари текстов статусов.
-
-Console commands:
-```
-override blocked "<text>"
-override closed "<text>"
-override reset blocked
-override reset closed
-```
-
-Поведение:
-1) `override blocked` меняет только runtime текст для BLOCKED.
-2) `override closed` меняет только runtime текст для CLOSED.
-3) `override reset blocked` возвращает BLOCKED текст к deploy value.
-4) `override reset closed` возвращает CLOSED текст к deploy value.
-
-Ограничение:
-- Override не изменяет deploy configuration files и не сохраняется после restart.
+Status texts for BLOCKED/CLOSED come from immutable deploy/import `i18n_library`.
+Runtime text mutation is not used in current project.
 
 ### 9.15. Protection from unwanted room overflow by Listeners
 

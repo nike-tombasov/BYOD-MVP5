@@ -1,5 +1,8 @@
 ## 10. Listener Web UI (HTML)
 
+WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+This file describes Listener behavior/UX and must not conflict with canonical wire schema.
+
 ### 10.1. Внешний вид. 
 
 User должен иметь минимальный интерфейс. Блоки:
@@ -191,6 +194,7 @@ Implementation priority note:
 * Listener MUST NOT rely only on trackSubscribed
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
+* Listener does not receive or process any separate forced off-air command; it reacts only to regular room/channel state transitions.
 
 ### 10.9. Спецификация автоопределения языка Listener UI (MVP)
 
@@ -204,7 +208,7 @@ Implementation priority note:
 1.1) Эти словари приходят как immutable `i18n_library` base payload (state-independent).
 2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
 3) Выбор языка выполняется только в Listener web page.
-4) Status texts после deploy считаются фиксированными; изменение допускается только override через manual console command (независимо для BLOCKED/CLOSED).
+4) Status texts после deploy считаются фиксированными и не меняются во время мероприятия.
 
 #### 10.9.1 Обязательные языки
 

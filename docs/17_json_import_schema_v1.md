@@ -75,7 +75,7 @@ Process:
 1) parse JSON and validate full payload;
 2) if any critical error -> reject import;
 3) if valid -> fully replace room metadata snapshot atomically;
-4) reset runtime metadata that can mix with old channel set (owners/overrides/recording markers);
+4) reset runtime metadata that can mix with old channel set (owners/recording markers);
 5) compute derived limits:
    - `max_active_listeners = target_capacity * 1.05`
    - `max_new_connections_per_sec = target_capacity / 15`

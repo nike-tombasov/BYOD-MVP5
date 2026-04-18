@@ -82,3 +82,26 @@ Include:
 * legacy/stage_vii/backend/transport/admin_api.py
 * legacy/stage_vii/backend/transport/ws_handlers.py
 * legacy/stage_vii/backend/console/commands.py
+
+## Stage VIII
+
+Stage VIII completed Listener room-status behavior baseline (`OPENED`/`BLOCKED`/`CLOSED`), language autodetection path, and final WS schema v1 protocol cleanup add-on across backend/publisher/listener.
+
+Include:
+* legacy/stage_viii/README.md
+* legacy/stage_viii/backend/main.py
+* legacy/stage_viii/backend/config.py
+* legacy/stage_viii/backend/models.py
+* legacy/stage_viii/backend/room_config_json.py
+* legacy/stage_viii/backend/storage.py
+* legacy/stage_viii/backend/state_service.py
+* legacy/stage_viii/backend/room_service.py
+* legacy/stage_viii/backend/ws_handlers.py
+* legacy/stage_viii/backend/admin_api.py
+* legacy/stage_viii/backend/commands.py
+* legacy/stage_viii/publisher/main.py
+* legacy/stage_viii/publisher/constants.py
+* legacy/stage_viii/publisher/models.py
+* legacy/stage_viii/publisher/state_store.py
+* legacy/stage_viii/listener/index.html
+* legacy/stage_viii/listener/listener.js

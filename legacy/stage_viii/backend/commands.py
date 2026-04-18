@@ -27,6 +27,7 @@ async def process_console_command(
     room_service: RoomService,
     state_lock: Any,
     broadcast_cb: Any,
+    send_json_safe: Any,
 ) -> str:
     parts = line.strip().split()
     if not parts:
@@ -98,6 +99,7 @@ async def process_console_command(
 
     if cmd == "off_air" and len(parts) == 2:
         channel_id = parts[1]
+        owner_ws = None
         async with state_lock:
             channel = state_service.find_channel(channel_id)
             if channel is None:
@@ -107,6 +109,13 @@ async def process_console_command(
             channel["off_air_ts"] = state_service.now_ts()
             room_service.persist_all()
             room_service.storage.log_event("off_air_forced", channel_id=channel_id, previous_owner=previous_owner, actor="console")
+            if previous_owner and previous_owner in state_service.state.publishers:
+                owner_ws = state_service.state.publishers[previous_owner].websocket
+        if owner_ws is not None:
+            await send_json_safe(
+                owner_ws,
+                state_service.make_envelope("force_off_air", {"channel_id": channel_id, "reason": "console_off_air"}),
+            )
         await broadcast_cb()
         return f"{channel_id} owner cleared"
 
@@ -118,6 +127,7 @@ async def console_command_loop(
     room_service: RoomService,
     state_lock: Any,
     broadcast_cb: Any,
+    send_json_safe: Any,
 ) -> None:
     print("[backend] console command loop started. Type 'help' for commands.")
     while True:
@@ -137,5 +147,6 @@ async def console_command_loop(
             room_service=room_service,
             state_lock=state_lock,
             broadcast_cb=broadcast_cb,
+            send_json_safe=send_json_safe,
         )
         print(f"[backend] {result}")
