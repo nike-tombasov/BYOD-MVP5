@@ -25,6 +25,13 @@ let heartbeatIntervalId = null;
 let heartbeatMonitorId = null;
 let connectionBannerIntervalId = null;
 let backendUnavailableSinceMs = Date.now();
+let reconnectAttemptCount = 0;
+let reconnectSuccessCount = 0;
+let reconnectFailureCount = 0;
+let heartbeatSentCount = 0;
+let heartbeatTimeoutCount = 0;
+let i18nApplyCount = 0;
+let i18nMismatchCount = 0;
 
 const CONNECTION_STATE = {
   CONNECTED: 'CONNECTED',
@@ -57,6 +64,28 @@ function log(message) {
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
+function updateDiagnosticsSnapshot() {
+  window.__listenerDiagnostics = {
+    connectionState,
+    reconnectAttemptCount,
+    reconnectSuccessCount,
+    reconnectFailureCount,
+    heartbeatSentCount,
+    heartbeatTimeoutCount,
+    i18nApplyCount,
+    i18nMismatchCount,
+    sdkSource: window.__livekitSdkSource || 'unknown',
+    lastBackendActivityMs,
+  };
+}
+
+function detectClientEnvironment() {
+  const ua = navigator.userAgent || 'unknown';
+  const platform = navigator.platform || 'unknown';
+  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(ua);
+  return { ua, platform, isMobile };
+}
+
 function nowTs() { return Math.floor(Date.now() / 1000); }
 
 function isBackendWsOpen() {
@@ -65,6 +94,7 @@ function isBackendWsOpen() {
 
 function noteBackendActivity(source) {
   lastBackendActivityMs = Date.now();
+  updateDiagnosticsSnapshot();
   log(`backend activity source=${source}`);
 }
 
@@ -241,6 +271,8 @@ function applyI18nLibrary(nextLibrary) {
   const nextFingerprint = makeI18nFingerprint(nextLibrary);
   if (immutableI18nFingerprint && immutableI18nFingerprint !== nextFingerprint) {
     log('i18n warning: immutable library changed on reconnect, keeping first version');
+    i18nMismatchCount += 1;
+    updateDiagnosticsSnapshot();
     hasI18nLibrary = true;
     return;
   }
@@ -248,6 +280,8 @@ function applyI18nLibrary(nextLibrary) {
   i18nLibrary = nextLibrary;
   immutableI18nFingerprint = nextFingerprint;
   hasI18nLibrary = true;
+  i18nApplyCount += 1;
+  updateDiagnosticsSnapshot();
   chooseUiLanguage(i18nLibrary);
 
   if (currentState) {
@@ -314,6 +348,7 @@ function setConnectionState(nextState, reason = '') {
   }
   connectionState = nextState;
   log(`connection state -> ${nextState}${reason ? ` (${reason})` : ''}`);
+  updateDiagnosticsSnapshot();
   refreshConnectionBanner();
 }
 
@@ -351,6 +386,8 @@ function sendHeartbeatIfNeeded() {
     selected_channel: selectedChannel,
     playback_state: playbackState,
   })));
+  heartbeatSentCount += 1;
+  updateDiagnosticsSnapshot();
   log(`heartbeat sent channel=${selectedChannel} playback=${playbackState}`);
 }
 
@@ -360,6 +397,8 @@ function monitorHeartbeatTimeout() {
   const idleMs = Date.now() - lastBackendActivityMs;
   if (idleMs < HEARTBEAT_TIMEOUT_MS) return;
 
+  heartbeatTimeoutCount += 1;
+  updateDiagnosticsSnapshot();
   markConnectionStale(`heartbeat timeout ${idleMs}ms`);
   reconnectListener('heartbeat timeout')
     .catch((error) => log(`reconnect error: ${error.message}`));
@@ -790,16 +829,22 @@ async function reconnectListener(reason) {
   }
 
   reconnectPromise = (async () => {
+    reconnectAttemptCount += 1;
+    updateDiagnosticsSnapshot();
     setConnectionState(CONNECTION_STATE.RECONNECTING, reason);
     await closeBackendSocketForReconnect();
     await closeLiveKitForReconnect();
     resetHandshakeFlagsForReconnect();
     await connectBackend(`reconnect:${reason}`);
+    reconnectSuccessCount += 1;
+    updateDiagnosticsSnapshot();
   })();
 
   try {
     await reconnectPromise;
   } catch (error) {
+    reconnectFailureCount += 1;
+    updateDiagnosticsSnapshot();
     markConnectionStale(`reconnect failed: ${error.message}`);
     throw error;
   } finally {
@@ -808,6 +853,10 @@ async function reconnectListener(reason) {
 }
 
 initLanguageDetection();
+const env = detectClientEnvironment();
+log(`client env: platform=${env.platform} mobile=${env.isMobile}`);
+log(`client env: ua=${env.ua}`);
+updateDiagnosticsSnapshot();
 startHeartbeatLoops();
 startConnectionBannerLoop();
 ensureLiveKitClientLoaded()
