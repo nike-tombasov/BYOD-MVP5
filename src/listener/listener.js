@@ -2,6 +2,7 @@ const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws:
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
 const HEARTBEAT_MONITOR_INTERVAL_MS = 1_000;
+const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 
 let backendWs = null;
 let room = null;
@@ -33,6 +34,8 @@ let selectedChannel = null;
 let playbackState = 'IDLE';
 let currentTrack = null;
 let currentTrackName = null;
+let attachInProgress = false;
+let detachInProgress = false;
 
 const publicationByChannel = new Map();
 const trackByChannel = new Map();
@@ -63,6 +66,29 @@ function noteBackendActivity(source) {
 
 function hasActivePlayRequest() {
   return selectedChannel !== null && playbackState !== 'IDLE';
+}
+
+function hasAudioOpInProgress() {
+  return attachInProgress || detachInProgress;
+}
+
+function runWithTimeout(promiseFactory, timeoutMs, timeoutLabel) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(timeoutLabel));
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(() => promiseFactory())
+      .then((result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
 function makeEnvelope(type, payload = {}) {
@@ -291,6 +317,56 @@ function stopPlayback() {
   playbackState = 'IDLE';
 }
 
+async function detachPlayback(reason, { force = false } = {}) {
+  if (!force && hasAudioOpInProgress()) {
+    log(`detach skipped (busy) reason=${reason}`);
+    return false;
+  }
+  detachInProgress = true;
+  try {
+    await runWithTimeout(async () => {
+      stopPlayback();
+    }, ATTACH_DETACH_TIMEOUT_MS, `detach timeout (${reason})`);
+    log(`detach done reason=${reason}`);
+    return true;
+  } catch (error) {
+    stopPlayback();
+    log(`detach reset to IDLE reason=${reason} error=${error.message}`);
+    return false;
+  } finally {
+    detachInProgress = false;
+  }
+}
+
+async function attachPlaybackTrack(track, trackName) {
+  if (hasAudioOpInProgress()) {
+    log(`attach skipped (busy) channel=${trackName}`);
+    return false;
+  }
+
+  attachInProgress = true;
+  try {
+    await runWithTimeout(async () => {
+      const mediaStream = new MediaStream([track.mediaStreamTrack]);
+      player.pause();
+      player.srcObject = mediaStream;
+      await player.play();
+    }, ATTACH_DETACH_TIMEOUT_MS, `attach timeout (${trackName})`);
+
+    currentTrack = track;
+    currentTrackName = trackName;
+    playbackState = 'PLAYING';
+    log(`attach done channel=${trackName}`);
+    return true;
+  } catch (error) {
+    stopPlayback();
+    log(`attach reset to IDLE channel=${trackName} error=${error.message}`);
+    return false;
+  } finally {
+    attachInProgress = false;
+  }
+}
+
 function cachePublication(publication) {
   const trackName = getTrackName(publication);
   if (!trackName) return null;
@@ -329,29 +405,21 @@ async function attachSelectedIfPossible() {
   }
 
   if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') return;
-
-  const mediaStream = new MediaStream([track.mediaStreamTrack]);
-  player.pause();
-  player.srcObject = mediaStream;
-  await player.play();
-  currentTrack = track;
-  currentTrackName = selectedChannel;
-  playbackState = 'PLAYING';
-  log(`attach done channel=${selectedChannel}`);
+  await attachPlaybackTrack(track, selectedChannel);
 }
 
 function enforceRoomStatusRules(state) {
   const nextStatus = state.room_status || 'OPENED';
 
   if (nextStatus === 'BLOCKED') {
-    stopPlayback();
+    detachPlayback('room BLOCKED', { force: true }).catch((error) => log(`detach error: ${error.message}`));
     syncSubscriptions();
     return;
   }
 
   if (nextStatus === 'CLOSED') {
     selectedChannel = null;
-    stopPlayback();
+    detachPlayback('room CLOSED', { force: true }).catch((error) => log(`detach error: ${error.message}`));
     syncSubscriptions();
     return;
   }
@@ -381,7 +449,8 @@ function renderState(state) {
   if (selectedChannel && !allowedChannels.has(selectedChannel)) {
     selectedChannel = null;
     syncSubscriptions();
-    stopPlayback();
+    detachPlayback('channel hidden by listen=false', { force: true })
+      .catch((error) => log(`detach error: ${error.message}`));
   }
 
   buttonsEl.innerHTML = '';
@@ -396,11 +465,15 @@ function renderState(state) {
 
     button.onclick = async () => {
       if (isRoomClosed()) return;
+      if (hasAudioOpInProgress()) {
+        log('click ignored: attach/detach in progress');
+        return;
+      }
 
       if (selectedChannel === channel.channel_id) {
         selectedChannel = null;
         syncSubscriptions();
-        stopPlayback();
+        await detachPlayback('button stop');
         renderState(currentState);
         return;
       }
@@ -461,10 +534,7 @@ async function connectLiveKit(livekitUrl, token) {
 
     trackByChannel.delete(trackName);
     if (selectedChannel === trackName && currentTrackName === trackName) {
-      player.pause();
-      player.srcObject = null;
-      currentTrack = null;
-      currentTrackName = null;
+      await detachPlayback('track unsubscribed', { force: true });
       playbackState = isRoomOpened() ? 'WAITING' : 'IDLE';
       if (isRoomOpened()) await attachSelectedIfPossible();
     }
@@ -476,10 +546,7 @@ async function connectLiveKit(livekitUrl, token) {
     publicationByChannel.delete(trackName);
     trackByChannel.delete(trackName);
     if (selectedChannel === trackName && currentTrackName === trackName) {
-      player.pause();
-      player.srcObject = null;
-      currentTrack = null;
-      currentTrackName = null;
+      detachPlayback('track unpublished', { force: true }).catch((error) => log(`detach error: ${error.message}`));
       playbackState = isRoomOpened() ? 'WAITING' : 'IDLE';
     }
   });
