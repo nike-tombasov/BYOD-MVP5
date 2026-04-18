@@ -9,6 +9,7 @@ let room = null;
 let currentState = null;
 let previousRoomStatus = null;
 let i18nLibrary = null;
+let immutableI18nFingerprint = null;
 let pendingToken = null;
 let pendingLivekitUrl = null;
 let hasConnectingOk = false;
@@ -183,6 +184,49 @@ function getLocalizedStatusText(status) {
     return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_closed_i18n, 'CLOSED');
   }
   return '';
+}
+
+function isValidI18nLibrary(value) {
+  if (!value || typeof value !== 'object') return false;
+  const required = ['room_name_i18n', 'custom_status_text_blocked_i18n', 'custom_status_text_closed_i18n'];
+  return required.every((key) => value[key] && typeof value[key] === 'object');
+}
+
+function makeI18nFingerprint(value) {
+  if (!isValidI18nLibrary(value)) return 'invalid';
+  return JSON.stringify(value);
+}
+
+function applyI18nLibrary(nextLibrary) {
+  if (!isValidI18nLibrary(nextLibrary)) {
+    if (i18nLibrary) {
+      log('i18n reconnect fallback: keep previous immutable library');
+      hasI18nLibrary = true;
+      return;
+    }
+    throw new Error('Protocol error: invalid i18n_library payload');
+  }
+
+  const nextFingerprint = makeI18nFingerprint(nextLibrary);
+  if (immutableI18nFingerprint && immutableI18nFingerprint !== nextFingerprint) {
+    log('i18n warning: immutable library changed on reconnect, keeping first version');
+    hasI18nLibrary = true;
+    return;
+  }
+
+  i18nLibrary = nextLibrary;
+  immutableI18nFingerprint = nextFingerprint;
+  hasI18nLibrary = true;
+  chooseUiLanguage(i18nLibrary);
+
+  if (currentState) {
+    roomNameEl.textContent = getLocalizedRoomName();
+    if (currentState.room_status && currentState.room_status !== 'OPENED') {
+      statusBox.style.display = 'block';
+      statusBox.textContent = getLocalizedStatusText(currentState.room_status);
+    }
+  }
+  log('i18n library applied for current session');
 }
 
 function isLiveKitReady() {
@@ -622,9 +666,7 @@ async function handleBackendMessage(msg) {
   }
 
   if (msg.type === 'i18n_library') {
-    i18nLibrary = payload;
-    hasI18nLibrary = true;
-    chooseUiLanguage(i18nLibrary);
+    applyI18nLibrary(payload);
     await maybeInitializeListener();
     return;
   }
