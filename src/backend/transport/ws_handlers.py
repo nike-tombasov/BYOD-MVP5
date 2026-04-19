@@ -133,6 +133,15 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                         await send_error(websocket, state_service, "INVALID_PIN", request_id=request_id)
                         continue
 
+                    if not room_service.is_livekit_reachable():
+                        room_service.log_livekit_unavailable(
+                            context="publisher_connecting",
+                            request_id=request_id,
+                            hostname=hostname,
+                        )
+                        await send_error(websocket, state_service, "LIVEKIT_UNAVAILABLE", request_id=request_id)
+                        continue
+
                     async with state_lock:
                         session = state_service.add_publisher(websocket=websocket, hostname=hostname)
                         publisher_id = session.publisher_id
@@ -164,6 +173,15 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     channel_id = payload.get("channel_id")
                     rejected_owner = None
                     unknown_channel = False
+                    if not room_service.is_livekit_reachable():
+                        room_service.log_livekit_unavailable(
+                            context="publisher_on_air",
+                            request_id=request_id,
+                            publisher_id=publisher_id,
+                            channel_id=channel_id,
+                        )
+                        await send_error(websocket, state_service, "LIVEKIT_UNAVAILABLE", request_id=request_id)
+                        continue
                     async with state_lock:
                         channel = state_service.find_channel(channel_id)
                         if channel is None:
@@ -258,6 +276,16 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
 
             if reject_code:
                 await send_error(websocket, state_service, reject_code, request_id=request_id)
+                return
+
+            if not room_service.is_livekit_reachable():
+                room_service.log_livekit_unavailable(
+                    context="listener_connecting",
+                    request_id=request_id,
+                    listener_id=listener_id,
+                    client_ip=client_ip,
+                )
+                await send_error(websocket, state_service, "LIVEKIT_UNAVAILABLE", request_id=request_id)
                 return
 
             await send_connect_success(

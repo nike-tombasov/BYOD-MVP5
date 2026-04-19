@@ -1,0 +1,18 @@
+[Unit]
+Description=BYOD LiveKit Server 1.9.11 (binary)
+After=network.target
+
+[Service]
+Type=simple
+User=byod
+Group=byod
+WorkingDirectory=/opt/byod/livekit
+ExecStart=/opt/byod/livekit/livekit-server --config /opt/byod/config/livekit.yaml
+Restart=always
+RestartSec=2
+StandardOutput=append:/opt/byod/logs/livekit.stdout.log
+StandardError=append:/opt/byod/logs/livekit.stderr.log
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
