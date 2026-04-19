@@ -1,0 +1,34 @@
+manifest_version: 1
+pilot_stage: "Stage X"
+updated_utc: "2026-04-19T00:00:00Z"
+rollback_reference: "git checkout <previous_tag_or_commit> && fresh deploy on new VPS"
+vps_layout:
+  root: /opt/byod
+  dirs:
+    - /opt/byod/app
+    - /opt/byod/config
+    - /opt/byod/livekit
+    - /opt/byod/listener
+    - /opt/byod/backend_data
+    - /opt/byod/logs
+    - /opt/byod/releases
+artifacts:
+  backend_source:
+    path_in_repo: src/backend
+  listener_source:
+    path_in_repo: src/listener
+  requirements_file:
+    path_in_repo: src/backend/requirements.txt
+  livekit:
+    version: "1.9.11"
+    platform: "linux_amd64"
+    custom_artifact_path: "/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz"
+    custom_sha256_path: "/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256"
+    fallback_url: "https://github.com/livekit/livekit/releases/download/v1.9.11/livekit-server-v1.9.11-linux-amd64.tar.gz"
+services:
+  - name: byod-livekit
+    unit_file: deploy/stage_x_ubuntu_pilot/systemd/byod-livekit.service
+  - name: byod-backend
+    unit_file: deploy/stage_x_ubuntu_pilot/systemd/byod-backend.service
+nginx:
+  site_file: deploy/stage_x_ubuntu_pilot/nginx/byod-listener.conf

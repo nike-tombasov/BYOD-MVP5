@@ -1,9 +1,18 @@
 import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.config import DATA_DIR, DEFAULT_ROOM_CONFIG, LIVEKIT_URL, RECORDING_STATE_PATH, ROOM_CONFIG_PATH, RUNTIME_STATE_PATH
+from backend.config import (
+    CORS_ALLOWED_ORIGIN,
+    DATA_DIR,
+    DEFAULT_ROOM_CONFIG,
+    LIVEKIT_URL,
+    RECORDING_STATE_PATH,
+    ROOM_CONFIG_PATH,
+    RUNTIME_STATE_PATH,
+)
 from backend.console.commands import console_command_loop
 from backend.persistence.storage import JsonStorage
 from backend.services.room_service import RoomService
@@ -11,10 +20,16 @@ from backend.services.state_service import RuntimeConfig, StateService
 from backend.transport.admin_api import build_admin_router
 from backend.transport.ws_handlers import build_ws_router
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s event=%(message)s",
+)
+logger = logging.getLogger("byod.backend")
+
 app = FastAPI(title="BYOD Backend MVP Stage VII - implementation 2-3")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[CORS_ALLOWED_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +72,8 @@ async def startup() -> None:
             await room_service.start_recording_locked(reason="startup_opened")
 
     room_service.persist_all()
-    storage.log_event("backend_started")
+    storage.log_event("backend_started", cors_allowed_origin=CORS_ALLOWED_ORIGIN, livekit_url=LIVEKIT_URL)
+    logger.info("backend_started")
     asyncio.create_task(room_service.monitor_timeouts(state_lock=state_lock, broadcast_cb=broadcast_states))
     asyncio.create_task(
         console_command_loop(

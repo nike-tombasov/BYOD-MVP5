@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import logging
+import socket
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from livekit import api as livekit_api
 
@@ -12,17 +15,42 @@ from backend.config import (
     LISTENER_ACTIVE_PLAY_STALE_SECONDS,
     LIVEKIT_API_KEY,
     LIVEKIT_API_SECRET,
+    LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS,
 )
 from backend.domain.models import RoomConfig
 from backend.persistence.storage import JsonStorage
 from backend.services.state_service import StateService
 
 
+logger = logging.getLogger("byod.backend.room_service")
+
 class RoomService:
     def __init__(self, state_service: StateService, storage: JsonStorage, livekit_url: str) -> None:
         self.state_service = state_service
         self.storage = storage
         self.livekit_url = livekit_url
+
+    def _livekit_tcp_target(self) -> tuple[str, int] | None:
+        parsed = urlparse(self.livekit_url)
+        host = parsed.hostname
+        if host is None:
+            return None
+        port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+        return host, port
+
+    def is_livekit_reachable(self) -> bool:
+        target = self._livekit_tcp_target()
+        if target is None:
+            return False
+        try:
+            with socket.create_connection(target, timeout=LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS):
+                return True
+        except OSError:
+            return False
+
+    def log_livekit_unavailable(self, context: str, **fields: Any) -> None:
+        self.storage.log_event("livekit_unreachable", context=context, livekit_url=self.livekit_url, **fields)
+        logger.error("livekit_unreachable context=%s fields=%s", context, fields)
 
     def create_livekit_token(self, identity: str) -> str:
         token = (
