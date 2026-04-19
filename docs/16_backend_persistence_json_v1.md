@@ -14,7 +14,7 @@ Root folder:
 
 Files:
 - `room_config_v1.json` — room static/semi-static config (PIN, channels, labels, listen flags, immutable i18n library, capacity).
-- `runtime_state_v1.json` — current runtime snapshot (room_status, owner map).
+- `runtime_state_v1.json` — current runtime snapshot (room_status, owner map, online counters).
 - `connections_log_YYYYMMDD.jsonl` — append-only connection events (publisher/listener connect/disconnect).
 - `events_log_YYYYMMDD.jsonl` — append-only operational events (on_air/stop/status changes).
 - `recording_state_v1.json` — recording on/off snapshot and active files metadata.
@@ -125,6 +125,7 @@ After successful JSON import backend keeps imported metadata across VPS/backend 
   "publisher_online": {
     "hostA_0": true
   },
+  "listener_online": 12,
   "updated_ts": 1710000100
 }
 ```
@@ -132,6 +133,7 @@ After successful JSON import backend keeps imported metadata across VPS/backend 
 Rules:
 - this file is recoverable snapshot only (source of truth during runtime remains in-memory backend state);
 - loaded at startup to restore operational continuity.
+- `listener_online` stores current number of opened backend-listener WS sessions.
 
 ---
 

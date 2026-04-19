@@ -399,7 +399,6 @@ async function closeBackendSocketForReconnect() {
 
 function sendHeartbeatIfNeeded() {
   if (connectionState !== CONNECTION_STATE.CONNECTED) return;
-  if (!hasActivePlayRequest()) return;
   if (!isBackendWsOpen()) return;
   backendWs.send(JSON.stringify(makeEnvelope('heartbeat', {
     client_role: 'listener',

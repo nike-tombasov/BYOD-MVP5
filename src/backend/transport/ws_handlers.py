@@ -254,6 +254,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     listener_session = state_service.add_listener(websocket=websocket)
                     listener_id = listener_session.listener_id
                     room_service.storage.log_connection("listener_connected", listener_id=listener_id, ip=client_ip)
+                    room_service.persist_all()
 
             if reject_code:
                 await send_error(websocket, state_service, reject_code, request_id=request_id)
@@ -296,5 +297,6 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             async with state_lock:
                 disconnected_listener_id = state_service.remove_listener_by_ws(websocket)
                 room_service.storage.log_connection("listener_disconnected", listener_id=disconnected_listener_id)
+                room_service.persist_all()
 
     return router, broadcast_states

@@ -177,6 +177,7 @@ Listener heartbeat payload (recommended fields for backend stale-session authori
 - `playback_state: "IDLE" | "WAITING" | "PLAYING"`
 
 Rule:
+- Listener starts heartbeat loop immediately after successful backend WS connect (not only after first button click).
 - Backend uses Listener heartbeats only as activity signal for active PLAY stale-session control.
 - Listener does not decide stale timeout locally.
 

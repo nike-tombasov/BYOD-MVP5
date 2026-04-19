@@ -64,6 +64,7 @@ class RoomService:
             "publisher_online": {
                 publisher_id: True for publisher_id in self.state_service.state.publishers.keys()
             },
+            "listener_online": len(self.state_service.state.listeners),
             "updated_ts": self.storage.now_ts(),
         }
 

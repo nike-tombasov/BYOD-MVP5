@@ -261,7 +261,8 @@ Override details: см. docs/08_backend.md, раздел 9.14.
 ### 10.10. Active PLAY heartbeat control
 
 Rules for MVP Stage IX:
-- when listener has active PLAY state, web page sends heartbeat every `10 sec`;
+- listener starts heartbeat loop right after backend WS connect and sends heartbeat every `10 sec`;
+- heartbeat payload includes current playback state (`IDLE` / `WAITING` / `PLAYING`);
 - if backend does not receive heartbeat for `60 sec` during active PLAY, **backend** marks listener session as stale/reconnect-required;
 - heartbeat control is for active playback monitoring and room overflow protection.
 - Listener must NOT run its own local 60-second stale decision timer based on generic incoming WS silence.

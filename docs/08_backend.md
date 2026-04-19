@@ -332,7 +332,8 @@ Runtime text mutation is not used in current project.
 - для одного listener identity/IP новый reconnect допускается только при интервале `> 2 sec`.
 
 4) Active PLAY heartbeat control:
-- Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
+- Listener web page starts heartbeat loop right after successful backend WS connect and sends heartbeat every `10 sec`.
+- Heartbeat payload includes playback state; backend stale authority still applies only for active PLAY sessions.
 - backend является единственным authority для stale-session решения:
   - если heartbeat отсутствует `60 sec` при active PLAY, backend помечает session как stale/reconnect-required;
   - backend удаляет stale listener из active session tracking/capacity accounting;
