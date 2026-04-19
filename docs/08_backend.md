@@ -21,7 +21,7 @@ Startup/import persistence policy:
 3) channel name - channel_label для каждого channel_id - не используется в SFU WebRTC и требуется только для визуального отображения в UI
 4) режим прослушивания channel - listen (false - по умолчанию для channel_0, Reserve 1 и Reserve 2, и true - по умолчанию для всех остальных) - для каждого channel_id
 5) room name - room_name
-6) room status - room_status (close - по умолчанию во время запуска сервера)
+6) room status - room_status (BLOCKED по умолчанию при clean deploy до первого импорта)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
 8) target_capacity - целевое количество Listener для sizing/лимитов VPS (задаётся при deploy и не изменяется в runtime мероприятия)
 
