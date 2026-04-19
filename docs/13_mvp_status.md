@@ -15,44 +15,45 @@
 ### 14.2 Current active stage
 
 - **Active:** Stage X (VPS deploy package & operator manuals).
-- **Why now:** Stage IX listener resilience baseline is closed and accepted; next blocking scope is deploy/runbook packaging.
+- **Why now:** Stage IX baseline is closed and accepted; next blocking scope is deploy/runbook packaging.
 
 ### 14.3 Stage VII completion snapshot
 
 Delivered in Stage VII:
-1) backend decomposition and clear module boundaries
-2) JSON import flow with validation and full replacement apply model
-3) JSON persistence + atomic write for non-log files
-4) websocket envelope/schema hardening baseline and separated state channels
-5) listener protection limits (capacity/rate/reconnect interval)
-6) operator console commands for runtime control
+1) backend decomposition and clear module boundaries;
+2) JSON import + JSON persistence baseline;
+3) WS schema hardening baseline;
+4) operator console commands for runtime control.
 
-Known limitation moved to future features:
-- real backend multi-track recording is not implemented yet; current backend only keeps recording state markers.
+Deferred decision kept:
+- real backend multi-track recording is **not** implemented in current MVP baseline;
+- current backend keeps only recording state markers/runtime placeholders.
 
-### 14.4 Current postponements
+### 14.4 Stage VIII completion snapshot
 
-- Unresolved bug **20.1** is marked as **POSTPONED until VPS pilots end**.
-- Real backend recording implementation is moved from Stage VII closure scope to future features.
+Delivered in Stage VIII:
+1) Listener BLOCKED/CLOSED/OPENED no-reload behavior baseline;
+2) listener language autodetection/fallback for i18n texts;
+3) WS schema v1 cleanup and removal of legacy formats.
 
-### 14.5 Stage VIII additional closeout work (April 15, 2026)
-
-- canonical WS schema v1 protocol cleanup completed across backend/publisher/listener;
-- legacy WS message formats removed from active implementation flow;
-- strict handshake order fixed in canonical docs and implementation.
-
-### 14.6 Confirmed architecture pins
-
-1) Backend remains source of truth for owner/interlock.
-2) Backend sends immutable `i18n_library` on connect/reconnect.
-3) Backend does not select language per listener.
-4) Separated payloads are kept: `publisher_state` and `listener_state`.
-5) LiveKit baseline stays pinned to `1.9.11` policy.
-
-### 14.7 Stage IX completion snapshot (April 19, 2026)
+### 14.5 Stage IX completion snapshot
 
 Delivered in Stage IX:
-1) backend-authoritative stale listener session handling for active-play and no-active-play timeout paths;
-2) canonical `reconnect_required` backend->listener WS message path;
-3) listener reconnect behavior aligned to allowed triggers and availability UX states;
-4) local SDK fallback wiring and race-hardening baseline finalized.
+1) backend-authoritative stale listener session handling;
+2) canonical `reconnect_required` backend->listener path;
+3) deterministic reconnect triggers and availability UX states;
+4) race-hardening baseline for listener attach/detach flow.
+
+### 14.6 Current postponements
+
+- Unresolved bug **20.1** is **POSTPONED until VPS pilots end**.
+- Real backend recording implementation is moved to future features.
+
+### 14.7 Canonical references
+
+This file is a status/history summary.
+Normative behavior is pinned in permanent docs:
+- backend architecture/semantics: `docs/08_backend.md`;
+- listener behavior: `docs/09_listener_ui.md`;
+- WS wire protocol: `docs/15_ws_schema_v1.md`;
+- LiveKit version baseline: `docs/06_livekit_engine.md`.

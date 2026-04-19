@@ -109,6 +109,7 @@ Backend MUST use this immutable bootstrap default at deploy-time before first JS
 
 Bootstrap default applies only before first successful JSON import.
 After successful JSON import backend keeps imported metadata across VPS/backend restart.
+Default runtime room status on clean deploy: `BLOCKED`.
 
 ---
 
@@ -117,7 +118,7 @@ After successful JSON import backend keeps imported metadata across VPS/backend 
 ```json
 {
   "schema_version": 1,
-  "room_status": "OPENED",
+  "room_status": "BLOCKED",
   "owners": {
     "channel_0": null,
     "channel_1": "hostA_0"
