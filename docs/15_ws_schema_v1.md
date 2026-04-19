@@ -156,6 +156,8 @@ Must NOT contain:
 It is set at deploy/import time.
 It is sent on connect/reconnect.
 It is not changed during event runtime.
+Backend sends the full library snapshot to both Publisher and Listener.
+Backend does not accept per-user language selection and does not choose language per user.
 
 Required maps:
 - `room_name_i18n`
