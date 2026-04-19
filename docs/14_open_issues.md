@@ -72,9 +72,3 @@ By decision, previous items 15.1–15.8 are moved out of open unresolved backlog
 2) Logging contracts are not formally fixed:
 - define exact logging contract for Publisher UI and backend (minimum required events, severity model, format, retention, and mandatory diagnostics fields).
 
-3) Manual backend command `OFF AIR channel` is missing:
-- add operator command that forcibly clears owner for selected `channel_id` and broadcasts updated state.
-
-4) Documentation sync TODO after Stage VI completion:
-- align `docs/07_publisher_ui.md` with implemented Publisher v0.4 logging/i18n details;
-- decide whether `docs/15_ws_schema_v1.md` should explicitly document legacy compatibility handling for `state` vs `publisher_state`.

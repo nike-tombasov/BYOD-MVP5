@@ -62,6 +62,7 @@ Backend -> Listener:
 - `connecting` (success response)
 - `listener_state`
 - `i18n_library`
+- `reconnect_required`
 - `error`
 
 ---
@@ -170,6 +171,17 @@ Required maps:
 Allowed for both clients.
 Envelope is required.
 
+Listener heartbeat payload (recommended fields for backend stale-session authority):
+- `client_role: "listener"`
+- `selected_channel: string|null`
+- `playback_state: "IDLE" | "WAITING" | "PLAYING"`
+
+Rule:
+- Backend waits `60 sec` for first ACTIVE PLAY trigger after Listener WS connect.
+- Listener sends heartbeat every `10 sec` only while ACTIVE PLAY is running (`WAITING` / `PLAYING`).
+- Backend uses Listener heartbeats only as activity signal for active PLAY stale-session control.
+- Listener does not decide stale timeout locally.
+
 ---
 
 ### 16.9 `on_air` / `stop`
@@ -184,6 +196,28 @@ Forced channel release rule:
   - broadcast normal `publisher_state`
 - Publisher reacts only to `publisher_state` and stops local streaming when owner is no longer equal to own `publisher_id`;
 - Listener is not involved in forced off-air logic.
+
+---
+
+### 16.9.1 `reconnect_required` (Backend -> Listener)
+
+Direction:
+- Backend -> Listener only.
+
+Purpose:
+- explicit backend notification that current listener session is stale/reconnect-required
+  (for example missing active-PLAY heartbeat timeout).
+
+Canonical payload fields:
+- `ok: false`
+- `code: "LISTENER_SESSION_STALE"` or `code: "LISTENER_NO_ACTIVE_PLAY_TIMEOUT"`
+- `reason: string`
+- `listener_id: string` (optional but recommended)
+
+Listener behavior:
+- mark connection state as `STALE`;
+- do not start immediate tight-loop reconnect;
+- reconnect only by allowed triggers (`button click`, `visibilitychange -> visible`, `online`) plus UNAVAILABLE retry policy.
 
 ---
 

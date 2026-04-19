@@ -261,10 +261,12 @@ Override details: см. docs/08_backend.md, раздел 9.14.
 ### 10.10. Active PLAY heartbeat control
 
 Rules for MVP Stage IX:
-- when listener has active PLAY state, web page sends heartbeat every `10 sec`;
-- if backend does not receive heartbeat for `60 sec`, listener session must switch to reconnect-required state;
+- after backend WS connect, backend waits `60 sec` for first ACTIVE PLAY trigger;
+- Listener sends heartbeat every `10 sec` only when ACTIVE PLAY is running (`WAITING` / `PLAYING`);
+- if backend does not receive heartbeat for `60 sec` during active PLAY, **backend** marks listener session as stale/reconnect-required;
 - heartbeat control is for active playback monitoring and room overflow protection.
-- if session timeout happened while no active PLAY and user returns to the page/tab, web page must auto-reconnect backend WS (or auto page reload fallback).
+- Listener must NOT run its own local 60-second stale decision timer based on generic incoming WS silence.
+- if session timeout happened while no active PLAY and user returns to the page/tab, recovery is allowed by reconnect triggers and UNAVAILABLE retry policy.
 
 Listener UX expectation:
 - on reconnect-required state user sees reconnect flow without manual page reload where technically possible.
@@ -277,7 +279,7 @@ Listener maintains `connectionState`:
 - `RECONNECTING`
 
 `connectionState` becomes `STALE` when:
-- heartbeat timeout;
+- backend `reconnect_required` message (stale session);
 - backend websocket disconnect;
 - LiveKit disconnect;
 - token expiry.
@@ -286,6 +288,7 @@ Reconnect triggers:
 1) mandatory: channel button click;
 2) optional: `document.visibilitychange` -> page becomes visible;
 3) optional: network restored event.
+4) automatic retry loop only while backend availability state is `UNAVAILABLE`.
 
 On PLAY ACTION:
 ```
@@ -300,8 +303,12 @@ else:
 Reconnect fallback:
 ```
 if reconnect fails:
-    reload page
+    keep retry policy loop (no tight spam), optional reload fallback
 ```
+
+Retry policy (canonical):
+- while `RETRYING`: reconnect every `3 sec`;
+- while `UNAVAILABLE`: reconnect every `10 sec`.
 
 Expected UX result:
 - after STOP ACTION, return from background, idle on opened page, or other stale cases, user can press channel button once and receive audio again without extra manual recovery steps.
