@@ -289,6 +289,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                             listener_session.active_play = playback_state in {"WAITING", "PLAYING"} and isinstance(selected_channel, str) and selected_channel != ""
                             listener_session.selected_channel = selected_channel if listener_session.active_play else None
                             if listener_session.active_play:
+                                listener_session.active_play_started = True
                                 listener_session.last_heartbeat_ts = now_ts
 
         except WebSocketDisconnect:

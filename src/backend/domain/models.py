@@ -43,6 +43,7 @@ class ListenerSession:
     connected_at_ts: float
     last_seen_ts: float
     last_heartbeat_ts: float
+    active_play_started: bool = False
     active_play: bool = False
     selected_channel: str | None = None
 

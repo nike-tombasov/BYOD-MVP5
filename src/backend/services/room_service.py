@@ -249,7 +249,7 @@ class RoomService:
         while True:
             await asyncio.sleep(1)
             expired_publishers: list[str] = []
-            stale_listener_sessions: list[tuple[str, Any]] = []
+            stale_listener_sessions: list[tuple[str, Any, str, str]] = []
             async with state_lock:
                 now = float(self.state_service.now_ts())
                 for publisher_id, session in self.state_service.state.publishers.items():
@@ -258,27 +258,40 @@ class RoomService:
                 for publisher_id in expired_publishers:
                     await self.drop_publisher_locked(publisher_id)
                 for listener_id, listener_session in list(self.state_service.state.listeners.items()):
-                    if not listener_session.active_play:
+                    no_active_play_timeout = (
+                        not listener_session.active_play_started
+                        and now - listener_session.connected_at_ts > LISTENER_ACTIVE_PLAY_STALE_SECONDS
+                    )
+                    active_play_heartbeat_timeout = (
+                        listener_session.active_play_started
+                        and listener_session.active_play
+                        and now - listener_session.last_heartbeat_ts > LISTENER_ACTIVE_PLAY_STALE_SECONDS
+                    )
+                    if not no_active_play_timeout and not active_play_heartbeat_timeout:
                         continue
-                    if now - listener_session.last_heartbeat_ts > LISTENER_ACTIVE_PLAY_STALE_SECONDS:
-                        stale_listener_sessions.append((listener_id, listener_session.websocket))
-                        self.state_service.state.listeners.pop(listener_id, None)
-                        self.storage.log_connection(
-                            "listener_stale_removed",
-                            listener_id=listener_id,
-                            stale_seconds=LISTENER_ACTIVE_PLAY_STALE_SECONDS,
-                        )
+
+                    reconnect_code = "LISTENER_NO_ACTIVE_PLAY_TIMEOUT" if no_active_play_timeout else "LISTENER_SESSION_STALE"
+                    reconnect_reason = "NO_ACTIVE_PLAY_TRIGGER" if no_active_play_timeout else "MISSING_ACTIVE_PLAY_HEARTBEAT"
+                    stale_note = "no_active_play_timeout" if no_active_play_timeout else "active_play_heartbeat_timeout"
+                    stale_listener_sessions.append((listener_id, listener_session.websocket, reconnect_code, reconnect_reason))
+                    self.state_service.state.listeners.pop(listener_id, None)
+                    self.storage.log_connection(
+                        "listener_stale_removed",
+                        listener_id=listener_id,
+                        stale_seconds=LISTENER_ACTIVE_PLAY_STALE_SECONDS,
+                        reason=stale_note,
+                    )
                 if expired_publishers or stale_listener_sessions:
                     self.persist_all()
-            for listener_id, ws in stale_listener_sessions:
+            for listener_id, ws, reconnect_code, reconnect_reason in stale_listener_sessions:
                 with contextlib.suppress(Exception):
                     await ws.send_json(
                         self.state_service.make_envelope(
                             "reconnect_required",
                             {
                                 "ok": False,
-                                "code": "LISTENER_SESSION_STALE",
-                                "reason": "MISSING_ACTIVE_PLAY_HEARTBEAT",
+                                "code": reconnect_code,
+                                "reason": reconnect_reason,
                                 "listener_id": listener_id,
                             },
                             request_id=self.state_service.next_request_id("reconnect-required"),
