@@ -1,11 +1,12 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on April 14, 2026
+## Status on April 19, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
 - Stage VII is completed (backend decomposition, JSON import/persistence, WS hardening baseline, operator commands, listener protection).
 - Stage VIII is completed.
-- Active stage is Stage IX.
+- Stage IX is completed.
+- Active stage is Stage X.
 
 ---
 
@@ -117,6 +118,13 @@ Bring Listener web app to stable production-like baseline.
 - listener survives token rotation
 - critical races are fixed or formally deferred with mitigations
 - checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage IX section)
+
+### Result (completed on April 19, 2026)
+Delivered:
+1) backend-authoritative stale listener session handling finalized for active-play and no-active-play paths;
+2) listener reconnect_required protocol path and deterministic reconnect triggers finalized;
+3) listener resilience hardening items completed for Stage IX scope;
+4) Stage IX acceptance checklist marked PASS.
 
 ---
 

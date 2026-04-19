@@ -74,30 +74,32 @@ Date of Stage VIII closure record: **April 14, 2026**.
 
 ### 19.3 Stage IX — Listener resilience and compatibility
 
-1) Token reconnect policy
+Date of Stage IX closure record: **April 19, 2026**.
+
+1) Token reconnect policy — **PASS**
 - no unnecessary token request while stable connection.
 
-2) Local SDK wiring
+2) Local SDK wiring — **PASS**
 - local pinned SDK `src/listener/vendor/livekit-client.umd.1.15.13.js` is primary path;
 - CDN used only as fallback.
 
-3) Race guards
+3) Race guards — **PASS**
 - attach/detach flags and timeout recovery verified by rapid-click tests.
 
-4) Active PLAY heartbeat
+4) Active PLAY heartbeat — **PASS**
 - 10 sec heartbeat and 60 sec timeout path verified end-to-end.
 
-5) No-active-PLAY return path
+5) No-active-PLAY return path — **PASS**
 - after background timeout with no active PLAY, return to page triggers auto-reconnect (or auto-reload fallback).
 
-6) Connection recovery state machine
+6) Connection recovery state machine — **PASS**
 - `CONNECTED` -> `STALE` -> `RECONNECTING` transitions verified for heartbeat timeout / WS disconnect / LiveKit disconnect / token expiry.
 - channel button click always works as mandatory reconnect trigger in `STALE`.
 
-7) Mobile system player behavior
+7) Mobile system player behavior — **PASS**
 - on Android/iOS background pause->play before heartbeat timeout resumes last selected channel.
 
-8) Browser matrix (minimum)
+8) Browser matrix (minimum) — **PASS**
 - Chrome latest-1 (Windows, Android)
 - Edge latest-1 (Windows)
 - Safari latest-1 (iOS/macOS)

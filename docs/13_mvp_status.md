@@ -10,11 +10,12 @@
 - **Stage VI** — Publisher UI hardening for VPS pilot — **DONE**.
 - **Stage VII** — Backend hardening baseline — **DONE** (April 13, 2026).
 - **Stage VIII** — Listener room_status rules finalization — **DONE** (April 14, 2026).
+- **Stage IX** — Listener resilience & compatibility — **DONE** (April 19, 2026).
 
 ### 14.2 Current active stage
 
-- **Active:** Stage IX (Listener resilience & compatibility).
-- **Why now:** Stage VIII core behavior is closed; next blocking scope is reconnect resilience, SDK wiring, race guards, and browser matrix validation.
+- **Active:** Stage X (VPS deploy package & operator manuals).
+- **Why now:** Stage IX listener resilience baseline is closed and accepted; next blocking scope is deploy/runbook packaging.
 
 ### 14.3 Stage VII completion snapshot
 
@@ -47,3 +48,11 @@ Known limitation moved to future features:
 3) Backend does not select language per listener.
 4) Separated payloads are kept: `publisher_state` and `listener_state`.
 5) LiveKit baseline stays pinned to `1.9.11` policy.
+
+### 14.7 Stage IX completion snapshot (April 19, 2026)
+
+Delivered in Stage IX:
+1) backend-authoritative stale listener session handling for active-play and no-active-play timeout paths;
+2) canonical `reconnect_required` backend->listener WS message path;
+3) listener reconnect behavior aligned to allowed triggers and availability UX states;
+4) local SDK fallback wiring and race-hardening baseline finalized.

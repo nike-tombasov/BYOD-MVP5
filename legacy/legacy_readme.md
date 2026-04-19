@@ -105,3 +105,19 @@ Include:
 * legacy/stage_viii/publisher/state_store.py
 * legacy/stage_viii/listener/index.html
 * legacy/stage_viii/listener/listener.js
+
+## Stage IX
+
+Stage IX completed Listener resilience & compatibility baseline with backend-authoritative stale-session handling and deterministic reconnect behavior.
+
+Include:
+* legacy/stage_ix/README.md
+* legacy/stage_ix/backend/main.py
+* legacy/stage_ix/backend/config.py
+* legacy/stage_ix/backend/domain/models.py
+* legacy/stage_ix/backend/services/state_service.py
+* legacy/stage_ix/backend/services/room_service.py
+* legacy/stage_ix/backend/transport/ws_handlers.py
+* legacy/stage_ix/backend/transport/admin_api.py
+* legacy/stage_ix/listener/index.html
+* legacy/stage_ix/listener/listener.js
