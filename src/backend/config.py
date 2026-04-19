@@ -21,6 +21,8 @@ DEFAULT_ROOM_CONFIG = {
         {"channel_id": "channel_0", "channel_label": "Original - FLOOR - Оригинал", "listen": False},
         {"channel_id": "channel_1", "channel_label": "Russian - RUS - Русский", "listen": True},
         {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": True},
+        {"channel_id": "channel_3", "channel_label": "Reserve 1", "listen": False},
+        {"channel_id": "channel_4", "channel_label": "Reserve 2", "listen": False},
     ],
     "i18n_library": {
         "room_name_i18n": {"en": "Conference room", "ru": "Зал конференции"},

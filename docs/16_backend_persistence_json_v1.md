@@ -49,7 +49,9 @@ For log files (current Stage VII implementation):
   "channels": [
     {"channel_id": "channel_0", "channel_label": "Original - FLOOR - Оригинал", "listen": false},
     {"channel_id": "channel_1", "channel_label": "Russian - RUS - Русский", "listen": true},
-    {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": true}
+    {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": true},
+    {"channel_id": "channel_3", "channel_label": "Reserve 1", "listen": false},
+    {"channel_id": "channel_4", "channel_label": "Reserve 2", "listen": false}
   ],
   "i18n_library": {
     "room_name_i18n": {
@@ -88,7 +90,9 @@ Backend MUST use this immutable bootstrap default at deploy-time before first JS
   "channels": [
     {"channel_id": "channel_0", "channel_label": "Original - FLOOR - Оригинал", "listen": false},
     {"channel_id": "channel_1", "channel_label": "Russian - RUS - Русский", "listen": true},
-    {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": true}
+    {"channel_id": "channel_2", "channel_label": "English - ENG - English", "listen": true},
+    {"channel_id": "channel_3", "channel_label": "Reserve 1", "listen": false},
+    {"channel_id": "channel_4", "channel_label": "Reserve 2", "listen": false}
   ],
   "i18n_library": {
     "room_name_i18n": {
@@ -109,6 +113,7 @@ Backend MUST use this immutable bootstrap default at deploy-time before first JS
 
 Bootstrap default applies only before first successful JSON import.
 After successful JSON import backend keeps imported metadata across VPS/backend restart.
+Default runtime room status on clean deploy: `BLOCKED`.
 
 ---
 
@@ -117,7 +122,7 @@ After successful JSON import backend keeps imported metadata across VPS/backend 
 ```json
 {
   "schema_version": 1,
-  "room_status": "OPENED",
+  "room_status": "BLOCKED",
   "owners": {
     "channel_0": null,
     "channel_1": "hostA_0"

@@ -23,7 +23,7 @@ app.add_middleware(
 runtime_config = RuntimeConfig(
     pin=DEFAULT_ROOM_CONFIG["pin"],
     room_name=DEFAULT_ROOM_CONFIG["i18n_library"]["room_name_i18n"]["en"],
-    room_status="OPENED",
+    room_status="BLOCKED",
     target_capacity=DEFAULT_ROOM_CONFIG["target_capacity"],
     max_active_listeners=int(DEFAULT_ROOM_CONFIG["target_capacity"] * 1.05),
     max_new_connections_per_sec=max(1, int(DEFAULT_ROOM_CONFIG["target_capacity"] / 15)),

@@ -162,7 +162,7 @@ When switching or stopping channel Listener MUST:
 If this is not done, browser will continue playback.
 
 Implementation priority note:
-- это обязательный hardening-блок Stage IX (не переносить далее), т.к. rapid-click гонки приводят к недетерминированным переходам состояния.
+- rapid-click race hardening is part of permanent listener baseline, because these races create non-deterministic state transitions.
 
 ### 10.7. Key technologies
 
@@ -195,6 +195,31 @@ Implementation priority note:
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
 * Listener does not receive or process any separate forced off-air command; it reacts only to regular room/channel state transitions.
+
+### 10.8A. Canonical room_status behavior (permanent)
+
+These rules are permanent listener canon (not stage-local):
+
+- `BLOCKED`:
+  - stop current sound immediately;
+  - keep channel buttons clickable;
+  - no sound is played while status is BLOCKED.
+
+- `CLOSED`:
+  - stop current sound immediately;
+  - unpush current active button;
+  - lock controls until status returns to OPENED;
+  - no sound is played while status is CLOSED.
+
+- Return to `OPENED` (both paths):
+  - listener must continue working without page reload;
+  - if button stayed active from BLOCKED path, sound resumes for that channel;
+  - reconnect path is used only when backend marks session stale/reconnect-required.
+
+Language/i18n rendering baseline (permanent):
+- Listener auto-detects browser language with exact->base->`en` fallback.
+- Backend sends full immutable `i18n_library` on connect/reconnect.
+- Backend does not select language per listener.
 
 ### 10.9. Спецификация автоопределения языка Listener UI (MVP)
 
@@ -260,7 +285,7 @@ Override details: см. docs/08_backend.md, раздел 9.14.
 
 ### 10.10. Active PLAY heartbeat control
 
-Rules for MVP Stage IX:
+Permanent baseline rules:
 - after backend WS connect, backend waits `60 sec` for first ACTIVE PLAY trigger;
 - Listener sends heartbeat every `10 sec` only when ACTIVE PLAY is running (`WAITING` / `PLAYING`);
 - if backend does not receive heartbeat for `60 sec` during active PLAY, **backend** marks listener session as stale/reconnect-required;
