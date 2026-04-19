@@ -3,9 +3,9 @@
 ## Status on April 19, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
-- Stage VII is completed (backend decomposition, JSON import/persistence, WS hardening baseline, operator commands, listener protection).
-- Stage VIII is completed.
-- Stage IX is completed.
+- Stage VII is completed (backend architecture hardening baseline).
+- Stage VIII is completed (Listener room status behavior baseline).
+- Stage IX is completed (Listener resilience baseline).
 - Active stage is Stage X.
 
 ---
@@ -24,107 +24,49 @@
 ## Stage VII — Backend hardening before Listener status tests (Priority 2)
 
 ### Result (completed)
-Short conclusion:
-1) backend monolith decomposition completed;
-2) JSON persistence + JSON import flow completed;
-3) WS envelope/state compatibility checks and listener protection completed;
-4) operator console commands completed.
+Delivered:
+1) backend decomposition completed;
+2) JSON import + JSON persistence flow delivered;
+3) WS schema hardening baseline delivered;
+4) operator console commands delivered.
 
-Note:
-- real backend multi-track recording was intentionally moved to future features after MVP pilot cycle.
+Deferred by decision:
+- real backend multi-track recording moved to future features after MVP pilots.
 
-Checklist artifact:
+Verification artifact:
 - `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VII marked PASS).
+
+Canonical behavior now lives in permanent docs (`docs/08_backend.md`, `docs/15_ws_schema_v1.md`, `docs/16_backend_persistence_json_v1.md`, `docs/17_json_import_schema_v1.md`).
 
 ---
 
 ## Stage VIII — Listener room_status rules finalization (Priority 3)
 
-### Main target
-Implement strict user behavior for `BLOCKED` and `CLOSED` room states.
-
-### Large-doing steps
-1) receiving immutable i18n library on initial WS connect and reconnect
-
-2) **BLOCKED rule:**
-- show `custom_status_text_blocked_i18n` banner (white text / red background) using language selection rule
-- stop current sound immediately
-- keep channel buttons clickable (push/unpush allowed)
-- while BLOCKED no sound arrives
-
-3) **CLOSED rule:**
-- show `custom_status_text_closed_i18n` banner (white text / red background) using language selection rule
-- stop current sound immediately
-- unpush current button
-- lock all controls until status changes
-- while CLOSED no sound arrives
-
-4) **OPENED return rule (required for both BLOCKED and CLOSED paths):**
-- after return to `room_status = OPENED`, Listener sound/subscription engine must resume working without page reload
-- listener keeps operating with current page session and current websocket/livekit lifecycle
-- if in BLOCKED button channel pushed (highlighted) and status changes to OPENED sound of the channel must starts immidietly.
-
-5) autodetection users system language
-- autodetection must take from i18n library only corresponding language set for room_name and statuses or fallback to default language (en);
-- add to current page logging of autodetected users system language name;
-- if users system language unknown and language going to be default (en) log the fact;
-- if users system language absent in i18n library and language going to be default (en) log the fact.
-
-### Exit criteria
-- deterministic behavior for OPENED/BLOCKED/CLOSED transitions without page reload
-- immutable status texts from deploy/import i18n payload
-- corresponding language set from i18n library by language autodetection
-- checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII section)
-
 ### Result (completed on April 14, 2026)
 Delivered:
 1) Listener BLOCKED/CLOSED/OPENED behavior baseline finalized for no-reload transitions;
 2) language autodetection and i18n rendering baseline finalized for room/status texts;
-3) checklist updated with Stage VIII pass marks.
+3) strict schema v1 protocol cleanup completed (April 15, 2026).
 
-Additional Stage VIII closeout add-on (April 15, 2026):
-4) strict schema v1 WS protocol cleanup completed across backend/publisher/listener;
-5) legacy WS formats removed from active protocol flow and canonical docs.
+Verification artifact:
+- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII marked PASS).
 
+Canonical behavior now lives in permanent docs (`docs/09_listener_ui.md`, `docs/15_ws_schema_v1.md`).
 
 ---
 
 ## Stage IX — Listener resilience & compatibility (Priority 4)
 
-### Main target
-Bring Listener web app to stable production-like baseline.
-
-### Large-doing steps
-1) listener token policy: request new token only when reconnect is required
-2) local pinned LiveKit client file near listener JS
-3) race-condition audit and elimination of highest-risk races
-4) security protocol plan for landing page and backend interaction
-5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
-   - backend is stale-session timeout authority (Listener does not decide local 60 sec stale timeout)
-   - include return-from-background path: no-active-PLAY recovery via allowed reconnect triggers + UNAVAILABLE retry policy
-   - follow Listener connection recovery rules: `docs/09_listener_ui.md` section 10.10.1
-   - implement Listener connection-state UX messages: `CONNECTING` / `RETRYING` / `UNAVAILABLE`
-6) cross-platform compatibility matrix (desktop/mobile major browsers)
-7) strict attach/detach race guards implementation:
-- `attachInProgress` / `detachInProgress`
-- operation timeout and deterministic state reset to `IDLE`
-- rapid-click burst test cases
-8) verify reconnect behavior with immutable i18n library:
-- Listener restores texts without page reload after reconnect
-9) Listener local SDK wiring:
-- connect local pinned file `src/listener/vendor/livekit-client.umd.1.15.13.js` in Listener script/html
-
-### Exit criteria
-- listener survives token rotation
-- critical races are fixed or formally deferred with mitigations
-- checklist artifact: `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage IX section)
-
 ### Result (completed on April 19, 2026)
 Delivered:
-1) backend-authoritative stale listener session handling finalized for active-play and no-active-play paths;
-2) listener reconnect_required protocol path and deterministic reconnect triggers finalized;
-3) listener resilience hardening items completed for Stage IX scope;
-4) Stage IX acceptance checklist marked PASS.
+1) backend-authoritative stale listener session handling finalized;
+2) `reconnect_required` protocol path and deterministic reconnect triggers finalized;
+3) listener resilience hardening baseline finalized.
+
+Verification artifact:
+- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage IX marked PASS).
+
+Canonical behavior now lives in permanent docs (`docs/09_listener_ui.md`, `docs/15_ws_schema_v1.md`).
 
 ---
 
@@ -136,7 +78,7 @@ Prepare one-action deployment and clear runbook documentation.
 ### Large-doing steps
 1) one-action Ubuntu deploy for livekit + backend + listener (from `legacy/stage_I` lessons)
 2) detailed deploy guide for regular scenarios
-3) detailed operations guide (console control, recordings, metrics, logs)
+3) detailed operations guide (console control, recording markers, metrics, logs)
 4) emergency incident guide with step-by-step actions
 5) LiveKit binary delivery policy for Ubuntu VPS:
 - preferred: pinned own artifact (exact version) with checksum verification

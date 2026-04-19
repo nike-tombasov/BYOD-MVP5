@@ -58,11 +58,16 @@ LiveKit API credentials policy:
 
 ### 9.3. Room status (room_status)
 
-Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на работу Publisher.
+Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на interlock owner-логику Publisher.
 
-* OPENED - start channel mult-itrack recording, listener может получать звук, subscribe on tracks
-* BLOCKED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, status custom text
-* CLOSED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, стоп записи channel multi-track recording, web page status custom text
+* OPENED — listener может получать звук по canonical listener rules.
+* BLOCKED — listener не получает звук; показывается `custom_status_text_blocked`.
+* CLOSED — listener не получает звук; показывается `custom_status_text_closed`.
+
+Recording clarification for current MVP baseline:
+- real backend multitrack recording is **not implemented** in current MVP baseline;
+- backend currently keeps only recording state markers/runtime control placeholders.
+- real recording implementation is moved to future features after MVP pilots.
 
 ### 9.4. Регистрация подключений
 
@@ -187,19 +192,16 @@ Listener НЕ использует backend state (и в частности owner
 
 Использовать CORS
 
-### 9.9. Channel multi-track recording
+### 9.9. Channel multi-track recording (current baseline clarification)
 
-После перевода room status to OPENED recording стартуется автоматически. Старт должен быть одновременным по всем channel_id
+Current MVP baseline:
+- backend does **not** create real multitrack audio files yet;
+- backend may keep recording state markers/logging only;
+- operator commands related to recording affect markers/placeholders, not real file pipeline.
 
-Требования к записи:
-* MP3 
-* 192 kbps
-* stereo
-* 48000 hz
-* каждый channel_id - отдельный файл mp3
-* имя файла - timestamp-channel_id-channel_label
-
-При изменении channel_label во время recording изменение имени файлов аудиозаписей происходит только при ручном перезапуске записи или при череде смены room status OPENED -> CLOSED -> OPENED.
+Future feature (after MVP pilots):
+- real backend multitrack recording implementation;
+- format, bitrate, file naming and lifecycle policy will be finalized in future stages.
 
 ### 9.10. Admin Web UI (в будущем)
 
@@ -214,7 +216,7 @@ Admin управляет backend в web UI. Функциональные воз�
 4) визуальный room control - суммарное количество listener (counter), суммарное общее количество subscribed listeners (active  users), длительность статуса OPENED (stopwatch), recording status (on/off)
 5) визуальный контроль channels status по каждому channel_id - текущий owner, длительность последнего on_air (stopwatch), количество subscribed listeners (active user), общее количество subscribes (counter)
 6) возможность OFF AIR по каждому channel_id(owner == null, рассылка `publisher_state`/`listener_state`)
-7) ручной старт/стоп channel multi-track recording (автоматически запускается при переходе комнаты в статус OPENED и останавливается при переходе в CLOSED)
+7) управление recording markers сейчас, и real channel multi-track recording после отдельной future implementation
 8) состояние room VPS или всех VPS мероприятия (online, CPU, RAM, SSD, LAN/WAN)
 9) визуальный контроль отдельного списка всех Publisher (publisher_id, publisher_online, publisher_connection_ts, last_seen_ts, publisher_ip, number of on air channels)
 10) сохранение и download многоуровневой итоговой statistics
