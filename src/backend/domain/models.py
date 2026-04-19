@@ -37,10 +37,21 @@ class PublisherSession:
 
 
 @dataclass
+class ListenerSession:
+    listener_id: str
+    websocket: Any
+    connected_at_ts: float
+    last_seen_ts: float
+    last_heartbeat_ts: float
+    active_play: bool = False
+    selected_channel: str | None = None
+
+
+@dataclass
 class RuntimeState:
     channels: list[dict[str, Any]]
     publishers: dict[str, PublisherSession] = field(default_factory=dict)
-    listeners: set[Any] = field(default_factory=set)
+    listeners: dict[str, ListenerSession] = field(default_factory=dict)
     publisher_counter: int = 0
     listener_counter: int = 0
 

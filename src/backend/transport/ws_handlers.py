@@ -32,7 +32,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             publisher_state = state_service.build_publisher_state_snapshot(channels_snapshot)
             listener_state = state_service.build_listener_state_snapshot(channels_snapshot)
             publishers = list(state_service.state.publishers.values())
-            listeners = list(state_service.state.listeners)
+            listeners = list(state_service.state.listeners.values())
 
         publisher_payload = state_service.make_envelope("publisher_state", publisher_state)
         listener_payload = state_service.make_envelope("listener_state", listener_state)
@@ -42,10 +42,10 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             if not await send_json_safe(session.websocket, publisher_payload):
                 dead_publishers.append(session.publisher_id)
 
-        dead_listeners: list[WebSocket] = []
-        for ws in listeners:
-            if not await send_json_safe(ws, listener_payload):
-                dead_listeners.append(ws)
+        dead_listeners: list[str] = []
+        for session in listeners:
+            if not await send_json_safe(session.websocket, listener_payload):
+                dead_listeners.append(session.listener_id)
 
         if not dead_publishers and not dead_listeners:
             return
@@ -53,8 +53,8 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
         async with state_lock:
             for publisher_id in dead_publishers:
                 await room_service.drop_publisher_locked(publisher_id)
-            for ws in dead_listeners:
-                state_service.state.listeners.discard(ws)
+            for listener_id in dead_listeners:
+                state_service.state.listeners.pop(listener_id, None)
             room_service.persist_all()
 
     async def send_connect_success(
@@ -251,9 +251,8 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     reject_code = "CONNECTION_RATE_LIMIT"
                 if reject_code is None:
                     state_service.listener_last_connect_by_ip[client_ip] = now
-                    listener_id = f"listener_{state_service.state.listener_counter}"
-                    state_service.state.listener_counter += 1
-                    state_service.state.listeners.add(websocket)
+                    listener_session = state_service.add_listener(websocket=websocket)
+                    listener_id = listener_session.listener_id
                     room_service.storage.log_connection("listener_connected", listener_id=listener_id, ip=client_ip)
 
             if reject_code:
@@ -277,11 +276,25 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     await send_error(websocket, state_service, "SCHEMA_VALIDATION_ERROR", request_id=request_id)
                     continue
 
+                if msg_type == "heartbeat":
+                    payload = state_service.get_payload(msg)
+                    async with state_lock:
+                        listener_session = state_service.state.listeners.get(listener_id)
+                        if listener_session:
+                            now_ts = float(state_service.now_ts())
+                            listener_session.last_seen_ts = now_ts
+                            playback_state = str(payload.get("playback_state") or "")
+                            selected_channel = payload.get("selected_channel")
+                            listener_session.active_play = playback_state in {"WAITING", "PLAYING"} and isinstance(selected_channel, str) and selected_channel != ""
+                            listener_session.selected_channel = selected_channel if listener_session.active_play else None
+                            if listener_session.active_play:
+                                listener_session.last_heartbeat_ts = now_ts
+
         except WebSocketDisconnect:
             pass
         finally:
             async with state_lock:
-                state_service.state.listeners.discard(websocket)
-                room_service.storage.log_connection("listener_disconnected")
+                disconnected_listener_id = state_service.remove_listener_by_ws(websocket)
+                room_service.storage.log_connection("listener_disconnected", listener_id=disconnected_listener_id)
 
     return router, broadcast_states

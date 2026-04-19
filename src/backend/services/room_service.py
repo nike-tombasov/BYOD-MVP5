@@ -6,7 +6,13 @@ from typing import Any
 
 from livekit import api as livekit_api
 
-from backend.config import HEARTBEAT_TIMEOUT_SECONDS, JWT_LIFETIME_SECONDS, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+from backend.config import (
+    HEARTBEAT_TIMEOUT_SECONDS,
+    JWT_LIFETIME_SECONDS,
+    LISTENER_ACTIVE_PLAY_STALE_SECONDS,
+    LIVEKIT_API_KEY,
+    LIVEKIT_API_SECRET,
+)
 from backend.domain.models import RoomConfig
 from backend.persistence.storage import JsonStorage
 from backend.services.state_service import StateService
@@ -141,7 +147,7 @@ class RoomService:
         listeners_to_close: list[Any] = []
         async with state_lock:
             publishers_to_close = [session.websocket for session in self.state_service.state.publishers.values()]
-            listeners_to_close = list(self.state_service.state.listeners)
+            listeners_to_close = [session.websocket for session in self.state_service.state.listeners.values()]
 
             self.state_service.state.publishers.clear()
             self.state_service.state.listeners.clear()
@@ -241,15 +247,43 @@ class RoomService:
 
         while True:
             await asyncio.sleep(1)
-            expired: list[str] = []
+            expired_publishers: list[str] = []
+            stale_listener_sessions: list[tuple[str, Any]] = []
             async with state_lock:
                 now = float(self.state_service.now_ts())
                 for publisher_id, session in self.state_service.state.publishers.items():
                     if now - session.last_seen_ts > HEARTBEAT_TIMEOUT_SECONDS:
-                        expired.append(publisher_id)
-                for publisher_id in expired:
+                        expired_publishers.append(publisher_id)
+                for publisher_id in expired_publishers:
                     await self.drop_publisher_locked(publisher_id)
-                if expired:
+                for listener_id, listener_session in list(self.state_service.state.listeners.items()):
+                    if not listener_session.active_play:
+                        continue
+                    if now - listener_session.last_heartbeat_ts > LISTENER_ACTIVE_PLAY_STALE_SECONDS:
+                        stale_listener_sessions.append((listener_id, listener_session.websocket))
+                        self.state_service.state.listeners.pop(listener_id, None)
+                        self.storage.log_connection(
+                            "listener_stale_removed",
+                            listener_id=listener_id,
+                            stale_seconds=LISTENER_ACTIVE_PLAY_STALE_SECONDS,
+                        )
+                if expired_publishers or stale_listener_sessions:
                     self.persist_all()
-            if expired:
+            for listener_id, ws in stale_listener_sessions:
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        self.state_service.make_envelope(
+                            "reconnect_required",
+                            {
+                                "ok": False,
+                                "code": "LISTENER_SESSION_STALE",
+                                "reason": "MISSING_ACTIVE_PLAY_HEARTBEAT",
+                                "listener_id": listener_id,
+                            },
+                            request_id=self.state_service.next_request_id("reconnect-required"),
+                        )
+                    )
+                with contextlib.suppress(Exception):
+                    await ws.close()
+            if expired_publishers:
                 await broadcast_cb()

@@ -1,8 +1,8 @@
 const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws://127.0.0.1:8000/ws/listener';
 const HEARTBEAT_INTERVAL_MS = 10_000;
-const HEARTBEAT_TIMEOUT_MS = 60_000;
-const HEARTBEAT_MONITOR_INTERVAL_MS = 1_000;
 const ATTACH_DETACH_TIMEOUT_MS = 1_000;
+const RETRYING_RECONNECT_DELAY_MS = 3_000;
+const UNAVAILABLE_RECONNECT_DELAY_MS = 10_000;
 
 let backendWs = null;
 let room = null;
@@ -22,14 +22,13 @@ let tokenGeneration = 0;
 let activeToken = null;
 let lastBackendActivityMs = Date.now();
 let heartbeatIntervalId = null;
-let heartbeatMonitorId = null;
 let connectionBannerIntervalId = null;
 let backendUnavailableSinceMs = Date.now();
+let autoRetryTimeoutId = null;
 let reconnectAttemptCount = 0;
 let reconnectSuccessCount = 0;
 let reconnectFailureCount = 0;
 let heartbeatSentCount = 0;
-let heartbeatTimeoutCount = 0;
 let i18nApplyCount = 0;
 let i18nMismatchCount = 0;
 
@@ -71,7 +70,6 @@ function updateDiagnosticsSnapshot() {
     reconnectSuccessCount,
     reconnectFailureCount,
     heartbeatSentCount,
-    heartbeatTimeoutCount,
     i18nApplyCount,
     i18nMismatchCount,
     sdkSource: window.__livekitSdkSource || 'unknown',
@@ -132,6 +130,25 @@ function startConnectionBannerLoop() {
   if (connectionBannerIntervalId) return;
   connectionBannerIntervalId = setInterval(refreshConnectionBanner, 500);
   refreshConnectionBanner();
+}
+
+function clearAutoRetryTimer() {
+  if (!autoRetryTimeoutId) return;
+  clearTimeout(autoRetryTimeoutId);
+  autoRetryTimeoutId = null;
+}
+
+function scheduleAutoRetry(reason) {
+  if (connectionState === CONNECTION_STATE.CONNECTED) return;
+  if (autoRetryTimeoutId) return;
+  if (reconnectPromise) return;
+  const unavailableElapsed = backendUnavailableSinceMs === null ? 0 : Date.now() - backendUnavailableSinceMs;
+  const delayMs = unavailableElapsed >= 10_000 ? UNAVAILABLE_RECONNECT_DELAY_MS : RETRYING_RECONNECT_DELAY_MS;
+  log(`auto-retry scheduled in ${delayMs}ms reason=${reason}`);
+  autoRetryTimeoutId = setTimeout(() => {
+    autoRetryTimeoutId = null;
+    reconnectListener(`auto-retry:${reason}`).catch((error) => log(`reconnect error: ${error.message}`));
+  }, delayMs);
 }
 
 function runWithTimeout(promiseFactory, timeoutMs, timeoutLabel) {
@@ -348,6 +365,9 @@ function setConnectionState(nextState, reason = '') {
   }
   connectionState = nextState;
   log(`connection state -> ${nextState}${reason ? ` (${reason})` : ''}`);
+  if (nextState === CONNECTION_STATE.CONNECTED) {
+    clearAutoRetryTimer();
+  }
   updateDiagnosticsSnapshot();
   refreshConnectionBanner();
 }
@@ -391,25 +411,9 @@ function sendHeartbeatIfNeeded() {
   log(`heartbeat sent channel=${selectedChannel} playback=${playbackState}`);
 }
 
-function monitorHeartbeatTimeout() {
-  if (connectionState !== CONNECTION_STATE.CONNECTED) return;
-  if (!hasActivePlayRequest()) return;
-  const idleMs = Date.now() - lastBackendActivityMs;
-  if (idleMs < HEARTBEAT_TIMEOUT_MS) return;
-
-  heartbeatTimeoutCount += 1;
-  updateDiagnosticsSnapshot();
-  markConnectionStale(`heartbeat timeout ${idleMs}ms`);
-  reconnectListener('heartbeat timeout')
-    .catch((error) => log(`reconnect error: ${error.message}`));
-}
-
 function startHeartbeatLoops() {
   if (!heartbeatIntervalId) {
     heartbeatIntervalId = setInterval(sendHeartbeatIfNeeded, HEARTBEAT_INTERVAL_MS);
-  }
-  if (!heartbeatMonitorId) {
-    heartbeatMonitorId = setInterval(monitorHeartbeatTimeout, HEARTBEAT_MONITOR_INTERVAL_MS);
   }
 }
 
@@ -757,6 +761,12 @@ async function handleBackendMessage(msg) {
     return;
   }
 
+  if (msg.type === 'reconnect_required') {
+    log(`backend reconnect_required code=${payload.code || 'UNKNOWN'} reason=${payload.reason || 'UNKNOWN'}`);
+    markConnectionStale('backend reconnect_required');
+    return;
+  }
+
   throw new Error(`Protocol error: unsupported message type ${msg.type}`);
 }
 
@@ -846,6 +856,9 @@ async function reconnectListener(reason) {
     reconnectFailureCount += 1;
     updateDiagnosticsSnapshot();
     markConnectionStale(`reconnect failed: ${error.message}`);
+    if (reason.startsWith('auto-retry:')) {
+      scheduleAutoRetry(`reconnect failed: ${reason}`);
+    }
     throw error;
   } finally {
     reconnectPromise = null;
@@ -862,7 +875,9 @@ startConnectionBannerLoop();
 ensureLiveKitClientLoaded()
   .then(() => connectBackend('initial'))
   .catch((error) => {
-    log(`Fatal error: ${error.message}`);
+    log(`initial connect error: ${error.message}`);
+    markConnectionStale('initial connect failed');
+    scheduleAutoRetry('initial connect failed');
   });
 
 document.addEventListener('visibilitychange', () => {

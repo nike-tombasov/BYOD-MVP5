@@ -99,7 +99,8 @@ Bring Listener web app to stable production-like baseline.
 3) race-condition audit and elimination of highest-risk races
 4) security protocol plan for landing page and backend interaction
 5) active PLAY heartbeat control (`10 sec` heartbeat, `60 sec` timeout -> reconnect required)
-   - include return-from-background path: no-active-PLAY timeout must recover via auto-reconnect (or auto page reload fallback)
+   - backend is stale-session timeout authority (Listener does not decide local 60 sec stale timeout)
+   - include return-from-background path: no-active-PLAY recovery via allowed reconnect triggers + UNAVAILABLE retry policy
    - follow Listener connection recovery rules: `docs/09_listener_ui.md` section 10.10.1
    - implement Listener connection-state UX messages: `CONNECTING` / `RETRYING` / `UNAVAILABLE`
 6) cross-platform compatibility matrix (desktop/mobile major browsers)

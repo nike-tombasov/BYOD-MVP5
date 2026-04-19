@@ -333,11 +333,18 @@ Runtime text mutation is not used in current project.
 
 4) Active PLAY heartbeat control:
 - Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
-- если heartbeat отсутствует `60 sec`, backend переводит listener в reconnect-required состояние.
+- backend является единственным authority для stale-session решения:
+  - если heartbeat отсутствует `60 sec` при active PLAY, backend помечает session как stale/reconnect-required;
+  - backend удаляет stale listener из active session tracking/capacity accounting;
+  - backend отправляет `reconnect_required` (если WS ещё writable), иначе просто закрывает/очищает session.
 
 5) No-active-PLAY timeout recovery:
-- если Listener ушёл в background без активного PLAY и backend WS-сессия считается потерянной, при возврате user на страницу выполняется auto-reconnect к backend;
-- fallback допускается как auto page reload, если reconnect flow не восстановил сессию штатно.
+- Listener не решает stale по локальному 60-sec timer на основе отсутствия generic inbound WS traffic;
+- reconnect Listener запускается только по allowed triggers:
+  - `visibilitychange -> visible`,
+  - `online`,
+  - channel button click,
+  - плюс bounded auto-retry policy while `UNAVAILABLE`.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.

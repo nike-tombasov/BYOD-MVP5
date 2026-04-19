@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from itertools import count
 from typing import Any
 
-from backend.domain.models import PublisherSession, RuntimeState
+from backend.domain.models import ListenerSession, PublisherSession, RuntimeState
 
 
 @dataclass
@@ -118,3 +118,26 @@ class StateService:
         )
         self.state.publishers[publisher_id] = session
         return session
+
+    def add_listener(self, websocket: Any) -> ListenerSession:
+        listener_id = f"listener_{self.state.listener_counter}"
+        self.state.listener_counter += 1
+        now = float(self.now_ts())
+        session = ListenerSession(
+            listener_id=listener_id,
+            websocket=websocket,
+            connected_at_ts=now,
+            last_seen_ts=now,
+            last_heartbeat_ts=now,
+            active_play=False,
+            selected_channel=None,
+        )
+        self.state.listeners[listener_id] = session
+        return session
+
+    def remove_listener_by_ws(self, websocket: Any) -> str | None:
+        for listener_id, session in list(self.state.listeners.items()):
+            if session.websocket is websocket:
+                self.state.listeners.pop(listener_id, None)
+                return listener_id
+        return None
