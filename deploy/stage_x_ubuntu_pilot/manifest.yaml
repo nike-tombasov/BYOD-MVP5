@@ -18,7 +18,7 @@ artifacts:
   listener_source:
     path_in_repo: src/listener
   requirements_file:
-    path_in_repo: src/requirements.txt
+    path_in_repo: src/backend/requirements.txt
   livekit:
     version: "1.9.11"
     platform: "linux_amd64"

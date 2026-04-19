@@ -7,6 +7,12 @@ CUSTOM_TGZ="/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz"
 CUSTOM_SHA="/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256"
 FALLBACK_URL="https://github.com/livekit/livekit/releases/download/v1.9.11/livekit-server-v1.9.11-linux-amd64.tar.gz"
 TMP_TGZ="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz"
+TMP_EXTRACT_DIR="$(mktemp -d /tmp/livekit-extract-XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_EXTRACT_DIR"
+}
+trap cleanup EXIT
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
@@ -32,8 +38,13 @@ else
   echo "WARNING: fallback artifact downloaded. Save checksum in manifest-controlled release bundle."
 fi
 
-tar -xzf "$TMP_TGZ" -C /opt/byod/livekit
-install -m 0755 /opt/byod/livekit/livekit-server /opt/byod/livekit/livekit-server
+tar -xzf "$TMP_TGZ" -C "$TMP_EXTRACT_DIR"
+if [[ ! -f "$TMP_EXTRACT_DIR/livekit-server" ]]; then
+  echo "livekit-server binary not found in archive"
+  exit 1
+fi
+
+install -m 0755 "$TMP_EXTRACT_DIR/livekit-server" /opt/byod/livekit/livekit-server
 chown byod:byod /opt/byod/livekit/livekit-server
 
 /opt/byod/livekit/livekit-server --version || true

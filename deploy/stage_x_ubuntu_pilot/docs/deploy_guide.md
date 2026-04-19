@@ -25,14 +25,28 @@ This creates required directories:
 - `/opt/byod/logs`
 - `/opt/byod/releases`
 
-## 3) Put LiveKit pinned artifact (preferred)
+## 3) Put LiveKit pinned artifact + checksum (preferred)
 
-Preferred:
+Expected files before install:
 
-1. Upload artifact to `/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz`
-2. Upload checksum file to `/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256`
+- `/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz`
+- `/opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256`
 
-Then run:
+Example commands on operator laptop:
+
+```bash
+curl -fL https://github.com/livekit/livekit/releases/download/v1.9.11/livekit-server-v1.9.11-linux-amd64.tar.gz -o livekit-server-v1.9.11-linux-amd64.tar.gz
+sha256sum livekit-server-v1.9.11-linux-amd64.tar.gz > livekit-server-v1.9.11-linux-amd64.tar.gz.sha256
+```
+
+Upload both files to VPS:
+
+```bash
+scp livekit-server-v1.9.11-linux-amd64.tar.gz <user>@<vps_ip>:/opt/byod/releases/
+scp livekit-server-v1.9.11-linux-amd64.tar.gz.sha256 <user>@<vps_ip>:/opt/byod/releases/
+```
+
+Install LiveKit:
 
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/10_install_livekit.sh
@@ -47,6 +61,10 @@ Fallback:
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/20_install_backend.sh
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/30_install_listener.sh
 ```
+
+Notes:
+- Backend installs **backend-only** Python requirements.
+- `/opt/byod/config/livekit.yaml` is auto-created from template if missing (existing file is not overwritten).
 
 ## 5) Configure pilot values
 
@@ -71,12 +89,6 @@ sudo nano /opt/byod/config/livekit.yaml
 ```
 
 Replace API key/secret values in `keys:`.
-
-Copy template first if needed:
-
-```bash
-sudo cp deploy/stage_x_ubuntu_pilot/config/livekit.yaml /opt/byod/config/livekit.yaml
-```
 
 ## 6) Enable services and nginx
 

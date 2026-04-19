@@ -1,4 +1,7 @@
-const backendUrl = (new URLSearchParams(location.search).get('backend')) || 'ws://127.0.0.1:8000/ws/listener';
+const backendOverride = new URLSearchParams(location.search).get('backend');
+const backendProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+const backendDefaultUrl = `${backendProtocol}://${location.hostname}:8000/ws/listener`;
+const backendUrl = backendOverride || backendDefaultUrl;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 const RETRYING_RECONNECT_DELAY_MS = 3_000;

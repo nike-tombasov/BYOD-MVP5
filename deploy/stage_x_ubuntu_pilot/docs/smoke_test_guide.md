@@ -30,9 +30,12 @@ curl -i http://127.0.0.1:8000/docs
 
 ## Basic functional check (manual)
 
-1. Open listener page in browser.
-2. Add query parameter `?backend=ws://<VPS_IP>:8000/ws/listener` if needed.
+1. Open listener page in browser: `http://<VPS_IP>/`
+2. Listener should auto-connect to `ws://<VPS_IP>:8000/ws/listener`
 3. Confirm room appears and no permanent reconnect banner.
+
+Debug fallback only:
+- You can still override backend with `?backend=ws://...` when troubleshooting.
 
 ## Log checks
 
