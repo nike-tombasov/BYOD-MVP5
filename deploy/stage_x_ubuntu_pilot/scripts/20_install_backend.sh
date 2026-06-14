@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+CYAN='\033[1;36m'; RED='\033[1;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+trap 'printf "%b\\n" "${RED}FATAL: Backend installation failed.${NC}" >&2' ERR
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
@@ -32,4 +34,5 @@ fi
 
 chown -R byod:byod /opt/byod/app /opt/byod/config/backend.env /opt/byod/config/livekit.yaml
 
-echo "Backend installed. Edit /opt/byod/config/backend.env and /opt/byod/config/livekit.yaml before start."
+printf "%b\n" "${YELLOW}MANUAL ACTION: Verify /opt/byod/config/backend.env and /opt/byod/config/livekit.yaml before start.${NC}"
+printf "%b\n" "${CYAN}SUCCESS: Backend installed.${NC}"

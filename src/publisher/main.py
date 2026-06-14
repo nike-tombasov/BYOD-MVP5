@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -121,6 +122,7 @@ class PublisherUI(QWidget):
         self._restore_saved_inputs()
         self._set_preconnect_state()
         self._log("Publisher UI started")
+        self._log(f"Log file: {self.log_file_path}")
 
     def _build_layout(self) -> None:
         self.setStyleSheet(
@@ -408,6 +410,17 @@ class PublisherUI(QWidget):
         self._append_file_log(line)
         self.signals.append_log.emit(line)
 
+    def _log_exception(self, stage: str, exc: BaseException) -> None:
+        self._log(
+            f"EXCEPTION stage={stage} type={type(exc).__name__} error={exc!r}\n"
+            f"{traceback.format_exc().rstrip()}"
+        )
+
+    def _show_connection_error(self, stage: str, code: str | None = None) -> None:
+        detail = code or stage
+        self._log(f"CONNECTION ERROR last_error_stage={stage} last_error_code={detail}")
+        self.signals.show_error.emit("CONNECTION ERROR")
+
     def _resolve_log_file_path(self) -> Path:
         if getattr(sys, "frozen", False):
             base = Path(sys.executable).resolve().parent
@@ -583,49 +596,84 @@ class PublisherUI(QWidget):
             self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
             await asyncio.gather(self.heartbeat_task, self.backend_task, self.token_refresh_task)
         except RuntimeError as exc:
-            self.signals.show_error.emit("Invalid PIN" if str(exc) == "Invalid PIN" else "CONNECTION ERROR")
-            print(f"[publisher] runtime connection error: {exc}")
+            self._log_exception("runtime_connection", exc)
+            if str(exc) == "Invalid PIN":
+                self.signals.show_error.emit("Invalid PIN")
+            else:
+                self._show_connection_error("runtime_connection", str(exc))
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self.signals.show_error.emit("CONNECTION ERROR")
-            print(f"[publisher] connection error: {exc}")
+            self._log_exception("connection", exc)
+            self._show_connection_error("connection", type(exc).__name__)
 
     async def _connect_backend(self) -> None:
-        self.backend_ws = await websockets.connect(self.backend_ws_url)
-        await self.backend_ws.send(
-            json.dumps(
-                self._make_envelope(
-                    "connecting",
-                    {"client_role": "publisher", "pin": self.pin, "hostname": socket.gethostname()},
+        self._log(f"Backend WebSocket URL entered: {self.backend_ws_url}")
+        try:
+            self.backend_ws = await websockets.connect(self.backend_ws_url)
+            self._log("Backend websocket open success")
+        except Exception as exc:
+            self._log_exception("backend_websocket_connect", exc)
+            raise
+        try:
+            await self.backend_ws.send(
+                json.dumps(
+                    self._make_envelope(
+                        "connecting",
+                        {"client_role": "publisher", "pin": self.pin, "hostname": socket.gethostname()},
+                    )
                 )
             )
-        )
+            self._log("Backend connecting envelope sent")
+        except Exception as exc:
+            self._log_exception("backend_send_connecting", exc)
+            raise
 
-        connect_msg = json.loads(await self.backend_ws.recv())
+        try:
+            connect_msg = json.loads(await self.backend_ws.recv())
+            self._log(f"Backend first response type: {connect_msg.get('type') if isinstance(connect_msg, dict) else 'invalid'}")
+        except Exception as exc:
+            self._log_exception("backend_first_recv", exc)
+            raise
         if not self._validate_envelope(connect_msg):
+            self._log("Protocol validation failure: invalid first response envelope")
             raise RuntimeError("PROTOCOL_ERROR")
         if connect_msg.get("type") == "error":
             code = connect_msg["payload"].get("code", "UNKNOWN")
+            self._log(f"Backend error envelope code={code}")
             raise RuntimeError("Invalid PIN" if code == "INVALID_PIN" else code)
         if connect_msg.get("type") != "connecting":
+            self._log(f"Protocol validation failure: expected connecting, got {connect_msg.get('type')}")
             raise RuntimeError("PROTOCOL_ERROR")
 
         connect_payload = connect_msg["payload"]
         self.publisher_id = connect_payload["publisher_id"]
+        self._log(f"Publisher ID received: {self.publisher_id}")
         self.token = connect_payload["token"]
         self.token_exp_ts = self._parse_token_exp(self.token)
+        self._log(f"Token expiry parsed: token_exp_ts={self.token_exp_ts}")
         self.livekit_url = connect_payload["livekit_url"]
+        self._log(f"LiveKit URL received: {self.livekit_url}")
         self.signals.set_connect_status.emit("CONNECTED", "green")
         self._log(f"Backend connected. publisher_id={self.publisher_id}")
 
-        i18n_msg = json.loads(await self.backend_ws.recv())
+        try:
+            i18n_msg = json.loads(await self.backend_ws.recv())
+        except Exception as exc:
+            self._log_exception("backend_i18n_recv", exc)
+            raise
         if not self._validate_envelope(i18n_msg) or i18n_msg.get("type") != "i18n_library":
+            self._log("Protocol validation failure: invalid i18n_library response")
             raise RuntimeError("PROTOCOL_ERROR")
         self._apply_i18n_library(i18n_msg["payload"])
 
-        state_msg = json.loads(await self.backend_ws.recv())
+        try:
+            state_msg = json.loads(await self.backend_ws.recv())
+        except Exception as exc:
+            self._log_exception("backend_state_recv", exc)
+            raise
         if not self._validate_envelope(state_msg) or state_msg.get("type") != "publisher_state":
+            self._log("Protocol validation failure: invalid publisher_state response")
             raise RuntimeError("PROTOCOL_ERROR")
         self._apply_state(state_msg["payload"])
 
@@ -633,11 +681,12 @@ class PublisherUI(QWidget):
         if self.room is not None:
             return
         self.room = rtc.Room()
+        self._log(f"LiveKit connect start: url={self.livekit_url}")
         try:
             await self.room.connect(self.livekit_url, self.token)
-            self._log("LiveKit connected")
+            self._log("LiveKit connect success")
         except Exception as exc:
-            self._log(f"LiveKit connect failed: {exc}")
+            self._log_exception("livekit_room_connect", exc)
             raise
 
     async def _heartbeat_loop(self) -> None:
@@ -697,25 +746,47 @@ class PublisherUI(QWidget):
         self._refresh_channel_controls(channel_id)
 
     async def _backend_loop(self) -> None:
-        async for raw in self.backend_ws:
-            if self.shutting_down:
-                return
-            msg = json.loads(raw)
-            if not self._validate_envelope(msg):
-                self._log("Protocol error: invalid envelope")
-                continue
-            msg_type = msg["type"]
-            payload = msg["payload"]
-            if msg_type == "publisher_state":
-                self._apply_state(payload)
-            elif msg_type == "i18n_library":
-                self._apply_i18n_library(payload)
-            elif msg_type == "error":
-                self.signals.show_error.emit("Invalid PIN" if payload.get("code") == "INVALID_PIN" else "CONNECTION ERROR")
-            elif msg_type == "connecting":
-                continue
-            else:
-                self._log(f"Protocol error: unsupported message type {msg_type}")
+        try:
+            async for raw in self.backend_ws:
+                if self.shutting_down:
+                    return
+                try:
+                    msg = json.loads(raw)
+                except Exception as exc:
+                    self._log_exception("backend_loop_json_parse", exc)
+                    continue
+                if not self._validate_envelope(msg):
+                    self._log("Protocol validation failure: invalid backend loop envelope")
+                    continue
+                msg_type = msg["type"]
+                payload = msg["payload"]
+                if msg_type == "publisher_state":
+                    self._apply_state(payload)
+                elif msg_type == "i18n_library":
+                    self._apply_i18n_library(payload)
+                elif msg_type == "error":
+                    code = str(payload.get("code") or "UNKNOWN")
+                    self._log(f"Backend error envelope code={code}")
+                    if code == "INVALID_PIN":
+                        self.signals.show_error.emit("Invalid PIN")
+                    else:
+                        self._show_connection_error("backend_error_envelope", code)
+                elif msg_type == "connecting":
+                    continue
+                else:
+                    self._log(f"Protocol validation failure: unsupported message type {msg_type}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._log_exception("backend_websocket_closed_unexpectedly", exc)
+            raise
+        if not self.shutting_down:
+            exc = ConnectionError("Backend websocket iteration ended without shutdown")
+            try:
+                raise exc
+            except ConnectionError:
+                self._log_exception("backend_websocket_closed_unexpectedly", exc)
+            raise exc
 
     def _apply_state(self, state: dict) -> None:
         room_name = self._resolve_room_name()
@@ -778,7 +849,7 @@ class PublisherUI(QWidget):
 
         def callback(indata, frames, time_info, status):
             if status:
-                print(f"[audio:{channel_id}] status {status}")
+                self._log(f"[audio:{channel_id}] status {status}")
             audio = indata
             if audio.shape[1] == 1:
                 audio = np.repeat(audio, 2, axis=1)
@@ -790,7 +861,7 @@ class PublisherUI(QWidget):
             try:
                 self.loop.call_soon_threadsafe(self._queue_put_drop_oldest, rt.audio_queue, pcm)
             except Exception as exc:
-                print(f"[audio:{channel_id}] queue error: {exc}")
+                self._log(f"[audio:{channel_id}] queue error: {exc!r}")
 
         if rt.capture_stream is None:
             rt.capture_stream = sd.InputStream(
@@ -877,7 +948,7 @@ class PublisherUI(QWidget):
         except asyncio.CancelledError:
             return
         except Exception as exc:
-            print(f"[sender:{channel_id}] error: {exc}")
+            self._log_exception(f"sender:{channel_id}", exc)
 
     async def _shutdown_async(self) -> None:
         self.shutting_down = True

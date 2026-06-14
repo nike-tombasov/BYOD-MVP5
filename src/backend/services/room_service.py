@@ -24,6 +24,7 @@ from backend.services.state_service import StateService
 
 logger = logging.getLogger("byod.backend.room_service")
 
+
 class RoomService:
     def __init__(self, state_service: StateService, storage: JsonStorage, livekit_url: str) -> None:
         self.state_service = state_service
@@ -39,14 +40,39 @@ class RoomService:
         return host, port
 
     def is_livekit_reachable(self) -> bool:
+        return bool(self.get_livekit_reachability()["ok"])
+
+    def get_livekit_reachability(self) -> dict[str, Any]:
         target = self._livekit_tcp_target()
         if target is None:
-            return False
+            return {
+                "ok": False,
+                "host": None,
+                "port": None,
+                "timeout": LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS,
+                "error_type": "InvalidLiveKitUrl",
+                "error_message": "LiveKit URL has no hostname",
+            }
+        host, port = target
         try:
             with socket.create_connection(target, timeout=LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS):
-                return True
-        except OSError:
-            return False
+                return {
+                    "ok": True,
+                    "host": host,
+                    "port": port,
+                    "timeout": LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS,
+                    "error_type": None,
+                    "error_message": None,
+                }
+        except OSError as exc:
+            return {
+                "ok": False,
+                "host": host,
+                "port": port,
+                "timeout": LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
 
     def log_livekit_unavailable(self, context: str, **fields: Any) -> None:
         self.storage.log_event("livekit_unreachable", context=context, livekit_url=self.livekit_url, **fields)
