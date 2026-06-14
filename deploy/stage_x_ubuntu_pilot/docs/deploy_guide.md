@@ -51,6 +51,9 @@ sudo chown byod:byod /opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.g
 cd /opt/byod/app-src
 ```
 
+PuTTY/WinSCP users can upload both artifacts to `/tmp` with WinSCP, then open
+PuTTY and run the same `sudo mv`, `sudo chown`, and `cd` commands shown above.
+
 Install LiveKit:
 
 ```bash
@@ -102,20 +105,35 @@ Replace API key/secret values in `keys:`. The key and secret must exactly match
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
 ```
 
-## 6) Run smoke test
-
-```bash
-sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
-```
+## 6) Configure the provider firewall
 
 The VPS provider firewall must allow inbound `80/tcp`, `7880/tcp`, `7881/tcp`,
 and `50000-50100/udp`. Port `8000/tcp` stays private because the backend binds
 to `127.0.0.1` and nginx proxies backend HTTP and WebSocket traffic.
 
+Configure these rules before attempting the final browser and Publisher tests.
+
+## 7) Run smoke and client tests
+
+Run the automated smoke test on the VPS:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
+```
+
+Then perform the public client checks:
+
+1. Open `http://<VPS_PUBLIC_IP>/` in a browser and confirm the listener
+   connects.
+2. Start Publisher and manually replace its default localhost backend value
+   with `ws://<VPS_PUBLIC_IP>/ws/publisher` before connecting. The Publisher's
+   default `ws://127.0.0.1:8000/ws/publisher` value is only suitable when the
+   backend runs on the same machine, not for VPS testing.
+
 The IP/HTTP setup is acceptable only for this pilot. A production or
 domain-based deployment should add TLS and use HTTPS/WSS.
 
-## 7) Manifest
+## 8) Manifest
 
 Use `deploy/stage_x_ubuntu_pilot/manifest.yaml` as single source of truth for:
 

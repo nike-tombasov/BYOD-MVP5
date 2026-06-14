@@ -8,7 +8,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y python3.11 python3.11-venv python3-pip nginx curl ca-certificates git
+apt-get install -y python3 python3-venv python3-pip nginx curl ca-certificates git
 
 id -u byod >/dev/null 2>&1 || useradd --system --home /opt/byod --shell /usr/sbin/nologin byod
 
