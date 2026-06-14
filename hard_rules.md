@@ -21,6 +21,31 @@
 * track created only after publish
 * track removed after STOP
 
+## Environment assumptions (MVP10)
+
+Target deployment environment:
+
+- Ubuntu Server 22.04 LTS (Jammy)
+- Single VPS
+- One public IPv4 address
+- No domain name
+- No HTTPS/TLS yet
+- HTTP only for MVP testing
+- LiveKit self-hosted on same VPS
+- Backend and LiveKit on same VPS
+- Listener served by nginx
+
+Operator environment:
+
+- Windows 10/11 workstation
+- PuTTY for SSH access
+- WinSCP for file upload/download
+- GitHub web interface
+- No Docker knowledge assumed
+- No Linux administration experience assumed
+
+Documentation and deploy procedures must assume this environment unless explicitly stated otherwise.
+
 ## LiveKit pinned compatibility matrix (MVP baseline)
 
 * LiveKit Server target: **1.9.11**
