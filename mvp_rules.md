@@ -32,6 +32,22 @@ Finish deployment package and operator manuals for VPS.
 - diagnostics console logging remains enabled.
 - no new scope from future stages without explicit approval.
 
+## MVP10 Deployment Topology
+Single-node deployment.
+
+All components run on one VPS:
+- nginx
+- Backend
+- LiveKit
+
+No load balancing.
+No clustering.
+No Kubernetes.
+No Docker orchestration.
+No external database.
+
+Optimization for scale is out of scope for MVP10.
+
 ## Anti-overdevelopment policy
 If work is not required for Stage X exit criteria, postpone it to roadmap/future features with a short reason.
 
