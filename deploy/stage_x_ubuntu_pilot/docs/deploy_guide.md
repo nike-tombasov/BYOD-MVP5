@@ -2,20 +2,20 @@
 
 This guide is for a fresh **Ubuntu 22.04 LTS** VPS with one public IPv4.
 
-## 1) Copy repository to VPS
+## 1) Bootstrap the clean VPS and clone branch MVP10
 
 ```bash
-git clone <your_repo_url> /opt/byod/app-src
+sudo apt-get update
+sudo apt-get install -y git
+sudo mkdir -p /opt/byod
+sudo chown "$USER:$USER" /opt/byod
+git clone --branch MVP10 <your_repo_url> /opt/byod/app-src
 cd /opt/byod/app-src
-```
-
-## 2) Prepare host (idempotent)
-
-```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/00_prepare_host.sh
 ```
 
-This creates required directories:
+The prepare script installs the remaining host packages (and ensures `git` is
+present), creates the `byod` service account, and creates these directories:
 
 - `/opt/byod/app`
 - `/opt/byod/config`
@@ -25,7 +25,7 @@ This creates required directories:
 - `/opt/byod/logs`
 - `/opt/byod/releases`
 
-## 3) Put LiveKit pinned artifact + checksum (preferred)
+## 2) Put LiveKit pinned artifact + checksum (preferred)
 
 Expected files before install:
 
@@ -39,11 +39,16 @@ curl -fL https://github.com/livekit/livekit/releases/download/v1.9.11/livekit-se
 sha256sum livekit-server-v1.9.11-linux-amd64.tar.gz > livekit-server-v1.9.11-linux-amd64.tar.gz.sha256
 ```
 
-Upload both files to VPS:
+Upload both files to `/tmp` first; a regular SSH user cannot write directly to
+the service-owned release directory after host preparation:
 
 ```bash
-scp livekit-server-v1.9.11-linux-amd64.tar.gz <user>@<vps_ip>:/opt/byod/releases/
-scp livekit-server-v1.9.11-linux-amd64.tar.gz.sha256 <user>@<vps_ip>:/opt/byod/releases/
+scp livekit-server-v1.9.11-linux-amd64.tar.gz <user>@<vps_ip>:/tmp/
+scp livekit-server-v1.9.11-linux-amd64.tar.gz.sha256 <user>@<vps_ip>:/tmp/
+ssh <user>@<vps_ip>
+sudo mv /tmp/livekit-server-v1.9.11-linux-amd64.tar.gz* /opt/byod/releases/
+sudo chown byod:byod /opt/byod/releases/livekit-server-v1.9.11-linux-amd64.tar.gz*
+cd /opt/byod/app-src
 ```
 
 Install LiveKit:
@@ -55,7 +60,7 @@ sudo bash deploy/stage_x_ubuntu_pilot/scripts/10_install_livekit.sh
 Fallback:
 - If custom artifact is not present, script downloads from official GitHub release URL.
 
-## 4) Install backend and listener
+## 3) Install backend and listener
 
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/20_install_backend.sh
@@ -66,7 +71,7 @@ Notes:
 - Backend installs **backend-only** Python requirements.
 - `/opt/byod/config/livekit.yaml` is auto-created from template if missing (existing file is not overwritten).
 
-## 5) Configure pilot values
+## 4) Configure pilot values
 
 Edit backend env file:
 
@@ -74,12 +79,12 @@ Edit backend env file:
 sudo nano /opt/byod/config/backend.env
 ```
 
-Set at least:
+For today's public-IP/HTTP pilot, set:
 
-- `BYOD_LIVEKIT_URL`
-- `BYOD_LIVEKIT_API_KEY`
-- `BYOD_LIVEKIT_API_SECRET`
-- `BYOD_CORS_ALLOWED_ORIGIN` (single listener origin)
+- `BYOD_LIVEKIT_URL=ws://<VPS_PUBLIC_IP>:7880`
+- `BYOD_LIVEKIT_API_KEY=<pilot_key>`
+- `BYOD_LIVEKIT_API_SECRET=<pilot_secret>`
+- `BYOD_CORS_ALLOWED_ORIGIN=http://<VPS_PUBLIC_IP>`
 - `BYOD_TARGET_CAPACITY=200`
 
 Edit LiveKit config:
@@ -88,21 +93,29 @@ Edit LiveKit config:
 sudo nano /opt/byod/config/livekit.yaml
 ```
 
-Replace API key/secret values in `keys:`.
+Replace API key/secret values in `keys:`. The key and secret must exactly match
+`BYOD_LIVEKIT_API_KEY` and `BYOD_LIVEKIT_API_SECRET` in `backend.env`.
 
-## 6) Enable services and nginx
+## 5) Enable services and nginx
 
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
 ```
 
-## 7) Run smoke test
+## 6) Run smoke test
 
 ```bash
-bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
 ```
 
-## 8) Manifest
+The VPS provider firewall must allow inbound `80/tcp`, `7880/tcp`, `7881/tcp`,
+and `50000-50100/udp`. Port `8000/tcp` stays private because the backend binds
+to `127.0.0.1` and nginx proxies backend HTTP and WebSocket traffic.
+
+The IP/HTTP setup is acceptable only for this pilot. A production or
+domain-based deployment should add TLS and use HTTPS/WSS.
+
+## 7) Manifest
 
 Use `deploy/stage_x_ubuntu_pilot/manifest.yaml` as single source of truth for:
 

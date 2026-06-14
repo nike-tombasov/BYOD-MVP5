@@ -14,11 +14,13 @@ install -m 0644 "$REPO_ROOT/deploy/stage_x_ubuntu_pilot/nginx/byod-listener.conf
 ln -sfn /etc/nginx/sites-available/byod-listener.conf /etc/nginx/sites-enabled/byod-listener.conf
 rm -f /etc/nginx/sites-enabled/default
 
+nginx -t
 systemctl daemon-reload
 systemctl enable byod-livekit byod-backend nginx
 systemctl restart byod-livekit byod-backend nginx
 
 systemctl --no-pager --full status byod-livekit | head -n 12 || true
 systemctl --no-pager --full status byod-backend | head -n 12 || true
+systemctl --no-pager --full status nginx | head -n 12 || true
 
 echo "Services enabled and started."

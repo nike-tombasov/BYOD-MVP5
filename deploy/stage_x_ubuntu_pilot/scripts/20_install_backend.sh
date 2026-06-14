@@ -17,6 +17,10 @@ cp -r "$REPO_ROOT/deploy" /opt/byod/app/deploy
 python3.11 -m venv /opt/byod/app/.venv
 /opt/byod/app/.venv/bin/pip install --upgrade pip
 /opt/byod/app/.venv/bin/pip install -r /opt/byod/app/backend-requirements.txt
+(
+  cd /opt/byod/app
+  /opt/byod/app/.venv/bin/python -c 'import backend.main'
+)
 
 if [[ ! -f /opt/byod/config/backend.env ]]; then
   install -m 0640 "$REPO_ROOT/.env.example" /opt/byod/config/backend.env
