@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+CYAN='\033[1;36m'; RED='\033[1;31m'; NC='\033[0m'
+trap 'printf "%b\\n" "${RED}FATAL: Service enable/start failed.${NC}" >&2' ERR
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
@@ -23,4 +25,4 @@ systemctl --no-pager --full status byod-livekit | head -n 12 || true
 systemctl --no-pager --full status byod-backend | head -n 12 || true
 systemctl --no-pager --full status nginx | head -n 12 || true
 
-echo "Services enabled and started."
+printf "%b\n" "${CYAN}SUCCESS: Services enabled and started.${NC}"

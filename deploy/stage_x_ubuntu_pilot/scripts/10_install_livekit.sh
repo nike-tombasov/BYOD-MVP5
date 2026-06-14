@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+CYAN='\033[1;36m'; RED='\033[1;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+trap 'printf "%b\\n" "${RED}FATAL: LiveKit installation failed.${NC}" >&2' ERR
 
 MANIFEST="/opt/byod/app/deploy/stage_x_ubuntu_pilot/manifest.yaml"
 LIVEKIT_VERSION="1.9.11"
@@ -35,7 +37,7 @@ if [[ -f "$CUSTOM_TGZ" ]]; then
 else
   echo "Custom artifact not found, using fallback URL"
   curl -fL "$FALLBACK_URL" -o "$TMP_TGZ"
-  echo "WARNING: fallback artifact downloaded. Save checksum in manifest-controlled release bundle."
+  printf "%b\n" "${YELLOW}WARNING: fallback artifact downloaded. Save checksum in manifest-controlled release bundle.${NC}"
 fi
 
 tar -xzf "$TMP_TGZ" -C "$TMP_EXTRACT_DIR"
@@ -49,4 +51,4 @@ chown byod:byod /opt/byod/livekit/livekit-server
 
 /opt/byod/livekit/livekit-server --version || true
 
-echo "LiveKit $LIVEKIT_VERSION installed. Manifest reference: $MANIFEST"
+printf "%b\n" "${CYAN}SUCCESS: LiveKit ${LIVEKIT_VERSION} installed. Manifest reference: ${MANIFEST}${NC}"

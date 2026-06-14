@@ -86,6 +86,18 @@ Fallback:
 
 ## 3) Install backend and listener
 
+Before installing the Listener, verify that this pinned browser SDK file exists
+in the repository checkout:
+
+```text
+src/listener/vendor/livekit-client.umd.1.15.13.js
+```
+
+If it is missing, put `livekit-client.umd.1.15.13.js` into
+`src/listener/vendor` before deploy. The listener installer intentionally stops
+with this instruction rather than deploying a Listener that depends on CDN
+availability.
+
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/20_install_backend.sh
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/30_install_listener.sh
@@ -119,6 +131,24 @@ sudo nano /opt/byod/config/livekit.yaml
 
 Replace API key/secret values in `keys:`. The key and secret must exactly match
 `BYOD_LIVEKIT_API_KEY` and `BYOD_LIVEKIT_API_SECRET` in `backend.env`.
+
+Use quotes around both values in the LiveKit YAML:
+
+```yaml
+keys:
+  "testvps": "secret-value"
+```
+
+The API key and API secret in `/opt/byod/config/backend.env` and
+`/opt/byod/config/livekit.yaml` must match exactly, including case and any
+punctuation.
+
+If either file was edited or transferred from Windows, remove CRLF line endings:
+
+```bash
+sudo sed -i 's/\r$//' /opt/byod/config/backend.env
+sudo sed -i 's/\r$//' /opt/byod/config/livekit.yaml
+```
 
 ## 5) Enable services and nginx
 
@@ -154,7 +184,42 @@ Then perform the public client checks:
 The IP/HTTP setup is acceptable only for this pilot. A production or
 domain-based deployment should add TLS and use HTTPS/WSS.
 
-## 8) Manifest
+## 8) Connection troubleshooting and diagnostic collection
+
+Use these exact client URLs for the public-IP/HTTP pilot:
+
+- Publisher backend URL: `ws://<VPS_PUBLIC_IP>/ws/publisher`
+- Listener browser URL: `http://<VPS_PUBLIC_IP>/`
+
+Publisher writes detailed connection and exception diagnostics to `logs.txt`:
+
+- When running the packaged `.exe`, `logs.txt` is next to the executable.
+- When running from source, it is `src/publisher/logs.txt`.
+
+Collect the VPS service state, sanitized configuration, recent JSONL logs, port
+listeners, Listener file permissions, and HTTP checks with:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/90_collect_diagnostics.sh
+```
+
+The script saves its report under
+`/tmp/byod-diagnostics-<timestamp>/`. It redacts configured API secrets and the
+default PIN, but review the report before downloading or sharing it.
+
+If Publisher reports `CONNECTION ERROR`, check in this order:
+
+1. Confirm the Publisher URL is exactly
+   `ws://<VPS_PUBLIC_IP>/ws/publisher` (no port `8000`).
+2. Open `http://<VPS_PUBLIC_IP>/health` from the operator workstation.
+3. Run the diagnostic collection command above.
+4. Review Publisher `logs.txt`, then the backend JSONL and journal sections in
+   the collected report for the last error stage, schema rejection, LiveKit
+   host/port reachability result, or WebSocket close code.
+5. Verify again that the backend and LiveKit API key/secret values match
+   exactly and that Windows CRLF characters were removed.
+
+## 9) Manifest
 
 Use `deploy/stage_x_ubuntu_pilot/manifest.yaml` as single source of truth for:
 

@@ -89,6 +89,13 @@ function detectClientEnvironment() {
 
 function nowTs() { return Math.floor(Date.now() / 1000); }
 
+function makeRequestIdSuffix() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function isBackendWsOpen() {
   return backendWs && backendWs.readyState === WebSocket.OPEN;
 }
@@ -174,7 +181,7 @@ function runWithTimeout(promiseFactory, timeoutMs, timeoutLabel) {
 }
 
 function makeEnvelope(type, payload = {}) {
-  return { type, schema_version: 1, ts: nowTs(), request_id: `${type}-${crypto.randomUUID()}`, payload };
+  return { type, schema_version: 1, ts: nowTs(), request_id: `${type}-${makeRequestIdSuffix()}`, payload };
 }
 
 function normalizeLanguageTag(tag) {

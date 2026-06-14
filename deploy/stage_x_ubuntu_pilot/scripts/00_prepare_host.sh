@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+CYAN='\033[1;36m'; RED='\033[1;31m'; NC='\033[0m'
+trap 'printf "%b\\n" "${RED}FATAL: Host preparation failed.${NC}" >&2' ERR
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
@@ -21,4 +23,4 @@ chmod 755 /opt/byod
 chmod 750 /opt/byod/config /opt/byod/backend_data /opt/byod/logs
 chmod 755 /opt/byod/listener
 
-echo "Host prepared."
+printf "%b\n" "${CYAN}SUCCESS: Host prepared.${NC}"
