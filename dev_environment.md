@@ -51,7 +51,7 @@ Networking:
 - later public IP on VPS
 
 Goal:
-- full local end-to-end testing:
+- full local end-to-end testing (READY):
 publisher → backend → livekit → listener
 - then same full VPS end-to-end testing:
 online publisher → VPS backend → VPS livekit → VPS listener

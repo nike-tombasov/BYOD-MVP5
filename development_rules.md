@@ -1,4 +1,4 @@
-# Development chat rules
+# Development chat rules for GPT models
 
 1. Обновление кода всегда целиком. Никаких рваных изменений строк по-штучно. Так мы будем контролировать версии.
 

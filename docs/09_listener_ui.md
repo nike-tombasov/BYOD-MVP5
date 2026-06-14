@@ -21,7 +21,7 @@ User должен иметь минимальный интерфейс. Блок
 3) автоматическое получение от backend channel list
 4) automatic receive immutable `i18n_library` on connect/reconnect; initialize generation with status custom text (при status OPENED ничего не отображать), room_name, отображение channel buttons с режимом listen == true
 5) нажатие на желаемый channel button (PLAY ACTION), button меняет цвет (подсвечивается), автоматическая обработка получения звука только по этому channel
-6) channel button не меняет цвет (не гаснет) за исключением перезапуска web page, перевода room status в CLOSED
+6) channel button не меняет цвет (не гаснет) сам за исключением перезапуска web page, перевода room status в CLOSED
 7) нажатие другого channel button (STOP ACTION для предыдущего channel и PLAY ACTION для нового channel) - предыдущая channel button меняет цвет обратно (гаснет), новая меняет цвет (подсвечивается) - звук с предыдущего channel button прекращает поступать для user, поступает только звук с новго channel button
 8) нажатие на current channel button (STOP ACTION для текущего воспроизведения channel), channel button меняет цвет обратно (гаснет), звук перестаёт поступать для user
 9) heartbeats, горячее изменение channel names от backend
@@ -280,8 +280,6 @@ else:
 Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
 
 Override details: см. docs/08_backend.md, раздел 9.14.
-
-
 
 ### 10.10. Active PLAY heartbeat control
 
