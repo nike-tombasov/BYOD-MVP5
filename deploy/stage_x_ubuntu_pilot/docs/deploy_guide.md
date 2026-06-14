@@ -14,6 +14,15 @@ Operator workstation:
 
 All commands in this document assume that environment.
 
+Typical workflow for File Transfer Convention (WinSCP):
+
+1. Upload file to /tmp using WinSCP.
+2. Connect via PuTTY.
+3. Move file using sudo mv.
+4. Adjust ownership using sudo chown.
+
+Do not assume SCP command-line usage.
+
 ## 1) Bootstrap the clean VPS and clone branch MVP10
 
 ```bash
