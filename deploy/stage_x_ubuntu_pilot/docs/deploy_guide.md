@@ -1,6 +1,18 @@
 # Stage X Ubuntu Pilot Deploy Guide
 
-This guide is for a fresh **Ubuntu 22.04 LTS** VPS with one public IPv4.
+This guide is written specifically for:
+
+Server:
+- Ubuntu Server 22.04 LTS
+- Clean VPS
+- Public IPv4 address
+
+Operator workstation:
+- Windows 10/11
+- PuTTY
+- WinSCP
+
+All commands in this document assume that environment.
 
 ## 1) Bootstrap the clean VPS and clone branch MVP10
 
