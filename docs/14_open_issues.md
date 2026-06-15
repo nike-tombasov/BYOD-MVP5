@@ -20,6 +20,8 @@ Resolved and moved to canonical docs/checklists:
 - visible Publisher connection and exception logging in `logs.txt`;
 - Listener request-ID fallback when `crypto.randomUUID` is unavailable on an
   HTTP/IP origin.
+- Stage XI uses Protocol/engine load only; browser/Web Listener UI load testing
+  is postponed to future Web Listener UI hardening.
 
 Canonical sources:
 - `docs/08_backend.md`
@@ -36,17 +38,16 @@ Canonical sources:
 - determine the largest Listener population that remains stable for the
   selected VPS size and network conditions.
 
-2) Browser-based versus protocol-level load-test model
-- define which behaviors require real browsers/WebRTC clients and which can be
-  represented by protocol-level synthetic clients;
-- ensure the chosen mix represents realistic Listener connection,
-  subscription, playback, reconnect, and idle behavior.
-
-3) Stage XI load metrics
+2) Stage XI Analyzer metrics implementation
 - collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics throughout
   each load step;
-- define the sampling and report format needed to correlate client failures
-  with VPS and service behavior.
+- finalize the exact implementation used to sample and correlate client
+  failures with VPS and service behavior.
+
+3) LiveKit API versus backend metrics source
+- determine whether LiveKit API metrics are sufficient and reliable for the
+  required counts, or whether the planned local-only backend
+  `/admin/metrics_snapshot` endpoint is needed.
 
 4) Stage XI pass/fail and degradation contract
 - define numeric pass/fail thresholds for connection success, audio behavior,

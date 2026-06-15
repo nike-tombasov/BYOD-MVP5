@@ -1,0 +1,404 @@
+# 22. Stress/load testing: Protocol/engine load и метрики VPS
+
+## Назначение документа
+
+Это постоянное руководство по нагрузочному тестированию BYOD на протяжении
+жизненного цикла проекта, а не временный артефакт Stage XI. После крупных
+изменений системы по нему повторно проверяется ёмкость конкретного VPS,
+стабильность длительной работы и поведение при деградации.
+
+Этот документ является **Spec-first** контрактом. Упомянутые ниже Loader,
+Analyzer, `metrics_snapshot`, скрипты и сервисы описывают будущую реализацию и
+в этом PR не создаются.
+
+## A. Scope
+
+Stage XI проверяет только **Protocol/engine load**. Каждый виртуальный Listener
+должен проходить реальный протокол backend и быть полноценным WebRTC/LiveKit
+participant, но браузер и Web Listener UI не используются как генератор
+нагрузки.
+
+Browser/Web Listener UI load testing явно находится вне scope Stage XI.
+Нагрузочное тестирование браузерного UI, DOM, rendering, browser audio output
+и массового запуска вкладок относится к отдельной будущей задаче Web Listener
+UI hardening.
+
+Цель — определить для конкретного VPS:
+
+- максимальную стабильную Listener capacity;
+- безопасный рабочий диапазон;
+- узкие места backend, LiveKit, nginx, VPS и сети;
+- характер контролируемой деградации и отказа под нагрузкой.
+
+## B. Target environment
+
+- Loader запускается оператором на Windows 10/11.
+- Основной runtime — Python 3.11.
+- Первая цель реализации — простой one-folder Python script.
+- Позднее допустима упаковка PyInstaller в one-folder или one-file, только если
+  она не замедляет MVP.
+- Node.js допустим лишь как fallback, если Python-подход к LiveKit/WebRTC не
+  заработает. Node.js не является предпочтительным вариантом.
+- Серверная цель остаётся Ubuntu Server 22.04 LTS, один VPS, public IPv4.
+- Рабочие инструменты оператора остаются PuTTY и WinSCP.
+
+## C. Планируемая архитектура Loader
+
+Будущий путь:
+
+```text
+tools/load_test/
+├── requirements.txt
+├── byod_listener_loader.py
+├── run_loader.bat          # optional
+└── README.md
+```
+
+One-folder script здесь означает обычную папку со скриптом, зависимостями и,
+опционально, вспомогательным `.bat`. Это не installable Python package.
+
+В данном PR папка и исполняемые файлы не создаются.
+
+## D. Модель подключения Loader
+
+Каждый Listener worker обязан быть полноценным WebRTC participant и пройти
+тот же путь, что нормальный Listener:
+
+1. Выполнить HTTP preflight к VPS по IP, например запрос `/health`.
+2. Подключиться к backend WebSocket через штатный Listener endpoint:
+   `ws://<VPS_PUBLIC_IP>/ws/listener`.
+3. Отправить стандартный WS schema v1 envelope `connecting` с ролью Listener.
+4. Получить ответ backend `connecting` с `token`, `livekit_url` и
+   `listener_id`.
+5. Получить `i18n_library` и `listener_state`.
+6. Подключиться к LiveKit с полученными `token` и `livekit_url`.
+7. Выбрать один доступный для прослушивания канал.
+8. Подписаться на audio track выбранного канала.
+9. Продолжать получать media как LiveKit participant.
+10. В первой реализации не декодировать и не воспроизводить звук через
+    физический audio output.
+11. Отправлять штатный Listener heartbeat:
+
+    ```json
+    {
+      "client_role": "listener",
+      "selected_channel": "<channel_id>",
+      "playback_state": "PLAYING"
+    }
+    ```
+
+12. Логировать ошибки, disconnect, reconnect и текущее состояние.
+
+Ограничения:
+
+- Loader не требует PIN.
+- Loader получает только listener rights.
+- Loader не использует Publisher endpoint.
+- Loader не получает токены через отдельный admin endpoint и не обходит
+  backend.
+- Тест обязан проверять реальный Listener protocol и backend admission limits.
+
+## E. Варианты backend endpoint
+
+- Все Loader workers используют `/ws/listener`.
+- `/admin/loader_token` для Stage XI не создаётся: такой endpoint обошёл бы
+  реальный Listener protocol и лимиты.
+- Первый предпочтительный источник LiveKit online counts — LiveKit API.
+- Если LiveKit API нельзя быстро сделать доступным и надёжным, fallback для
+  Analyzer — планируемый локальный endpoint:
+  `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
+- `/admin/metrics_snapshot` должен быть local-only и не должен публиковаться
+  через nginx.
+- В этом Spec-first PR фиксируется только контракт endpoint; реализации нет.
+
+## F. Runner identity
+
+`runner_id` обязателен. Оператор вводит его вручную после остальных параметров
+либо явно передаёт последним CLI-аргументом. Он отличает разные ПК, а также
+несколько Loader instances на одном ПК.
+
+Формат `worker_id`:
+
+```text
+<runner_id>-L<zero_padded_index>
+```
+
+Примеры:
+
+- `home-pc1-L0001`
+- `home-pc1-L0002`
+- `gsm-laptop-L0001`
+- `remote-pc3-L0412`
+
+`connecting.payload` Loader может содержать диагностические metadata:
+
+- `client_type: "load_runner"`
+- `runner_id`
+- `worker_id`
+- `worker_index`
+- `selected_channel_mode`
+
+Эти поля диагностические и не должны ломать canonical protocol. Если backend
+schema позднее станет строже, изменение schema docs должно быть отдельным,
+осознанным решением.
+
+## G. Планируемый CLI
+
+Обязательные параметры:
+
+- URL/IP VPS;
+- число listeners;
+- `ramp-mode`: `linear` или `burst`;
+- интервал запуска одного Listener каждые N секунд для `linear`;
+- `channel-mode`: `random` или `fixed`;
+- `channel-id` при `fixed`;
+- hold duration;
+- обязательный `runner_id`, запрашиваемый в конце или передаваемый явно.
+
+Burst:
+
+```bash
+python tools/load_test/byod_listener_loader.py ^
+  --server http://80.78.244.210 ^
+  --listeners 50 ^
+  --ramp-mode burst ^
+  --channel-mode random ^
+  --hold-sec 600 ^
+  --runner-id home-pc1
+```
+
+Linear:
+
+```bash
+python tools/load_test/byod_listener_loader.py ^
+  --server http://80.78.244.210 ^
+  --listeners 500 ^
+  --ramp-mode linear ^
+  --listener-every-sec 0.25 ^
+  --channel-mode random ^
+  --hold-sec 900 ^
+  --runner-id home-pc1
+```
+
+Fixed channel:
+
+```bash
+python tools/load_test/byod_listener_loader.py ^
+  --server http://80.78.244.210 ^
+  --listeners 100 ^
+  --ramp-mode linear ^
+  --listener-every-sec 0.5 ^
+  --channel-mode fixed ^
+  --channel-id channel_1 ^
+  --hold-sec 900 ^
+  --runner-id gsm-laptop
+```
+
+IP в примерах — адрес формата CLI-примера, а не credential или гарантия
+доступности конкретного сервера.
+
+## H. Выбор канала
+
+- `channel-mode=random` случайно выбирает только канал с `listen=true`.
+- `channel-mode=fixed` использует строго `--channel-id`.
+- Если fixed channel отсутствует или имеет `listen=false`, Loader выполняет
+  fail fast.
+- Тихий fallback с fixed на random запрещён: он искажает валидность теста.
+- Если backend не передал каналы за 60 секунд, Loader сообщает об ошибке.
+- Если выбранный канал существует, но audio track сейчас не опубликован,
+  Listener worker остаётся в room и ждёт без ограничения времени, как обычный
+  Listener.
+- Отсутствующий audio track сам по себе не означает отказ VPS.
+- Ошибками считаются нарушения backend/LiveKit/connectivity/protocol.
+
+## I. Audio/media behavior
+
+Начальный режим реализации:
+
+- подписаться на audio track выбранного канала;
+- не создавать физическое audio playback;
+- по возможности не выполнять decode/playback;
+- проверить, действительно ли LiveKit передаёт media без чтения frames;
+- если frames необходимо потреблять, позднее добавить опцию
+  `--consume-audio-frames true`.
+
+Это проверка валидности Protocol/engine load, а не функция UI. Базовые audio
+инварианты проекта не меняются: 48000 Hz, stereo, frame size 960,
+`track.name == channel_id`, selective subscribe и queue drop-oldest.
+
+## J. Политика ручного ramp-up
+
+- Оператор может запускать Loader несколько раз с одного или нескольких ПК.
+- Manual ramp-up разрешён и ожидается.
+- `runner_id` делает каждый запуск различимым в метриках.
+- Для исключения локального интернет bottleneck можно использовать несколько
+  ПК и разные подключения.
+- Ориентир, сообщённый руководителем проекта: около 45 Mbit/s для одного
+  Publisher плюс Listener loader. Допустимы дополнительные GSM и remote links.
+
+## K. Load profiles
+
+### Baseline
+
+| Поле | Значение |
+|---|---|
+| listeners | 50 |
+| connection_rate_per_sec | текущий/default backend limit |
+| hold | 10 минут |
+
+Значение профиля:
+
+- проверяет штатный backend listener limit и connection-rate controls;
+- выполняется первым после рабочего deploy;
+- не требует разблокировки конфигурации сверх нормальных deploy values.
+
+### High
+
+| Поле | Значение |
+|---|---|
+| listeners | 500 |
+| connection_rate_per_sec | повышенный, но контролируемый |
+| hold | 15 минут |
+
+Значение профиля:
+
+- проверяет практическую высокую нагрузку;
+- connection rate вручную повышается в конфигурации до теста, но не становится
+  unlimited;
+- предпочтительный `ramp-mode` — `linear`;
+- цель — стабильная ёмкость и контролируемая деградация, а не мгновенный crash.
+
+### Extreme
+
+| Поле | Значение |
+|---|---|
+| listeners | 2000 |
+| connection_rate_per_sec | повышенный для stress |
+| hold | 20 минут |
+
+Значение профиля:
+
+- ищет верхнюю границу и failure modes;
+- config limits вручную меняются до теста;
+- ограничения интернета и Loader client могут потребовать несколько ПК/links;
+- деградация или crash допустимы как результат, если они измерены.
+
+Дополнительные простые опции профиля:
+
+- `ramp-mode: burst | linear`
+- `channel-mode: random | fixed`
+- `heartbeat-sec: 10`
+- `connect-timeout-sec: 30`
+- `channels-timeout-sec: 60`
+- `reconnect: true | false`
+
+Профили в этом PR — только documentation/manual targets. Автоматическое
+редактирование конфигурации не реализуется. Фактические backend config values
+оператор вручную меняет после deploy перед соответствующим профилем.
+
+## L. План VPS Analyzer
+
+Будущая команда:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start|stop|status
+```
+
+Analyzer должен:
+
+- работать через systemd, а не через `nohup` или pid-only shell background;
+- использовать service name `byod-metrics-analyzer.service`;
+- работать в фоне до явной остановки;
+- по умолчанию снимать sample каждые 120 секунд;
+- переживать закрытие окна PuTTY благодаря systemd;
+- при перегрузке или reboot VPS естественно остановиться, сохранив уже
+  записанные на диск логи.
+
+Скрипт и service unit будут созданы в отдельном implementation PR.
+
+## M. Путь вывода Analyzer
+
+Планируемый каталог:
+
+```text
+/opt/byod/metrics/
+```
+
+Планируемые файлы одного запуска:
+
+```text
+/opt/byod/metrics/byod_metrics_<timestamp>.csv
+/opt/byod/metrics/byod_metrics_<timestamp>.jsonl
+/opt/byod/metrics/byod_metrics_<timestamp>.log
+```
+
+## N. Метрики Analyzer
+
+Минимальный набор:
+
+- `timestamp_local`
+- `timestamp_utc`
+- `cpu_percent`
+- `ram_used_gb`
+- `ram_total_gb`
+- `disk_used_gb`
+- `disk_total_gb`
+- `net_iface`
+- `rx_mbps`
+- `tx_mbps`
+- `livekit_publishers_count`
+- `livekit_listeners_count`
+- `livekit_rooms_count`
+- `backend_publishers_count`
+- `backend_listeners_count`
+- `backend_active_play_count`
+- `byod_backend_status`
+- `byod_livekit_status`
+- `nginx_status`
+
+CSV предназначен для таблиц, JSONL — для machine parsing, human-readable
+`.log` — для быстрого ручного просмотра. Временные отметки должны быть понятны
+оператору: одновременно записываются local и UTC timestamps.
+
+## O. Стратегия источников метрик
+
+1. Сначала использовать LiveKit API для количества rooms, participants,
+   Publisher и Listener.
+2. Если LiveKit API нельзя быстро и надёжно использовать, получать fallback из
+   `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
+3. `/admin/metrics_snapshot` остаётся local-only и не публикуется через nginx.
+4. Endpoint планируется для отдельного будущего implementation PR.
+5. Machine-readable JSON должен содержать как минимум:
+
+   - `ts`;
+   - `room_status`;
+   - `target_capacity`;
+   - `max_active_listeners`;
+   - `max_new_connections_per_sec`;
+   - `backend_publishers_count`;
+   - `backend_listeners_count`;
+   - `backend_active_play_count`;
+   - `backend_listeners_by_runner`;
+   - channel summary с `channel_id`, `listen`, `owner` и, если доступно,
+     `active_listeners`.
+
+## P. Планируемое deploy-требование следующего code PR
+
+`btop` должен автоматически устанавливаться при подготовке Stage X/Stage XI
+VPS. В этом Spec-first PR `00_prepare_host.sh` не меняется. Будущий
+implementation PR должен добавить `btop` в host packages.
+
+## Q. PASS, DEGRADED и FAIL
+
+Точные числовые thresholds в Spec-first PR не финализированы. До первых
+реальных прогонов используются категории:
+
+- **PASS** — целевое число listeners подключено, hold стабилен, нет крупной
+  disconnect storm, метрики доступны.
+- **DEGRADED** — тест продолжается, но ошибки, reconnects или resource pressure
+  превышают приемлемый уровень.
+- **FAIL** — backend, LiveKit или nginx недоступен; большая доля подключений не
+  устанавливается; метрики отсутствуют; VPS нестабилен или reboot.
+
+Финальные числовые thresholds будут обновлены после первых реальных запусков
+Baseline, High и Extreme.

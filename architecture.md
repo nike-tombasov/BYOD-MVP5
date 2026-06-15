@@ -84,7 +84,13 @@ docs/19_ux_scenarios.md
 25. Unresolved bugs
 docs/20_unresolved_bugs.md
 
-26. Legacy implementations
+26. Stage X backend logging contract
+docs/21_backend_logging_contract_stage_x.md
+
+27. Stress and load testing
+docs/22_stress_tests.md
+
+28. Legacy implementations
 legacy/legacy_readme.md
 
 Core rules:

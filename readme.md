@@ -36,6 +36,8 @@ Documentation list:
 * 18_stage_vii_ix_acceptance_checklist.md
 * 19_ux_scenarios.md
 * 20_unresolved_bugs.md
+* 21_backend_logging_contract_stage_x.md
+* 22_stress_tests.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md
@@ -63,3 +65,14 @@ Completed-stage snapshot:
 Stage X is a public-IPv4, HTTP-only pilot without a domain. Domain setup, TLS,
 production monitoring, scaling, load balancing, and multi-node deployment are
 future production-hardening work and are not Stage X requirements.
+
+## Stage XI — Spec-first load characterization
+
+Stage XI is currently planned/spec-first and covers **Protocol/engine load
+only**. Browser/Web Listener UI load testing is explicitly out of scope and is
+postponed to future Web Listener UI hardening. The Loader and Analyzer, along
+with any supporting backend metrics endpoint, will be implemented in a
+separate later PR.
+
+Permanent test manual:
+- `docs/22_stress_tests.md`
