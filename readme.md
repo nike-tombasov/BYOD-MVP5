@@ -2,6 +2,10 @@
 
 This repository contains the full technical specification of the BYOD Audio Distribution System.
 
+Current status: MVP10 supports a single-node Ubuntu Server 22.04 LTS VPS pilot
+with self-hosted LiveKit. Stage X is completed; Stage XI load and capacity
+characterization is planned but not implemented.
+
 IMPORTANT:
 1. Read hard_rules.md first
 2. Then read system architecture.md files in order
@@ -52,3 +56,10 @@ Operator docs:
 
 Backend logging contract:
 - `docs/21_backend_logging_contract_stage_x.md`
+
+Completed-stage snapshot:
+- `legacy/stage_x_ubuntu_pilot/`
+
+Stage X is a public-IPv4, HTTP-only pilot without a domain. Domain setup, TLS,
+production monitoring, scaling, load balancing, and multi-node deployment are
+future production-hardening work and are not Stage X requirements.
