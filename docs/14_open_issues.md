@@ -13,31 +13,55 @@ Resolved and moved to canonical docs/checklists:
 - separated `publisher_state` / `listener_state` protocol behavior;
 - Stage VII-IX WS schema hardening and strict handshake cleanup;
 - Listener race-hardening baseline rules.
+- Stage X clean Ubuntu 22.04 LTS VPS deployment path;
+- required deployment and validation of the pinned Listener SDK file
+  `vendor/livekit-client.umd.1.15.13.js`;
+- backend and VPS connection diagnostics, including the diagnostics collector;
+- visible Publisher connection and exception logging in `logs.txt`;
+- Listener request-ID fallback when `crypto.randomUUID` is unavailable on an
+  HTTP/IP origin.
 
 Canonical sources:
 - `docs/08_backend.md`
 - `docs/09_listener_ui.md`
 - `docs/15_ws_schema_v1.md`
 - `docs/18_stage_vii_ix_acceptance_checklist.md` (verification artifact)
+- `docs/21_backend_logging_contract_stage_x.md`
+- `deploy/stage_x_ubuntu_pilot/`
+- `legacy/stage_x_ubuntu_pilot/` (completed-stage snapshot)
 
 ### 15.2 Current unresolved items
 
-1) Deploy artifact manifest formalization (Stage X blocker)
-- exact release manifest structure is not pinned yet (artifact list, versions, checksums, signatures, required/optional flags);
-- verification and rollback procedure must reference one manifest source of truth.
+1) Maximum stable Listener count on the concrete Stage XI VPS
+- determine the largest Listener population that remains stable for the
+  selected VPS size and network conditions.
 
-2) Stress program formalization (Stage XI preparation gap)
-- strict metrics set is not finalized (latency/jitter/reconnect/error budget/CPU-RAM thresholds);
-- pass/fail numeric thresholds and report template fields are not finalized.
+2) Browser-based versus protocol-level load-test model
+- define which behaviors require real browsers/WebRTC clients and which can be
+  represented by protocol-level synthetic clients;
+- ensure the chosen mix represents realistic Listener connection,
+  subscription, playback, reconnect, and idle behavior.
 
-3) JSON strict validation final freeze
+3) Stage XI load metrics
+- collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics throughout
+  each load step;
+- define the sampling and report format needed to correlate client failures
+  with VPS and service behavior.
+
+4) Stage XI pass/fail and degradation contract
+- define numeric pass/fail thresholds for connection success, audio behavior,
+  latency/jitter, reconnects, errors, and resource use;
+- define acceptable degradation and the point at which the VPS is considered
+  unstable.
+
+5) JSON strict validation final freeze
 - open decision: keep strict regex + reject-all policy or simplify for operator UX in first VPS cycle.
 
-4) Persistence schema versioning format
+6) Persistence schema versioning format
 - open decision: whether dedicated `meta_schema.json` is mandatory in MVP.
 
-5) Migration rules v1->v2
+7) Migration rules v1->v2
 - migration and rollback policy for persistence versions is not finalized.
 
-6) Logging contract formalization
+8) Post-pilot logging contract formalization
 - exact logging contract for backend and Publisher UI is not finalized (required events, severity, format, retention, mandatory diagnostics fields).

@@ -1,12 +1,14 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on April 19, 2026
+## Status on June 15, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
 - Stage VII is completed (backend architecture hardening baseline).
 - Stage VIII is completed (Listener room status behavior baseline).
 - Stage IX is completed (Listener resilience baseline).
-- Active stage is Stage X.
+- Stage X is completed (Ubuntu 22.04 LTS single-VPS pilot).
+- Next planned stage is Stage XI: load and capacity characterization on a
+  concrete VPS.
 
 ---
 
@@ -72,37 +74,50 @@ Canonical behavior now lives in permanent docs (`docs/09_listener_ui.md`, `docs/
 
 ## Stage X — VPS deploy package & operator manuals (Priority 5)
 
-### Main target
-Prepare one-action deployment and clear runbook documentation.
+### Result (completed)
 
-### Large-doing steps
-1) one-action Ubuntu deploy for livekit + backend + listener (from `legacy/stage_I` lessons)
-2) detailed deploy guide for regular scenarios
-3) detailed operations guide (console control, recording markers, metrics, logs)
-4) emergency incident guide with step-by-step actions
-5) LiveKit binary delivery policy for Ubuntu VPS:
-- preferred: pinned own artifact (exact version) with checksum verification
-- fallback: `curl` from official release URL with checksum verification
-- document rollback procedure to previous pinned binary
+The Ubuntu Server 22.04 LTS single-VPS pilot was deployed and manually
+verified on a clean VPS.
 
-### Exit criteria
-- new operator can deploy and operate by docs only
+Delivered and verified:
+
+1) a clean Ubuntu 22.04 LTS VPS deploy path exists;
+2) nginx serves the Listener and proxies backend WebSockets;
+3) the backend stays private on `127.0.0.1:8000` and runs as a systemd service;
+4) self-hosted LiveKit runs as a systemd service;
+5) Publisher and Listener connect successfully through the public nginx path;
+6) the backend issues LiveKit tokens;
+7) the audio engine works in the deployed VPS environment;
+8) the pinned Listener vendor SDK is validated during deployment;
+9) VPS diagnostics and connection troubleshooting procedures were added.
+
+Historical snapshot:
+- `legacy/stage_x_ubuntu_pilot/`
+
+Canonical deploy package:
+- `deploy/stage_x_ubuntu_pilot/`
 
 ---
 
-## Stage XI — VPS stress test program (Priority 6)
+## Stage XI — Load and Capacity Characterization on a Concrete VPS (Priority 6)
+
+### Status
+Planned only; not implemented.
 
 ### Main target
-Validate realistic and extreme load behavior.
+Measure the stable operating envelope and degradation behavior of the concrete
+single-VPS pilot environment.
 
-### Large-doing steps
-1) stress tool without IP/token limits for synthetic user actions
-2) scenario: 50 concurrent page opens + random PLAY actions
-3) multi-machine scaling to 500–2000 active users
-4) telemetry collection + post-test analysis template
+### Planned work
+1) determine the maximum stable Listener count on the selected VPS;
+2) define realistic browser-based and protocol-level load-test roles;
+3) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
+4) define numeric pass/fail thresholds and expected degradation behavior;
+5) produce a reproducible test procedure and results report for that VPS.
 
 ### Exit criteria
-- bottlenecks and safe operating envelope measured and documented
+- bottlenecks, pass/fail thresholds, degradation behavior, and a safe operating
+  envelope are measured and documented for the tested VPS
 
 ---
 

@@ -1,18 +1,20 @@
-# MVP rules for current stage (Stage X)
+# MVP rules for MVP10 after Stage X
 
-## Stage goal
-Finish deployment package and operator manuals for VPS.
+## Current status
+Stage X is completed: the Ubuntu 22.04 LTS single-VPS deploy package and
+operator manuals were verified in a real VPS pilot. Stage XI load and capacity
+characterization is planned only and is not implemented by this baseline.
 
-## Strictly IN scope
+## Completed Stage X scope
 1) Deploy package structure and one-action flow for Ubuntu VPS.
 2) Operator manuals (normal operations, incidents, rollback).
 3) Artifact manifest and version/checksum discipline.
 4) Documentation alignment for Stage X deliverables.
 
-## Strictly OUT of scope for Stage X
+## Strictly OUT of scope for the completed Stage X baseline
 - real backend multitrack recording implementation (future feature after MVP pilots)
 - Admin Web UI implementation
-- stress framework implementation (Stage XI)
+- load/stress framework implementation and capacity claims (Stage XI)
 - major architecture redesign of backend/listener/publisher behavior
 
 ## Hard constraints
