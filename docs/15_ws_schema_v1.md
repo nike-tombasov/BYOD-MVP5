@@ -1,365 +1,251 @@
-## 16. WebSocket schema v1 (Publisher/Listener/Backend)
+## 16. WebSocket schema v1 (canonical)
 
-Purpose:
-- define strict JSON contract for all WS interactions;
-- prevent drift between backend, Publisher and Listener implementations;
-- provide deterministic validation / retry / compatibility behavior.
+This is the **single canonical WS protocol** for all nodes:
+- Backend
+- Publisher
+- Listener
 
-Scope:
-- Backend <-> Publisher WS
-- Backend <-> Listener WS
-- does not replace LiveKit media signaling; applies only to application WS messages.
+No legacy protocol is allowed.
+No `type: "state"`.
+No `type: "connected"`.
+No top-level payload fields outside `payload`.
 
 ---
 
-### 16.1. General envelope (all WS messages)
+### 16.1 Common envelope (mandatory for every WS message)
 
-Every WS message MUST be a JSON object:
+Every message MUST be:
 
 ```json
 {
   "type": "string",
   "schema_version": 1,
   "ts": 1710000000,
-  "request_id": "uuid-or-client-generated-id",
+  "request_id": "string",
   "payload": {}
 }
 ```
 
-Fields:
-- `type` (required, string): message type identifier.
-- `schema_version` (required, integer): schema version for this message family.
-- `ts` (required, integer): unix timestamp (seconds), sender local time.
-- `request_id` (required, string): id for correlation and idempotency.
-- `payload` (required, object): message-specific body.
+Required fields:
+- `type`
+- `schema_version`
+- `ts`
+- `request_id`
+- `payload`
 
-Validation rule:
-- unknown top-level fields are allowed only if backward compatible and ignored by receiver;
-- missing required fields => protocol error.
+Rules:
+- `schema_version` MUST be `1`.
+- Missing required field => protocol error.
+- Old formats are forbidden.
 
 ---
 
-### 16.2. Message families
+### 16.2 Allowed message types (final set)
 
-Backend <-> Publisher:
+Publisher -> Backend:
 - `connecting`
 - `heartbeat`
 - `on_air`
 - `stop`
-- `publisher_state`
-- `error`
 
-Backend <-> Listener:
-- `connecting`
-- `heartbeat`
-- `listener_state`
+Backend -> Publisher:
+- `connecting` (success response)
+- `publisher_state`
 - `i18n_library`
 - `error`
 
----
+Listener -> Backend:
+- `connecting`
+- `heartbeat`
 
-### 16.3. `connecting`
-
-#### 16.3.1 Publisher -> Backend
-
-```json
-{
-  "type": "connecting",
-  "schema_version": 1,
-  "ts": 1710000000,
-  "request_id": "pub-req-1",
-  "payload": {
-    "client_role": "publisher",
-    "pin": "123456",
-    "hostname": "PC-01"
-  }
-}
-```
-
-Required payload fields:
-- `client_role` = `publisher`
-- `pin` (string)
-- `hostname` (string)
-
-#### 16.3.2 Listener -> Backend
-
-```json
-{
-  "type": "connecting",
-  "schema_version": 1,
-  "ts": 1710000001,
-  "request_id": "lst-req-1",
-  "payload": {
-    "client_role": "listener"
-  }
-}
-```
-
-Required payload fields:
-- `client_role` = `listener`
-
-#### 16.3.3 Backend -> client (success response)
-
-```json
-{
-  "type": "connecting",
-  "schema_version": 1,
-  "ts": 1710000002,
-  "request_id": "pub-req-1",
-  "payload": {
-    "ok": true,
-    "client_role": "publisher",
-    "publisher_id": "hostA_0",
-    "token": "<jwt>",
-    "livekit_url": "wss://lk.example.com",
-    "room_name": "Room A",
-    "room_status": "OPENED"
-  }
-}
-```
-
-For listener response:
-- `client_role` = `listener`
-- `listener_id` вместо `publisher_id`
-- `token`, `livekit_url`, `room_status` required.
-
-Backend MUST send `i18n_library` after successful connect for both client roles.
+Backend -> Listener:
+- `connecting` (success response)
+- `listener_state`
+- `i18n_library`
+- `reconnect_required`
+- `error`
 
 ---
 
-### 16.4. `heartbeat`
+### 16.3 Handshake order (strict)
 
-```json
-{
-  "type": "heartbeat",
-  "schema_version": 1,
-  "ts": 1710000100,
-  "request_id": "hb-1",
-  "payload": {
-    "client_role": "listener",
-    "client_id": "listener_12",
-    "play_active": true
-  }
-}
-```
+#### Listener handshake
+1) Listener opens `/ws/listener`.
+2) Listener sends `connecting`.
+3) Backend sends `connecting` success (`ok=true`, `listener_id`, `token`, `livekit_url`).
+4) Backend sends `i18n_library`.
+5) Backend sends `listener_state`.
+6) Listener connects to LiveKit.
+7) Listener renders UI.
 
-Rules:
-- Publisher heartbeats: `play_active` may be omitted.
-- Listener heartbeats: when active PLAY, send every 10 sec (MVP baseline).
-- heartbeat timeout behavior follows backend policy (60 sec for active PLAY).
-- when listener returns from background with no active PLAY and stale WS session, client should auto-reconnect (or auto-reload fallback).
-- listener client connection state machine (`CONNECTED`/`STALE`/`RECONNECTING`) is defined in `docs/09_listener_ui.md` section 10.10.1.
+#### Publisher handshake
+1) Publisher opens `/ws/publisher`.
+2) Publisher sends `connecting` with `pin`, `hostname`.
+3) Backend sends `connecting` success (`ok=true`, `publisher_id`, `token`, `livekit_url`).
+4) Backend sends `i18n_library`.
+5) Backend sends `publisher_state`.
 
 ---
 
-### 16.5. `on_air` (Publisher -> Backend)
+### 16.4 `connecting`
 
+Listener request payload:
 ```json
 {
-  "type": "on_air",
-  "schema_version": 1,
-  "ts": 1710000200,
-  "request_id": "onair-req-5",
-  "payload": {
-    "publisher_id": "hostA_0",
-    "channel_id": "channel_2",
-    "request_on_air_ts": 1710000199
-  }
+  "client_role": "listener"
 }
 ```
 
-Required:
-- `publisher_id`, `channel_id`, `request_on_air_ts`.
+Publisher request payload:
+```json
+{
+  "client_role": "publisher",
+  "pin": "123456",
+  "hostname": "PC-01"
+}
+```
 
-Idempotency:
-- duplicate same-owner request MAY be accepted as no-op.
+Success response payload:
+- Common required fields:
+  - `ok: true`
+  - `client_role`
+  - `token`
+  - `livekit_url`
+- For Publisher:
+  - `publisher_id`
+- For Listener:
+  - `listener_id`
 
 ---
 
-### 16.6. `stop` (Publisher -> Backend)
+### 16.5 `publisher_state`
 
-```json
-{
-  "type": "stop",
-  "schema_version": 1,
-  "ts": 1710000300,
-  "request_id": "stop-req-2",
-  "payload": {
-    "publisher_id": "hostA_0",
-    "channel_id": "channel_2",
-    "request_off_air_ts": 1710000299
-  }
-}
-```
+`publisher_state.payload` contains only:
+- `room_status`
+- `channels`
 
-Required:
-- `publisher_id`, `channel_id`, `request_off_air_ts`.
+`channels[]` for Publisher contains only:
+- `channel_id`
+- `channel_label`
+- `owner`
+- `listen`
 
 ---
 
-### 16.7. `publisher_state` (Backend -> Publisher)
+### 16.6 `listener_state`
 
-```json
-{
-  "type": "publisher_state",
-  "schema_version": 1,
-  "ts": 1710000400,
-  "request_id": "state-100",
-  "payload": {
-    "room_name": "Room A",
-    "room_status": "OPENED",
-    "channels": [
-      {
-        "channel_id": "channel_0",
-        "channel_label": "Floor",
-        "owner": null,
-        "listen": false
-      }
-    ]
-  }
-}
-```
+`listener_state.payload` contains only:
+- `room_status`
+- `channels`
+
+`channels[]` for Listener contains only:
+- `channel_id`
+- `channel_label`
+- `listen`
+
+Must NOT contain:
+- `owner`
+- i18n maps
+- legacy wrappers
 
 ---
 
-### 16.8. `listener_state` (Backend -> Listener)
+### 16.7 `i18n_library`
 
-```json
-{
-  "type": "listener_state",
-  "schema_version": 1,
-  "ts": 1710000401,
-  "request_id": "state-101",
-  "payload": {
-    "room_status": "OPENED",
-    "channels": [
-      {
-        "channel_id": "channel_1",
-        "channel_label": "English",
-        "listen": true
-      }
-    ]
-  }
-}
-```
+`i18n_library` is immutable runtime payload.
+It is set at deploy/import time.
+It is sent on connect/reconnect.
+It is not changed during event runtime.
+Backend sends the full library snapshot to both Publisher and Listener.
+Backend does not accept per-user language selection and does not choose language per user.
 
-Notes:
-- `owner` is intentionally excluded from Listener state.
-- i18n maps are not repeated in each `listener_state`; they are delivered via `i18n_library`.
+Required maps:
+- `room_name_i18n`
+- `custom_status_text_blocked_i18n`
+- `custom_status_text_closed_i18n`
+
+`listener_state` and `publisher_state` do not include i18n maps.
 
 ---
 
-### 16.9. `i18n_library` (Backend -> Publisher and Listener)
+### 16.8 `heartbeat`
 
-Sent on:
-- initial connect success
-- reconnect success
-- emergency override update/reset events (same message type, updated payload)
+Allowed for both clients.
+Envelope is required.
 
-```json
-{
-  "type": "i18n_library",
-  "schema_version": 1,
-  "ts": 1710000402,
-  "request_id": "i18n-1",
-  "payload": {
-    "library_version": 1,
-    "room_name_i18n": {
-      "en": "Room A",
-      "ru": "Зал А"
-    },
-    "custom_status_text_blocked_i18n": {
-      "en": "Temporarily blocked",
-      "ru": "Временно заблокировано"
-    },
-    "custom_status_text_closed_i18n": {
-      "en": "Room is closed",
-      "ru": "Зал закрыт"
-    }
-  }
-}
-```
+Listener heartbeat payload (recommended fields for backend stale-session authority):
+- `client_role: "listener"`
+- `selected_channel: string|null`
+- `playback_state: "IDLE" | "WAITING" | "PLAYING"`
 
-Rules:
-- base deploy dictionaries are immutable during event runtime;
-- emergency override modifies runtime payload only (in-memory backend override);
-- Publisher receives full library but renders `en` in MVP;
-- Listener performs language detection and local fallback (`exact tag -> base tag -> en`).
+Rule:
+- Backend waits `60 sec` for first ACTIVE PLAY trigger after Listener WS connect.
+- Listener sends heartbeat every `10 sec` only while ACTIVE PLAY is running (`WAITING` / `PLAYING`).
+- Backend uses Listener heartbeats only as activity signal for active PLAY stale-session control.
+- Listener does not decide stale timeout locally.
 
 ---
 
-### 16.10. `error` (Backend -> any client)
+### 16.9 `on_air` / `stop`
 
-```json
-{
-  "type": "error",
-  "schema_version": 1,
-  "ts": 1710000500,
-  "request_id": "onair-req-5",
-  "payload": {
-    "code": "ON_AIR_REJECTED_OWNER_MISMATCH",
-    "message": "channel owner is another publisher",
-    "retryable": false
-  }
-}
-```
+Publisher only.
+Envelope is required.
 
-Core error codes:
-- `INVALID_PIN`
-- `UNAUTHORIZED`
+Forced channel release rule:
+- no `force_off_air` WS message exists;
+- backend performs forced release as state transition only:
+  - set channel `owner = null`
+  - broadcast normal `publisher_state`
+- Publisher reacts only to `publisher_state` and stops local streaming when owner is no longer equal to own `publisher_id`;
+- Listener is not involved in forced off-air logic.
+
+---
+
+### 16.9.1 `reconnect_required` (Backend -> Listener)
+
+Direction:
+- Backend -> Listener only.
+
+Purpose:
+- explicit backend notification that current listener session is stale/reconnect-required
+  (for example missing active-PLAY heartbeat timeout).
+
+Canonical payload fields:
+- `ok: false`
+- `code: "LISTENER_SESSION_STALE"` or `code: "LISTENER_NO_ACTIVE_PLAY_TIMEOUT"`
+- `reason: string`
+- `listener_id: string` (optional but recommended)
+
+Listener behavior:
+- mark connection state as `STALE`;
+- do not start immediate tight-loop reconnect;
+- reconnect only by allowed triggers (`button click`, `visibilitychange -> visible`, `online`) plus UNAVAILABLE retry policy.
+
+---
+
+### 16.10 `error`
+
+Backend may send `error` for protocol/schema/business failures.
+
+Baseline codes:
 - `SCHEMA_VALIDATION_ERROR`
-- `ON_AIR_REJECTED_OWNER_MISMATCH`
-- `CHANNEL_NOT_FOUND`
-- `RATE_LIMITED`
-- `INTERNAL_ERROR`
-- `RECONNECT_REQUIRED`
-
-Retry baseline:
-- retryable=false: do not auto-retry (show operator/user state).
-- retryable=true: exponential backoff (`1s, 2s, 4s`, cap `10s`, jitter).
+- `INVALID_PIN`
+- `NOT_CONNECTED`
+- `UNKNOWN_CHANNEL`
+- `OWNER_MISMATCH`
+- `RECONNECT_TOO_FAST`
+- `LISTENER_OVERFLOW`
+- `CONNECTION_RATE_LIMIT`
 
 ---
 
-### 16.11. Concurrency and ordering constraints
+### 16.11 Hard ban of old formats
 
-- Backend must use snapshot-send pattern:
-  - lock state
-  - copy immutable snapshot
-  - unlock
-  - send snapshot
-- sending while holding lock is forbidden.
-- Clients must ignore stale state by comparing `ts` and local monotonic order.
+Explicitly forbidden:
+- messages without `schema_version`
+- top-level fields instead of `payload`
+- `type: "state"`
+- `type: "connected"`
 
----
-
-### 16.12. Compatibility policy
-
-- `schema_version` for `publisher_state` and `listener_state` may evolve independently.
-- backward-compatible additions:
-  - new optional fields allowed;
-  - unknown optional fields ignored by receivers.
-- breaking changes:
-  - require new `schema_version`;
-  - require acceptance checklist update before rollout.
-
----
-
-### 16.13. Validation checklist (minimum)
-
-Before stage completion:
-1) connect/reconnect success for Publisher and Listener;
-2) `i18n_library` delivered to both client roles on connect/reconnect;
-3) `publisher_state` / `listener_state` pass required-field validation;
-4) error codes are deterministic for invalid PIN / owner mismatch / schema error;
-5) no state lock held during send operations;
-6) rapid reconnects do not break schema processing.
-
----
-
-### 16.14. Deferred advanced protocol topics (not blocking Stage VII-IX)
-
-Moved to later stages / future features:
-- WS ACK/NACK flow;
-- request_id deduplication cache;
-- reconnect session resume;
-- advanced retry policies and close-code strategy.
+Clients do not support old messages.
+Any old message is protocol error.

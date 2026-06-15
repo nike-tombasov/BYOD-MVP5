@@ -1,22 +1,18 @@
 # To be discussed
 
-## 1. WebSocket protocol
-
-What to be included?
-
-## 2.  Errors/retries
+## 1.  Errors/retries
 
 Message contract and error/retry behavior are not formalized
 
-## 3. Listener rapid channel button switching
+## 2. Listener rapid channel button switching
 
 Listener must use selective subscribe only (good), but no debounce/backoff policy for rapid channel button switching. Risk: subscription churn.
 
-## 4. Heartbeats
+## 3. Heartbeats
 
 Real timing for offline Publisher and other 
 
-## 5. Listener overflow protection baseline
+## 4. Listener overflow protection baseline
 
 Decision direction:
 - should be implemented in MVP Stage VII-IX (backend admission control + listener active PLAY heartbeat).
@@ -24,8 +20,4 @@ Decision direction:
 
 Unresolved question: Listener UX note to reload page or autoreload/reconnect after timeout?
 
-## 6. Owner return after reconnect 
-
-## 7. VPS
-1) где будет папка с backend_data и как backend её найдёт?
-2) 
+## 5. Owner return after reconnect 

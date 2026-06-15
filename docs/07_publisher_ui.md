@@ -1,5 +1,8 @@
 ## 8. Publisher UI
 
+WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+This document keeps Publisher semantics/UX/operations only and must not redefine wire format.
+
 ### 8.1. Сценарии использования в комнате:
 
 * один PC - один Publisher - один и более streaming channel
@@ -84,14 +87,14 @@ sounddevice.query_devices()
 5) room technician выбирает audio device в выпадающих списках по каждому channel, планируемым to stream
 6) room technician самостоятельно убеждается, что нет sample rate ошибки и RMS analyzer показывает наличие звука
 7) room technician нажимает по подготовленным channels ON AIR button (UI channel status меняется на Connecting...) и самостоятельно убеждается, что нет device error, ожидает подтверждения от backend
-8) backend регистрирует owner и рассылает актуальный state
+8) backend регистрирует owner и рассылает актуальный `publisher_state`
 9) если owner == self publisher_id, то publishes track and start sending frames, and room technician самостоятельно убеждается, что UI channel status сменился на STREAMING
 10) автоматическая отработка Heartbeats
 11) room technician нажимает STOP button по тем channels, где publish\stream больше не требуется
 12) room technician визуально контролирует состояние звука (RMS analyzer) и статуса соединений (server connection, room and streaming channels)
 13) в случае ошибок или необходимости сменить room - закрывает и запускает Publisher заново
 14) при завершении работы может просто закрыть Publisher UI (без необходимости STOP streaming)
-15) backend регистрирует owner == null при получении STOP from Publisher по конкретному channel_id (или закрытии Publisher UI) и рассылает актуальный state, status channel_id меняется на FREE
+15) backend регистрирует owner == null при получении STOP from Publisher по конкретному channel_id (или закрытии Publisher UI) и рассылает актуальный `publisher_state`, status channel_id меняется на FREE
 
 ### 8.6. Блок IP+PIN
 
@@ -127,7 +130,7 @@ room_status никак не влияет на работу Publisher
 - ON AIR buttons disabled
 - audio device dropdown disabled
 
-После CONNECT отображаются только channel_id, пришедшие от backend state. Неиспользуемые channel_id скрываются из UI.
+После CONNECT отображаются только channel_id, пришедшие от backend `publisher_state`. Неиспользуемые channel_id скрываются из UI.
 Publisher UI для Stage V строится сразу на 32 channel_id (channel_0...channel_31). Окно фиксированного размера, блок channels работает через vertical scroll.
 
 Колесо мыши по device dropdown без раскрытия списка отключено специально (защита от случайной смены устройства при большом числе channels).
@@ -136,7 +139,7 @@ Publisher UI для Stage V строится сразу на 32 channel_id (chan
 
 Кнопка ON AIR по умолчанию серая, после STOP streaming  - серая. При audio device == None кнопка ON AIR disabled (как и при samplerate error), backend ON AIR request не отправляется. NO DEVICE можно показать при наведении мыши на disabled ON AIR кнопку (подсказка room technician).
 
-UI channel status отрабатываются внутри Publisher UI на основании state от backend и прочих внутренних состояний.
+UI channel status отрабатываются внутри Publisher UI на основании `publisher_state` от backend и прочих внутренних состояний.
 
 UI channel statuses (цвета):
 * FREE (зелёный)
@@ -154,15 +157,19 @@ UI channel status “Device error. Check system samplerate (48000 Hz only)” о
 * FREE отображается, если в backend owner == null
 * STREAMING отображается, если в backend owner == self publisher_id
 * NO DEVICE отображается в момент нажатия ON AIR button и если устройство не выбрано (None) (сменяется на актуальный UI channel status через 5 секунд)
-* ENGAGED отображается, если в state от backend owner != self publisher_id
+* ENGAGED отображается, если в `publisher_state` от backend owner != self publisher_id
 * DEVICE ERROR отображается в случае иных audio device ошибок
 * Connecting... отображается сразу после нажатия на ON AIR button и до получения owner == self publisher_id, а также в процессе восстановления соединения после обрывов связи
 
 ### 8.9. Interlock логика, UI channel status ENGAGE и поведение ON AIR, STOP 
 
-При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. На время ожидания owner==self и во время STREAMING список audio devices по этому channel блокируется (no hot switching). Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового state (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
+При нажатии на ON AIR button в backend отправляется связка информации о channel_id, publisher_id, on_air_ts. After push button сразу должна стать жёлтой, button label смениться на STOP. На время ожидания owner==self и во время STREAMING список audio devices по этому channel блокируется (no hot switching). Как только backend зарегистрировал channel_id owner, Publisher на основе полученного нового `publisher_state` (где owner == self publisher_id) publishes and start sending frames into LiveKit и меняет UI channel status на STREAMING, ON AIR button становится красной.
 
-Другие room Publisher на основе полученного нового state (где owner != self publisher_id) меняют UI channel status на ENGAGED. Кнопка ON AIR становится не кликабельной, синего цвета.
+Другие room Publisher на основе полученного нового `publisher_state` (где owner != self publisher_id) меняют UI channel status на ENGAGED. Кнопка ON AIR становится не кликабельной, синего цвета.
+
+Forced release behavior (state-driven only):
+- Publisher does not expect any separate WS command for forced off-air;
+- if incoming `publisher_state` shows owner changed from self to another value or `null`, Publisher stops local streaming for that channel and updates UI.
 
 При нажатии на STOP:
 
@@ -180,7 +187,7 @@ send stop to backend (channel_id, publisher_id, off_air_ts)
 ↓
 backend owner = null
 ↓
-backend send state
+backend send publisher_state
 ↓
 publishers update UI
 ↓
@@ -279,7 +286,7 @@ Interaction specifics:
 - If samplerate != 48000, ON AIR button is disabled.
 - NO DEVICE may be shown on mouse hover over disabled ON AIR button (NONE device case).
 - After mouse leave from ON AIR button, temporary NO DEVICE hint must be reverted to last actual channel status immediately.
-- After STOP flow and owner reset to null, button label must return to `ON AIR` immediately from state update.
+- After STOP flow and owner reset to null, button label must return to `ON AIR` immediately from `publisher_state` update.
 
 Pre-connect and channel visibility:
 - Before CONNECT:
@@ -289,8 +296,8 @@ Pre-connect and channel visibility:
   - ON AIR disabled
   - device dropdown disabled
 - After CONNECT:
-  - only channels present in backend state are visible.
-  - channels absent in backend state are hidden from UI.
+  - only channels present in backend `publisher_state` are visible.
+  - channels absent in backend `publisher_state` are hidden from UI.
 
 ### 8.13. Visual specification details (implemented values)
 

@@ -1,5 +1,8 @@
 ## 10. Listener Web UI (HTML)
 
+WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+This file describes Listener behavior/UX and must not conflict with canonical wire schema.
+
 ### 10.1. Внешний вид. 
 
 User должен иметь минимальный интерфейс. Блоки:
@@ -18,7 +21,7 @@ User должен иметь минимальный интерфейс. Блок
 3) автоматическое получение от backend channel list
 4) automatic receive immutable `i18n_library` on connect/reconnect; initialize generation with status custom text (при status OPENED ничего не отображать), room_name, отображение channel buttons с режимом listen == true
 5) нажатие на желаемый channel button (PLAY ACTION), button меняет цвет (подсвечивается), автоматическая обработка получения звука только по этому channel
-6) channel button не меняет цвет (не гаснет) за исключением перезапуска web page, перевода room status в CLOSED
+6) channel button не меняет цвет (не гаснет) сам за исключением перезапуска web page, перевода room status в CLOSED
 7) нажатие другого channel button (STOP ACTION для предыдущего channel и PLAY ACTION для нового channel) - предыдущая channel button меняет цвет обратно (гаснет), новая меняет цвет (подсвечивается) - звук с предыдущего channel button прекращает поступать для user, поступает только звук с новго channel button
 8) нажатие на current channel button (STOP ACTION для текущего воспроизведения channel), channel button меняет цвет обратно (гаснет), звук перестаёт поступать для user
 9) heartbeats, горячее изменение channel names от backend
@@ -159,7 +162,7 @@ When switching or stopping channel Listener MUST:
 If this is not done, browser will continue playback.
 
 Implementation priority note:
-- это обязательный hardening-блок Stage IX (не переносить далее), т.к. rapid-click гонки приводят к недетерминированным переходам состояния.
+- rapid-click race hardening is part of permanent listener baseline, because these races create non-deterministic state transitions.
 
 ### 10.7. Key technologies
 
@@ -191,6 +194,32 @@ Implementation priority note:
 * Listener MUST NOT rely only on trackSubscribed
 * Listener MUST check existing publications after connect
 * Listener uses button as the only trigger for playback - PLAY ACTION, STOP ACTION
+* Listener does not receive or process any separate forced off-air command; it reacts only to regular room/channel state transitions.
+
+### 10.8A. Canonical room_status behavior (permanent)
+
+These rules are permanent listener canon (not stage-local):
+
+- `BLOCKED`:
+  - stop current sound immediately;
+  - keep channel buttons clickable;
+  - no sound is played while status is BLOCKED.
+
+- `CLOSED`:
+  - stop current sound immediately;
+  - unpush current active button;
+  - lock controls until status returns to OPENED;
+  - no sound is played while status is CLOSED.
+
+- Return to `OPENED` (both paths):
+  - listener must continue working without page reload;
+  - if button stayed active from BLOCKED path, sound resumes for that channel;
+  - reconnect path is used only when backend marks session stale/reconnect-required.
+
+Language/i18n rendering baseline (permanent):
+- Listener auto-detects browser language with exact->base->`en` fallback.
+- Backend sends full immutable `i18n_library` on connect/reconnect.
+- Backend does not select language per listener.
 
 ### 10.9. Спецификация автоопределения языка Listener UI (MVP)
 
@@ -204,7 +233,7 @@ Implementation priority note:
 1.1) Эти словари приходят как immutable `i18n_library` base payload (state-independent).
 2) Backend **не получает** `ui_lang` и **не выбирает** язык за Listener.
 3) Выбор языка выполняется только в Listener web page.
-4) Status texts после deploy считаются фиксированными; изменение допускается только emergency override через manual console command (независимо для BLOCKED/CLOSED).
+4) Status texts после deploy считаются фиксированными и не меняются во время мероприятия.
 
 #### 10.9.1 Обязательные языки
 
@@ -250,17 +279,17 @@ else:
 
 Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
 
-Emergency override details: см. docs/08_backend.md, раздел 9.14.
-
-
+Override details: см. docs/08_backend.md, раздел 9.14.
 
 ### 10.10. Active PLAY heartbeat control
 
-Rules for MVP Stage IX:
-- when listener has active PLAY state, web page sends heartbeat every `10 sec`;
-- if backend does not receive heartbeat for `60 sec`, listener session must switch to reconnect-required state;
+Permanent baseline rules:
+- after backend WS connect, backend waits `60 sec` for first ACTIVE PLAY trigger;
+- Listener sends heartbeat every `10 sec` only when ACTIVE PLAY is running (`WAITING` / `PLAYING`);
+- if backend does not receive heartbeat for `60 sec` during active PLAY, **backend** marks listener session as stale/reconnect-required;
 - heartbeat control is for active playback monitoring and room overflow protection.
-- if session timeout happened while no active PLAY and user returns to the page/tab, web page must auto-reconnect backend WS (or auto page reload fallback).
+- Listener must NOT run its own local 60-second stale decision timer based on generic incoming WS silence.
+- if session timeout happened while no active PLAY and user returns to the page/tab, recovery is allowed by reconnect triggers and UNAVAILABLE retry policy.
 
 Listener UX expectation:
 - on reconnect-required state user sees reconnect flow without manual page reload where technically possible.
@@ -273,7 +302,7 @@ Listener maintains `connectionState`:
 - `RECONNECTING`
 
 `connectionState` becomes `STALE` when:
-- heartbeat timeout;
+- backend `reconnect_required` message (stale session);
 - backend websocket disconnect;
 - LiveKit disconnect;
 - token expiry.
@@ -282,6 +311,7 @@ Reconnect triggers:
 1) mandatory: channel button click;
 2) optional: `document.visibilitychange` -> page becomes visible;
 3) optional: network restored event.
+4) automatic retry loop only while backend availability state is `UNAVAILABLE`.
 
 On PLAY ACTION:
 ```
@@ -296,8 +326,12 @@ else:
 Reconnect fallback:
 ```
 if reconnect fails:
-    reload page
+    keep retry policy loop (no tight spam), optional reload fallback
 ```
+
+Retry policy (canonical):
+- while `RETRYING`: reconnect every `3 sec`;
+- while `UNAVAILABLE`: reconnect every `10 sec`.
 
 Expected UX result:
 - after STOP ACTION, return from background, idle on opened page, or other stale cases, user can press channel button once and receive audio again without extra manual recovery steps.

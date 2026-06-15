@@ -1,93 +1,74 @@
 ## 19. Stage VII-IX acceptance checklist (formal)
 
 Purpose:
-- provide transparent go/no-go criteria before moving to Stage X deploy focus.
+- verification artifact for go/no-go before Stage X;
+- this file verifies canon, it does not define primary architecture behavior.
 
 Result statuses:
 - `PASS`
 - `FAIL`
 - `DEFERRED_WITH_RISK_NOTE`
 
----
+Canonical behavior sources:
+- backend: `docs/08_backend.md`
+- listener UX/state: `docs/09_listener_ui.md`
+- WS wire protocol: `docs/15_ws_schema_v1.md`
 
-### 19.1 Stage VII — Backend hardening
-
-1) WS contract
-- `docs/15_ws_schema_v1.md` implemented message-by-message.
-- required fields validated.
-- deterministic `error.code` behavior for invalid PIN / owner mismatch / schema validation.
-
-2) Snapshot-send lock rule
-- confirmed no network send while state lock is held.
-
-3) Persistence
-- `docs/16_backend_persistence_json_v1.md` implemented.
-- restart recovery test: load persisted state and continue operation.
-
-4) CSV import
-- `docs/17_csv_import_schema_v1.md` validation passes.
-- invalid CSV rejected atomically (no partial apply).
-- `target_capacity` is imported and persisted as immutable event parameter.
-
-5) Operator commands
-- room_status / recording / label / listen / override commands work without restart.
-
-6) Recording
-- files created per channel with required naming and format.
-- CLOSED state stops recording deterministically.
+Date of Stage VII closure record: **April 13, 2026**.
+Date of Stage VIII closure record: **April 14, 2026**.
+Date of Stage IX closure record: **April 19, 2026**.
 
 ---
 
-### 19.2 Stage VIII — Listener BLOCKED/CLOSED behavior
+### 19.1 Stage VII — Backend hardening (verification)
 
-1) BLOCKED
-- immediate audio stop.
-- buttons remain clickable.
-- no audio until OPENED.
+1) WS contract — **PASS**
+- schema v1 implemented and validated against canonical WS doc.
 
-2) CLOSED
-- immediate audio stop.
-- current button unpushed.
-- controls locked.
+2) Snapshot-send lock rule — **PASS**
+- verified no network send while state lock is held.
 
-3) OPENED return
-- resume without page reload.
+3) Persistence — **PASS**
+- persistence schema + restart recovery verified.
 
-4) Emergency override texts
-- BLOCKED/CLOSED override applied independently.
+4) JSON import — **PASS**
+- atomic validation/apply behavior verified;
+- successful import fully replaces previous metadata snapshot;
+- i18n library persisted and sent on connect/reconnect.
+
+5) Operator commands — **PASS**
+- room status / recording markers / labels / listen switches work without restart.
+
+6) Recording policy for Stage VII closure — **PASS**
+- real backend file recording deferred to future features after MVP pilots;
+- current baseline keeps only recording markers/placeholders.
 
 ---
 
-### 19.3 Stage IX — Listener resilience and compatibility
+### 19.2 Stage VIII — Listener room_status behavior (verification)
 
-1) Token reconnect policy
-- no unnecessary token request while stable connection.
+1) BLOCKED path — **PASS**
+2) CLOSED path — **PASS**
+3) OPENED return without reload — **PASS**
+4) Immutable i18n status text rendering — **PASS**
+5) WS schema v1 cleanup + legacy removal — **PASS**
 
-2) Local SDK wiring
-- local pinned SDK `src/listener/vendor/livekit-client.umd.1.15.13.js` is primary path;
-- CDN used only as fallback.
+All checks verified against canonical listener/WS docs.
 
-3) Race guards
-- attach/detach flags and timeout recovery verified by rapid-click tests.
+---
 
-4) Active PLAY heartbeat
-- 10 sec heartbeat and 60 sec timeout path verified end-to-end.
+### 19.3 Stage IX — Listener resilience/compatibility (verification)
 
-5) No-active-PLAY return path
-- after background timeout with no active PLAY, return to page triggers auto-reconnect (or auto-reload fallback).
+1) Token reconnect policy — **PASS**
+2) Local pinned SDK wiring — **PASS**
+3) Attach/detach race guards — **PASS**
+4) Active PLAY heartbeat timeout flow — **PASS**
+5) No-active-PLAY return path — **PASS**
+6) Recovery state machine and reconnect triggers — **PASS**
+7) Mobile system player behavior baseline — **PASS**
+8) Browser matrix baseline — **PASS**
 
-6) Connection recovery state machine
-- `CONNECTED` -> `STALE` -> `RECONNECTING` transitions verified for heartbeat timeout / WS disconnect / LiveKit disconnect / token expiry.
-- channel button click always works as mandatory reconnect trigger in `STALE`.
-
-7) Mobile system player behavior
-- on Android/iOS background pause->play before heartbeat timeout resumes last selected channel.
-
-8) Browser matrix (minimum)
-- Chrome latest-1 (Windows, Android)
-- Edge latest-1 (Windows)
-- Safari latest-1 (iOS/macOS)
-- pass criteria: connect, play, channel switch, reconnect, blocked/closed transitions.
+All checks verified against canonical listener/WS docs.
 
 ---
 

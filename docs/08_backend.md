@@ -1,19 +1,27 @@
 ## 9. Backend - FastAPI
 
+WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+This file describes backend semantics/operations and must not conflict with canonical wire schema.
+
 pip install fastapi uvicorn websockets pyjwt livekit-api
 
 ### 9.1. Содержание базы данных Backend, управляемых admin
 
 Persistence formalization:
 - canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
-- canonical file for admin CSV import format and validation: `docs/17_csv_import_schema_v1.md`.
+- canonical file for admin JSON import format and validation: `docs/17_json_import_schema_v1.md`.
+
+Startup/import persistence policy:
+- after restart backend must keep last successful imported room metadata;
+- only clean deploy (no import yet) uses immutable bootstrap defaults;
+- each new successful JSON import fully replaces previous room metadata snapshot (no metadata mixing).
 
 1) room PIN (6-тизначный код)
 2) channel number - channel_id по форме channel_0, channel_1, channel_2...
 3) channel name - channel_label для каждого channel_id - не используется в SFU WebRTC и требуется только для визуального отображения в UI
 4) режим прослушивания channel - listen (false - по умолчанию для channel_0, Reserve 1 и Reserve 2, и true - по умолчанию для всех остальных) - для каждого channel_id
 5) room name - room_name
-6) room status - room_status (close - по умолчанию во время запуска сервера)
+6) room status - room_status (BLOCKED по умолчанию при clean deploy до первого импорта)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
 8) target_capacity - целевое количество Listener для sizing/лимитов VPS (задаётся при deploy и не изменяется в runtime мероприятия)
 
@@ -50,11 +58,16 @@ LiveKit API credentials policy:
 
 ### 9.3. Room status (room_status)
 
-Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на работу Publisher.
+Admin изменяет room status вручную. Room status не приостанавливает streaming, publishing, sending frames и никак не влияет на interlock owner-логику Publisher.
 
-* OPENED - start channel mult-itrack recording, listener может получать звук, subscribe on tracks
-* BLOCKED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, status custom text
-* CLOSED - приостановка получения звуков для listener, forced unsubscribe до возвращения room status OPENED, стоп записи channel multi-track recording, web page status custom text
+* OPENED — listener может получать звук по canonical listener rules.
+* BLOCKED — listener не получает звук; показывается `custom_status_text_blocked`.
+* CLOSED — listener не получает звук; показывается `custom_status_text_closed`.
+
+Recording clarification for current MVP baseline:
+- real backend multitrack recording is **not implemented** in current MVP baseline;
+- backend currently keeps only recording state markers/runtime control placeholders.
+- real recording implementation is moved to future features after MVP pilots.
 
 ### 9.4. Регистрация подключений
 
@@ -99,7 +112,8 @@ else:
 
 ### 9.6. Interlock логика
 
-Защититься от гонок (atomic updates). Лимитировать давность поступившего запроса в 30 секунд при расхождение request on air timestamp от current time на случай зависания Publisher или обрывов интернет соединения (ввиду потенциальной неактуальности, чтобы не оборвать актуальный Publisher).
+Защититься от гонок (atomic updates). 
+Лимитировать давность поступившего запроса в 30 секунд при расхождение request on air timestamp от current time на случай зависания Publisher или обрывов интернет соединения (ввиду потенциальной неактуальности, чтобы не оборвать актуальный Publisher).
 Первый Publisher, чей запрос ON AIR первым атомарно зафиксирован backend server time, становится owner. request_on_air_ts от Publisher хранится только для логов и не используется для выбора owner (чтобы избежать ошибок из-за рассинхрона часов на разных PC). Остальные Publishers получат статус ENGAGE, при этом кнопка ON AIR станет не активна вплоть до смены owner на null.
 
 Наличие тишины в channel не является браком в момент переключений, когда один Publisher STOP (unpublish), а второй Publisher ON AIR (publish).
@@ -114,7 +128,7 @@ backend sets owner(channel_id)
 ↓
 backend sets channel_on_air(channel_id) = on_air
 ↓
-backend broadcasts state
+backend broadcasts `publisher_state`
 ↓
 publishers update UI 
 ↓
@@ -136,7 +150,7 @@ backend sets owner(channel_id) = null
 ↓
 backend sets channel_on_air(channel_id) = free
 ↓
-backend broadcasts state
+backend broadcasts `publisher_state`
 ↓
 publishers update UI
 ↓
@@ -162,6 +176,11 @@ publishers sets UI channel status FREE
 5) Publisher/offline  
 Если отсутствие heartbeats 30 секунд по этому publisher_id, то в каждом channel_id сменить в owner его publisher_id на null  
 
+Forced OFF AIR policy:
+- console command `off_air <channel_id>` performs backend state transition only;
+- backend sets `owner = null` and `off_air_ts`, persists state, then broadcasts normal `publisher_state`/`listener_state`;
+- backend does not send any extra direct WS command for this flow.
+
 ### 9.8. Взаимодействие с Listener по WebSocket
 
 Listener использует WebSocket для:
@@ -174,19 +193,16 @@ Listener НЕ использует backend state (и в частности owner
 
 Использовать CORS
 
-### 9.9. Channel multi-track recording
+### 9.9. Channel multi-track recording (current baseline clarification)
 
-После перевода room status to OPENED recording стартуется автоматически. Старт должен быть одновременным по всем channel_id
+Current MVP baseline:
+- backend does **not** create real multitrack audio files yet;
+- backend may keep recording state markers/logging only;
+- operator commands related to recording affect markers/placeholders, not real file pipeline.
 
-Требования к записи:
-* MP3 
-* 192 kbps
-* stereo
-* 48000 hz
-* каждый channel_id - отдельный файл mp3
-* имя файла - timestamp-channel_id-channel_label
-
-При изменении channel_label во время recording изменение имени файлов аудиозаписей происходит только при ручном перезапуске записи или при череде смены room status OPENED -> CLOSED -> OPENED.
+Future feature (after MVP pilots):
+- real backend multitrack recording implementation;
+- format, bitrate, file naming and lifecycle policy will be finalized in future stages.
 
 ### 9.10. Admin Web UI (в будущем)
 
@@ -200,8 +216,8 @@ Admin управляет backend в web UI. Функциональные воз�
 3) изменение room status (OPENED, CLOSED, BLOCKED)
 4) визуальный room control - суммарное количество listener (counter), суммарное общее количество subscribed listeners (active  users), длительность статуса OPENED (stopwatch), recording status (on/off)
 5) визуальный контроль channels status по каждому channel_id - текущий owner, длительность последнего on_air (stopwatch), количество subscribed listeners (active user), общее количество subscribes (counter)
-6) возможность OFF AIR по каждому channel_id(owner == null, рассылка state)
-7) ручной старт/стоп channel multi-track recording (автоматически запускается при переходе комнаты в статус OPENED и останавливается при переходе в CLOSED)
+6) возможность OFF AIR по каждому channel_id(owner == null, рассылка `publisher_state`/`listener_state`)
+7) управление recording markers сейчас, и real channel multi-track recording после отдельной future implementation
 8) состояние room VPS или всех VPS мероприятия (online, CPU, RAM, SSD, LAN/WAN)
 9) визуальный контроль отдельного списка всех Publisher (publisher_id, publisher_online, publisher_connection_ts, last_seen_ts, publisher_ip, number of on air channels)
 10) сохранение и download многоуровневой итоговой statistics
@@ -210,7 +226,7 @@ Admin управляет backend в web UI. Функциональные воз�
 
 ### 9.11. State (separated)
 
-Backend рассылает **два разных state**:
+Backend рассылает **два разных state-сообщения**:
 
 1) `publisher_state`:
 - room_name (English)
@@ -220,13 +236,9 @@ Backend рассылает **два разных state**:
 2) `listener_state`:
 - room_status
 - channels (channel_id, channel_label, listen)
-- i18n maps:
-  - room_name_i18n
-  - custom_status_text_blocked_i18n
-  - custom_status_text_closed_i18n
 
-Schema evolution rule:
-- `publisher_state` и `listener_state` используют независимые `schema_version` (integer) для будущей разработки.
+Schema rule:
+- `publisher_state` и `listener_state` используют общий envelope schema v1 из `docs/15_ws_schema_v1.md`.
 
 Publisher использует owner для interlock логики.
 Listener НЕ использует owner для управления аудио.
@@ -264,8 +276,7 @@ Rules:
 3) backend не получает `ui_lang` и не выбирает язык интерфейса за клиентов;
 4) выбор языка выполняет только клиентская сторона (Listener page / Publisher UI rendering policy);
 5) i18n maps отправляются на connect/reconnect, не рассылаются в каждый state update;
-6) deploy dictionaries immutable during event runtime, кроме emergency override manual console command;
-7) override применяется независимо для BLOCKED и CLOSED текстов.
+6) deploy dictionaries immutable during event runtime.
 
 Mandatory dictionaries for each event:
 - `en` (required)
@@ -297,34 +308,17 @@ Publisher получает полный `i18n_library`, но в MVP рендер
 
 JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
+i18n/import and persistence consistency note:
+- i18n library bootstrap/import format is formalized in:
+  - `docs/17_json_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
+  - `docs/16_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
+- MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 
-### 9.14. Emergency override (runtime status texts)
 
-Цель: временная коррекция текстов статусов во время мероприятия без redeploy.
+### 9.14. Status texts policy
 
-Правила:
-- Override хранится только в памяти backend (in-memory only).
-- Override применяется ко всем listeners текущей комнаты.
-- Override сбрасывается при restart backend.
-- Override для BLOCKED и CLOSED независимы друг от друга.
-- Override reset применяется ко всем listeners текущей комнаты и рассылает исходные словари текстов статусов.
-
-Console commands:
-```
-override blocked "<text>"
-override closed "<text>"
-override reset blocked
-override reset closed
-```
-
-Поведение:
-1) `override blocked` меняет только runtime текст для BLOCKED.
-2) `override closed` меняет только runtime текст для CLOSED.
-3) `override reset blocked` возвращает BLOCKED текст к deploy value.
-4) `override reset closed` возвращает CLOSED текст к deploy value.
-
-Ограничение:
-- Override не изменяет deploy configuration files и не сохраняется после restart.
+Status texts for BLOCKED/CLOSED come from immutable deploy/import `i18n_library`.
+Runtime text mutation is not used in current project.
 
 ### 9.15. Protection from unwanted room overflow by Listeners
 
@@ -341,12 +335,21 @@ override reset closed
 - для одного listener identity/IP новый reconnect допускается только при интервале `> 2 sec`.
 
 4) Active PLAY heartbeat control:
-- Listener web page отправляет heartbeat каждые `10 sec`, когда активен PLAY режим.
-- если heartbeat отсутствует `60 sec`, backend переводит listener в reconnect-required состояние.
+- после успешного backend WS connect backend ждёт `60 sec` первого ACTIVE PLAY trigger;
+- Listener web page отправляет heartbeat каждые `10 sec` только при ACTIVE PLAY (`WAITING`/`PLAYING`);
+- backend является единственным authority для stale-session решения:
+  - если ACTIVE PLAY не был запущен за `60 sec` после connect, backend переводит listener session в reconnect-required и закрывает session;
+  - если heartbeat отсутствует `60 sec` при active PLAY, backend помечает session как stale/reconnect-required;
+  - backend удаляет stale listener из active session tracking/capacity accounting;
+  - backend отправляет `reconnect_required` (если WS ещё writable), иначе просто закрывает/очищает session.
 
 5) No-active-PLAY timeout recovery:
-- если Listener ушёл в background без активного PLAY и backend WS-сессия считается потерянной, при возврате user на страницу выполняется auto-reconnect к backend;
-- fallback допускается как auto page reload, если reconnect flow не восстановил сессию штатно.
+- Listener не решает stale по локальному 60-sec timer на основе отсутствия generic inbound WS traffic;
+- reconnect Listener запускается только по allowed triggers:
+  - `visibilitychange -> visible`,
+  - `online`,
+  - channel button click,
+  - плюс bounded auto-retry policy while `UNAVAILABLE`.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.

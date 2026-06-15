@@ -2,6 +2,10 @@
 
 This repository contains the full technical specification of the BYOD Audio Distribution System.
 
+Current status: MVP10 supports a single-node Ubuntu Server 22.04 LTS VPS pilot
+with self-hosted LiveKit. Stage X is completed; Stage XI load and capacity
+characterization is planned but not implemented.
+
 IMPORTANT:
 1. Read hard_rules.md first
 2. Then read system architecture.md files in order
@@ -28,12 +32,34 @@ Documentation list:
 * 14_open_issues.md
 * 15_ws_schema_v1.md
 * 16_backend_persistence_json_v1.md
-* 17_csv_import_schema_v1.md
+* 17_json_import_schema_v1.md
 * 18_stage_vii_ix_acceptance_checklist.md
 * 19_ux_scenarios.md
+* 20_unresolved_bugs.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md
 * dev_environment.md
 * roadmap.md
 * legacy_readme.md
+
+
+## Stage X Ubuntu pilot package
+
+Deploy package path: `deploy/stage_x_ubuntu_pilot`
+
+Operator docs:
+- `deploy/stage_x_ubuntu_pilot/docs/deploy_guide.md`
+- `deploy/stage_x_ubuntu_pilot/docs/smoke_test_guide.md`
+- `deploy/stage_x_ubuntu_pilot/docs/incident_quick_actions.md`
+- `deploy/stage_x_ubuntu_pilot/docs/env_variables.md`
+
+Backend logging contract:
+- `docs/21_backend_logging_contract_stage_x.md`
+
+Completed-stage snapshot:
+- `legacy/stage_x_ubuntu_pilot/`
+
+Stage X is a public-IPv4, HTTP-only pilot without a domain. Domain setup, TLS,
+production monitoring, scaling, load balancing, and multi-node deployment are
+future production-hardening work and are not Stage X requirements.

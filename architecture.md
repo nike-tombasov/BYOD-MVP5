@@ -72,8 +72,8 @@ docs/15_ws_schema_v1.md
 21. Backend persistence JSON schema v1
 docs/16_backend_persistence_json_v1.md
 
-22. CSV import schema v1
-docs/17_csv_import_schema_v1.md
+22. JSON import schema v1
+docs/17_json_import_schema_v1.md
 
 23. Stage VII-IX acceptance checklist
 docs/18_stage_vii_ix_acceptance_checklist.md
@@ -81,7 +81,10 @@ docs/18_stage_vii_ix_acceptance_checklist.md
 24. UX scenarios
 docs/19_ux_scenarios.md
 
-25. Legacy implementations
+25. Unresolved bugs
+docs/20_unresolved_bugs.md
+
+26. Legacy implementations
 legacy/legacy_readme.md
 
 Core rules:

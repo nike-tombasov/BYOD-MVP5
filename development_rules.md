@@ -1,4 +1,4 @@
-# Development chat rules
+# Development chat rules for GPT models
 
 1. Обновление кода всегда целиком. Никаких рваных изменений строк по-штучно. Так мы будем контролировать версии.
 
@@ -16,3 +16,5 @@
 7. Файл docs/14_open_issues.md не редактируем по ходу обычной разработки. Все спорные/неясные вопросы сначала обсуждаем в чате. В docs/14_open_issues.md добавляем только те пункты, по которым не достигнут консенсус или после нескольких итераций код стабильно падает. Каждое решённое issue должно завершаться обновлением основной спецификации.
 
 8. Файл tbd.md не применяется в анализе и предназначен для личных заметок руководителя проекта. Не в носить в нем изменения. 
+
+9. Do not replace VPS deployment instructions with Docker, Kubernetes, cloud-managed services, reverse proxies other than nginx, or alternative operating systems unless explicitly requested. Assume Ubuntu 22.04 LTS VPS as the primary deployment target.

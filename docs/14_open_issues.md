@@ -4,62 +4,64 @@ Rules for docs/14_open_issues.md:
 - This file is updated only by special request.
 - All new ambiguities are discussed in chat first.
 - Only unresolved items after discussion are written here.
+- This file is not a second architecture spec.
 
-### 15.1 Resolution log (April 8, 2026)
+### 15.1 Resolution log (short)
 
-By decision, previous items 15.1–15.8 are moved out of open unresolved backlog:
+Resolved and moved to canonical docs/checklists:
+- i18n transport behavior on connect/reconnect;
+- separated `publisher_state` / `listener_state` protocol behavior;
+- Stage VII-IX WS schema hardening and strict handshake cleanup;
+- Listener race-hardening baseline rules.
+- Stage X clean Ubuntu 22.04 LTS VPS deployment path;
+- required deployment and validation of the pinned Listener SDK file
+  `vendor/livekit-client.umd.1.15.13.js`;
+- backend and VPS connection diagnostics, including the diagnostics collector;
+- visible Publisher connection and exception logging in `logs.txt`;
+- Listener request-ID fallback when `crypto.randomUUID` is unavailable on an
+  HTTP/IP origin.
 
-1) Minor mismatches (heartbeats / `channel_0 listen=false` / deploy default `room_status=CLOSED` / JWT lifetime consistency)
-- moved to active workflow and acceptance checks in `roadmap.md` Stage VII + Stage IX;
-- canonical behavior remains pinned in `docs/04_channel_model.md`, `docs/08_backend.md`, `docs/10_scaling.md`.
-
-2) LiveKit versions policy
-- resolved by explicit pinned compatibility matrix in `hard_rules.md` and `docs/06_livekit_engine.md`;
-- Listener fallback version pin added in `docs/09_listener_ui.md`.
-
-3) Backend lock during WS send
-- resolved at specification level in `docs/08_backend.md` (mandatory snapshot-send rule).
-
-4) Thread safety Qt (Publisher)
-- resolved at specification level in `docs/07_publisher_ui.md` (UI-thread-only widget access rule).
-
-5) LiveKit API key / secret policy
-- resolved at specification level in `docs/08_backend.md` (`LIVEKIT_API_SECRET` length `>32`, deploy-time auto-generation, synced persistence in backend + `livekit.yaml`).
-
-6) i18n payload multi-language model
-- already specified; additionally formalized in active workflow and deferred backlog split:
-  - active MVP behavior remains in `docs/08_backend.md` + `docs/09_listener_ui.md`;
-  - post-Stage XIII non-priority dynamic personalization tracked in `roadmap.md`.
-
-7) Listener race guards
-- escalated as mandatory Stage IX hardening item in `roadmap.md`; normative rules remain in `docs/09_listener_ui.md`.
-
-8) Formal strict WS schema
-- added to active MVP workflow as Stage VII deliverable in `roadmap.md`;
-- temporary strict runtime validation requirement added in `docs/08_backend.md`.
+Canonical sources:
+- `docs/08_backend.md`
+- `docs/09_listener_ui.md`
+- `docs/15_ws_schema_v1.md`
+- `docs/18_stage_vii_ix_acceptance_checklist.md` (verification artifact)
+- `docs/21_backend_logging_contract_stage_x.md`
+- `deploy/stage_x_ubuntu_pilot/`
+- `legacy/stage_x_ubuntu_pilot/` (completed-stage snapshot)
 
 ### 15.2 Current unresolved items
 
-1) Deploy artifact manifest is not fully formalized yet (pre-Stage X blocker):
-- exact manifest structure for release bundle is not pinned (artifacts list, versions, checksums, signatures, required/optional flags);
-- verification/rollback procedure must reference that manifest as single source of truth.
+1) Maximum stable Listener count on the concrete Stage XI VPS
+- determine the largest Listener population that remains stable for the
+  selected VPS size and network conditions.
 
-2) Stress program formalization is incomplete (Stage XI preparation gap):
-- missing strict metrics set (latency/jitter/reconnect/error budget/CPU-RAM thresholds);
-- missing pass/fail numeric thresholds and mandatory report template fields.
+2) Browser-based versus protocol-level load-test model
+- define which behaviors require real browsers/WebRTC clients and which can be
+  represented by protocol-level synthetic clients;
+- ensure the chosen mix represents realistic Listener connection,
+  subscription, playback, reconnect, and idle behavior.
 
-3) CSV strict validation rules are still open for final freeze:
-- whether to keep strict regex/atomic reject-all policy or simplify for operator UX in first VPS cycle.
+3) Stage XI load metrics
+- collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics throughout
+  each load step;
+- define the sampling and report format needed to correlate client failures
+  with VPS and service behavior.
 
-4) Persistence schema versioning format is still open:
-- whether dedicated `meta_schema.json` is mandatory in MVP or can be postponed to next cycle.
+4) Stage XI pass/fail and degradation contract
+- define numeric pass/fail thresholds for connection success, audio behavior,
+  latency/jitter, reconnects, errors, and resource use;
+- define acceptable degradation and the point at which the VPS is considered
+  unstable.
 
-5) Migration rules are still open:
-- policy for v1->v2 persistence migration and rollback is not finalized for current stage.
+5) JSON strict validation final freeze
+- open decision: keep strict regex + reject-all policy or simplify for operator UX in first VPS cycle.
 
-### 15.3 Clarification update (April 8, 2026, follow-up)
+6) Persistence schema versioning format
+- open decision: whether dedicated `meta_schema.json` is mandatory in MVP.
 
-По уточнению в чате добавлена явная фиксация:
-- immutable `i18n_library` должен отправляться на connect/reconnect не только Listener, но и Publisher;
-- реализация этого потока закреплена в ближайших этапах roadmap (Stage VII/IX), а не в дальнем non-priority.
-- локальный pinned Listener SDK path фиксируется как `src/listener/vendor/livekit-client.umd.1.15.13.js`, подключение в Listener обязательно в ближайших этапах roadmap.
+7) Migration rules v1->v2
+- migration and rollback policy for persistence versions is not finalized.
+
+8) Post-pilot logging contract formalization
+- exact logging contract for backend and Publisher UI is not finalized (required events, severity, format, retention, mandatory diagnostics fields).
