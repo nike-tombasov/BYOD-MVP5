@@ -277,6 +277,21 @@ Operational limits before profile runs:
   `subscribed > 0`; одного backend Listener count недостаточно для
   media/subscription load measurement.
 
+
+### Safe multi-PC ramp и LiveKit visibility
+
+Для multi-PC запусков сначала используйте плавный ramp `--listener-every-sec 1`: например PC1 — 120 listeners every 1 sec, PC2 — 50 listeners every 1 sec, затем PC2 — 120 listeners every 1 sec. Не начинайте несколько ПК с `--listener-every-sec 0.1`: это примерно 10 workers/sec, а не 0.1 worker/sec. `livekit_subscription_pending` при быстром ramp не является автоматическим backend failure, если позже workers переходят в `livekit_track_subscribed`.
+
+`GET http://127.0.0.1:8000/admin/metrics_snapshot` остаётся local-only и добавляет LiveKit API visibility по rooms/participants. LiveKit API gives room/participant visibility: показывает участников room и опубликованные tracks, но не доказывает каждую subscription. Confirmed subscription load по-прежнему проверяется в первую очередь по Loader `livekit_track_subscribed` / `subscribed`, пока не добавлена точная server-side subscription metric.
+
+Краткая decision table:
+
+| Вероятная зона | Признаки |
+|---|---|
+| Backend/admission likely issue | `backend_connected` much lower than target; backend logs show connection rate/reconnect/room-full rejects. |
+| LiveKit/server likely issue | `backend_connected` normal; `livekit_connected` much lower; LiveKit logs show participant disconnect/failure; LiveKit API participants do not match backend sessions. |
+| Loader/subscription likely issue | `backend_connected` normal; `livekit_connected` normal; `subscription_requested` normal; `subscribed` lags but catches up with slower ramp; browser Listener hears audio at the same time. |
+
 ## K. Load profiles
 
 ### Baseline
@@ -424,9 +439,12 @@ btop
 - `net_iface`
 - `rx_mbps`
 - `tx_mbps`
-- `livekit_publishers_count`
-- `livekit_listeners_count`
+- `livekit_api_ok`
+- `livekit_api_error`
 - `livekit_rooms_count`
+- `livekit_participants_count`
+- `livekit_listener_participants_count`
+- `livekit_publisher_participants_count`
 - `backend_publishers_count`
 - `backend_listeners_count`
 - `backend_active_play_count`
@@ -457,6 +475,15 @@ CSV предназначен для таблиц, JSONL — для machine parsi
    - `backend_listeners_count`;
    - `backend_active_play_count`;
    - `backend_listeners_by_runner`;
+   - `livekit_api_ok`;
+   - `livekit_api_error`;
+   - `livekit_rooms_count`;
+   - `livekit_participants_count`;
+   - `livekit_listener_participants_count`;
+   - `livekit_publisher_participants_count`;
+   - `livekit_participants_by_identity_prefix`;
+   - `livekit_room_names`;
+   - per-room participant summaries when LiveKit API is reachable;
    - channel summary с `channel_id`, `listen`, `owner` и, если доступно,
      `active_listeners`.
 

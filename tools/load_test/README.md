@@ -304,3 +304,117 @@ subscription confirmed. Полный поток публикаций включ�
 
 Высокий рост JSONL обычно означает, что включён `--debug-publications` или
 сломался rate limiting для publication/participant events.
+
+## 21. Запуск Loader со второго ПК в локальной сети
+
+Сценарий: backend и LiveKit запущены на ПК-1, а Loader запускается на втором Windows ПК в той же локальной сети.
+
+1. На ПК-1 найдите LAN IP:
+
+```bat
+ipconfig
+```
+
+Пример далее: `ПК-1 LAN IP = 192.168.1.50`.
+
+2. Backend на ПК-1 должен слушать все сетевые интерфейсы:
+
+```env
+BYOD_BACKEND_HOST=0.0.0.0
+BYOD_BACKEND_PORT=8000
+```
+
+3. Backend должен отдавать Loader LAN-доступный LiveKit URL:
+
+```env
+BYOD_LIVEKIT_URL=ws://192.168.1.50:7880
+```
+
+`ws://127.0.0.1:7880` здесь неправильно: для Loader на другом ПК `127.0.0.1` означает сам второй ПК, а не ПК-1 с LiveKit.
+
+4. CORS для локального web origin может быть:
+
+```env
+BYOD_CORS_ALLOWED_ORIGIN=http://192.168.1.50:8000
+```
+
+5. На ПК-1 нужны Windows Firewall inbound rules:
+
+- TCP 8000
+- TCP 7880
+- TCP 7881
+- UDP 50000-50100
+
+PowerShell от администратора на ПК-1:
+
+```powershell
+New-NetFirewallRule -DisplayName "BYOD Backend 8000 TCP" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+New-NetFirewallRule -DisplayName "BYOD LiveKit 7880 TCP" -Direction Inbound -Protocol TCP -LocalPort 7880 -Action Allow
+New-NetFirewallRule -DisplayName "BYOD LiveKit 7881 TCP" -Direction Inbound -Protocol TCP -LocalPort 7881 -Action Allow
+New-NetFirewallRule -DisplayName "BYOD LiveKit UDP 50000-50100" -Direction Inbound -Protocol UDP -LocalPort 50000-50100 -Action Allow
+```
+
+6. На втором ПК проверьте TCP доступность:
+
+```powershell
+Test-NetConnection 192.168.1.50 -Port 8000
+Test-NetConnection 192.168.1.50 -Port 7880
+Test-NetConnection 192.168.1.50 -Port 7881
+```
+
+7. Команда Loader со второго ПК:
+
+```bat
+py -3.11 tools\load_test\byod_listener_loader.py ^
+  --server http://192.168.1.50:8000 ^
+  --listeners 1 ^
+  --ramp-mode burst ^
+  --channel-mode fixed ^
+  --channel-id channel_1 ^
+  --hold-sec 120 ^
+  --runner-id pc2-test ^
+  --log-level INFO
+```
+
+Ожидаемый success:
+
+- `backend_connecting_ok`
+- `livekit_url=ws://192.168.1.50:7880`
+- `livekit_connected`
+- `livekit_subscription_requested`
+- `livekit_track_subscribed`
+- `FINAL subscribed=1 VALID_RUN`
+
+## 22. Безопасный multi-PC ramp
+
+Начинайте multi-PC тесты с плавного ramp:
+
+```bat
+--listener-every-sec 1
+```
+
+Пример безопасной последовательности:
+
+- PC1: 120 listeners, every 1 sec;
+- PC2: 50 listeners, every 1 sec;
+- затем PC2: 120 listeners, every 1 sec.
+
+Не начинайте с `--listener-every-sec 0.1` сразу на нескольких ПК. Это означает примерно 10 workers/sec, а не 0.1 worker/sec. Быстрый ramp может временно оставить часть workers в `livekit_subscription_pending`; это не автоматическое доказательство backend failure, если позже они переходят в `livekit_track_subscribed`.
+
+## 23. LiveKit visibility и troubleshooting
+
+Local-only backend metrics:
+
+```bash
+curl -s http://127.0.0.1:8000/admin/metrics_snapshot
+```
+
+Endpoint остаётся доступным только локально на backend host и не публикуется через nginx. LiveKit API gives room/participant visibility: кто находится в room и какие tracks участники публикуют. Он не доказывает каждую subscription на каждый track. Confirmed subscription load пока проверяется в первую очередь по Loader counters/events `livekit_track_subscribed` / `subscribed`, пока не добавлена более точная server-side subscription metric.
+
+Decision table:
+
+| Вероятная зона | Признаки |
+|---|---|
+| Backend/admission likely issue | `backend_connected` much lower than target; backend logs show connection rate/reconnect/room-full rejects. |
+| LiveKit/server likely issue | `backend_connected` normal; `livekit_connected` much lower; LiveKit logs show participant disconnect/failure; LiveKit API participants do not match backend sessions. |
+| Loader/subscription likely issue | `backend_connected` normal; `livekit_connected` normal; `subscription_requested` normal; `subscribed` lags but catches up with slower ramp; browser Listener hears audio at the same time. |

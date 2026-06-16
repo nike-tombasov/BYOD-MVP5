@@ -91,11 +91,16 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
             publishers = list(state_service.state.publishers.values())
             active_play_count = sum(1 for session in listeners if session.active_play)
             listeners_by_runner: dict[str, int] = {}
+            listeners_by_loader_run: dict[str, int] = {}
+            loader_workers_count = 0
             session_counts_by_client_type: dict[str, int] = {}
             active_by_channel: dict[str, int] = {}
             for session in listeners:
                 runner_id = session.runner_id or "unknown"
                 listeners_by_runner[runner_id] = listeners_by_runner.get(runner_id, 0) + 1
+                if session.loader_run_id:
+                    listeners_by_loader_run[session.loader_run_id] = listeners_by_loader_run.get(session.loader_run_id, 0) + 1
+                    loader_workers_count += 1
                 client_type = session.client_type or "listener"
                 session_counts_by_client_type[client_type] = session_counts_by_client_type.get(client_type, 0) + 1
                 if session.active_play and session.selected_channel:
@@ -120,11 +125,15 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
                 "backend_listeners_count": len(listeners),
                 "backend_active_play_count": active_play_count,
                 "backend_listeners_by_runner": listeners_by_runner,
+                "backend_listeners_by_loader_run": listeners_by_loader_run,
+                "backend_loader_workers_count": loader_workers_count,
                 "channels": channels,
                 "recent_connection_rate": state_service.listener_connect_count,
                 "reject_counters": dict(state_service.listener_reject_counters),
                 "session_counts_by_client_type": session_counts_by_client_type,
             }
+        livekit_snapshot = await room_service.get_livekit_participant_snapshot()
+        snapshot.update(livekit_snapshot)
         return snapshot
 
     return router

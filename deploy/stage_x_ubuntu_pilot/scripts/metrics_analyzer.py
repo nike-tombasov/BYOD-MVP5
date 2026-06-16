@@ -33,9 +33,12 @@ FIELDS = [
     "net_iface",
     "rx_mbps",
     "tx_mbps",
-    "livekit_publishers_count",
-    "livekit_listeners_count",
+    "livekit_api_ok",
+    "livekit_api_error",
     "livekit_rooms_count",
+    "livekit_participants_count",
+    "livekit_listener_participants_count",
+    "livekit_publisher_participants_count",
     "backend_publishers_count",
     "backend_listeners_count",
     "backend_active_play_count",
@@ -147,17 +150,16 @@ def livekit_api_url(livekit_url: str) -> str:
     return urlunparse((scheme, parsed.netloc, parsed.path, "", "", ""))
 
 
-def try_livekit_api() -> tuple[dict[str, int], str | None]:
+def try_livekit_api() -> tuple[dict[str, Any], str | None]:
     """Best-effort LiveKit API probe with quick fallback."""
     env = read_backend_env()
     url = env.get("BYOD_LIVEKIT_URL", "ws://127.0.0.1:7880")
     api_key = env.get("BYOD_LIVEKIT_API_KEY")
     api_secret = env.get("BYOD_LIVEKIT_API_SECRET")
     if not api_key or not api_secret:
-        return {}, "LiveKit API credentials not found; using backend metrics snapshot"
+        return {"livekit_api_ok": False, "livekit_api_error": "LiveKit API credentials not found"}, "LiveKit API credentials not found; using backend metrics snapshot"
 
-    async def probe() -> dict[str, int]:
-        import asyncio
+    async def probe() -> dict[str, Any]:
         import aiohttp
         from livekit import api as livekit_api
 
@@ -171,6 +173,7 @@ def try_livekit_api() -> tuple[dict[str, int], str | None]:
         try:
             rooms_response = await lk.room.list_rooms(livekit_api.ListRoomsRequest())
             rooms = list(rooms_response.rooms)
+            participants = 0
             publishers = 0
             listeners = 0
             for room in rooms:
@@ -178,15 +181,19 @@ def try_livekit_api() -> tuple[dict[str, int], str | None]:
                     livekit_api.ListParticipantsRequest(room=room.name)
                 )
                 for participant in participants_response.participants:
+                    participants += 1
                     identity = str(participant.identity)
                     if identity.startswith("listener_"):
                         listeners += 1
                     else:
                         publishers += 1
             return {
-                "livekit_publishers_count": publishers,
-                "livekit_listeners_count": listeners,
+                "livekit_api_ok": True,
+                "livekit_api_error": "",
                 "livekit_rooms_count": len(rooms),
+                "livekit_participants_count": participants,
+                "livekit_listener_participants_count": listeners,
+                "livekit_publisher_participants_count": publishers,
             }
         finally:
             await lk.aclose()
@@ -196,8 +203,8 @@ def try_livekit_api() -> tuple[dict[str, int], str | None]:
 
         return asyncio.run(asyncio.wait_for(probe(), timeout=3.0)), None
     except Exception as exc:
-        return {}, f"LiveKit API failed quickly ({type(exc).__name__}: {exc}); using backend metrics snapshot"
-
+        error = f"LiveKit API failed quickly ({type(exc).__name__}: {exc})"
+        return {"livekit_api_ok": False, "livekit_api_error": error}, f"{error}; using backend metrics snapshot"
 
 def make_sample(
     prev_cpu: tuple[int, int] | None,
@@ -230,9 +237,12 @@ def make_sample(
         "net_iface": iface,
         "rx_mbps": rx_mbps,
         "tx_mbps": tx_mbps,
-        "livekit_publishers_count": livekit_counts.get("livekit_publishers_count", 0),
-        "livekit_listeners_count": livekit_counts.get("livekit_listeners_count", 0),
-        "livekit_rooms_count": livekit_counts.get("livekit_rooms_count", 0),
+        "livekit_api_ok": livekit_counts.get("livekit_api_ok", backend_snapshot.get("livekit_api_ok", False)),
+        "livekit_api_error": livekit_counts.get("livekit_api_error", backend_snapshot.get("livekit_api_error", "")),
+        "livekit_rooms_count": livekit_counts.get("livekit_rooms_count", backend_snapshot.get("livekit_rooms_count", 0)),
+        "livekit_participants_count": livekit_counts.get("livekit_participants_count", backend_snapshot.get("livekit_participants_count", 0)),
+        "livekit_listener_participants_count": livekit_counts.get("livekit_listener_participants_count", backend_snapshot.get("livekit_listener_participants_count", 0)),
+        "livekit_publisher_participants_count": livekit_counts.get("livekit_publisher_participants_count", backend_snapshot.get("livekit_publisher_participants_count", 0)),
         "backend_publishers_count": backend_snapshot.get("backend_publishers_count", 0),
         "backend_listeners_count": backend_snapshot.get("backend_listeners_count", 0),
         "backend_active_play_count": backend_snapshot.get("backend_active_play_count", 0),
@@ -273,7 +283,8 @@ def run(interval_sec: int) -> None:
             log_fh.write(
                 f"{sample['timestamp_local']} cpu={sample['cpu_percent']} ram={sample['ram_used_gb']}/{sample['ram_total_gb']}GB "
                 f"rx={sample['rx_mbps']}Mbps tx={sample['tx_mbps']}Mbps backend_listeners={sample['backend_listeners_count']} "
-                f"active_play={sample['backend_active_play_count']} backend={sample['byod_backend_status']} "
+                f"active_play={sample['backend_active_play_count']} lk_api={sample['livekit_api_ok']} "
+                f"lk_participants={sample['livekit_participants_count']} backend={sample['byod_backend_status']} "
                 f"livekit={sample['byod_livekit_status']} nginx={sample['nginx_status']}\n"
             )
             if warning:
