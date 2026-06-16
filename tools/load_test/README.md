@@ -60,18 +60,18 @@ run_loader.bat --help
 
 ## 6. Проверка 1 Listener перед нагрузкой
 
-Перед ramp tests обязательно проверьте один Listener в `DEBUG` mode:
+Перед ramp tests обязательно проверьте один Listener с Publisher, уже streaming `channel_1`:
 
 ```bat
 py -3.11 tools\load_test\byod_listener_loader.py ^
-  --server http://80.78.244.210 ^
+  --server http://127.0.0.1:8000 ^
   --listeners 1 ^
   --ramp-mode burst ^
   --channel-mode fixed ^
   --channel-id channel_1 ^
   --hold-sec 120 ^
-  --runner-id debug-pc1 ^
-  --log-level DEBUG
+  --runner-id test1 ^
+  --log-level INFO
 ```
 
 Ожидаемая последовательность в logs:
@@ -212,11 +212,21 @@ HOLD нужен для steady-state метрик VPS Analyzer. HOLD не явл�
 - `fixed channel is not listenable` — channel есть, но `listen=false`.
 - `backend websocket failed` / connection exception — ошибка подключения к `/ws/listener` или backend reject.
 - `LiveKit connect failed` — token/livekit_url получены, но WebRTC connection не установлен.
-- `livekit_selected_track_waiting` — selected channel есть, но matching LiveKit
-  audio publication ещё не видна; worker остаётся подключённым, heartbeat
-  продолжается, это не автоматический VPS failure.
+- `livekit_selected_track_waiting` — selected channel publication ещё не видна
+  или manual subscription уже запрошена и Loader ждёт `track_subscribed`; worker
+  остаётся подключённым, heartbeat продолжается, это не автоматический VPS
+  failure.
+- publication видна, но `track_present=False` — это нормально до manual
+  subscription при `RoomOptions(auto_subscribe=False)`. Loader должен вызвать
+  `publication.set_subscribed(True)`, после чего LiveKit SDK пришлёт
+  `track_subscribed` и заполнит `publication.track`. `track_present=False` сам
+  по себе не доказывает, что Publisher не streaming.
+- `livekit_track_subscription_failed` — LiveKit отклонил manual subscription;
+  смотрите `participant_identity`, `track_sid`, `error` и `selected_channel`.
 - отсутствие `livekit_track_subscribed` — Loader ещё не подтвердил реальную
   LiveKit subscription; такой запуск не готов для capacity measurements.
+  Валидный run требует `livekit_track_subscribed`, а не только
+  `livekit_publication_seen`.
 - `reconnecting` — worker повторяет попытку, если включён `--reconnect true` или `--reconnect`.
 
 ## 16. PyInstaller

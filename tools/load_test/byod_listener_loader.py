@@ -171,7 +171,8 @@ class Worker:
         self.last_pending_log_ts = 0.0
         self.participant_connected_logged = False
         self.publication_inventory_logged = False
-        self.selected_publication_state: tuple[bool, bool] | None = None
+        self.selected_publication_state: tuple[bool, bool, bool] | None = None
+        self.selected_publication_diagnostics_logged: set[str] = set()
         self.subscription_lifecycle = 0
         self.subscribed_lifecycle_logged: set[int] = set()
         self.logger = logging.getLogger(f"worker.{self.worker_id}")
@@ -461,7 +462,8 @@ class Worker:
         for participant, publication in self.iter_audio_publications():
             track = getattr(publication, "track", None)
             resolved_name = self.get_publication_name(publication, track)
-            publication_state = (resolved_name == self.selected_channel, track is not None)
+            publication_subscribed = bool(getattr(publication, "subscribed", False))
+            publication_state = (resolved_name == self.selected_channel, publication_subscribed, track is not None)
             should_log_publication = self.shared.args.debug_publications
             should_log_publication = should_log_publication or (not self.publication_inventory_logged)
             should_log_publication = should_log_publication or (resolved_name == self.selected_channel and publication_state != self.selected_publication_state)
@@ -477,30 +479,72 @@ class Worker:
                     name_candidates=self.name_candidates(publication, track),
                     resolved_name=resolved_name,
                     kind=str(getattr(publication, "kind", None) or getattr(track, "kind", None)),
-                    subscribed=getattr(publication, "subscribed", None),
+                    subscribed=publication_subscribed,
                     track_present=track is not None,
                 )
             if resolved_name != self.selected_channel:
                 continue
+
             found_match = True
-            if track is None:
-                now = time.monotonic()
-                if now - self.last_waiting_log_ts >= 10.0:
-                    self.last_waiting_log_ts = now
-                    await self.event("livekit_selected_track_waiting", selected_channel=self.selected_channel)
-                continue
-            if not self.subscription_requested:
-                with contextlib.suppress(Exception):
+            action = "already_subscribed" if publication_subscribed and track is not None else "pending_track"
+            if not self.subscription_requested and not publication_subscribed:
+                try:
                     publication.set_subscribed(True)
+                except Exception as exc:
+                    await self.event(
+                        "livekit_subscription_request_failed",
+                        "ERROR",
+                        selected_channel=self.selected_channel,
+                        publication_sid=getattr(publication, "sid", None),
+                        publication_name=resolved_name,
+                        error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
+                    raise
                 self.subscription_requested = True
+                action = "requested_subscription"
                 await self.shared.inc("subscription_requested")
-                await self.event("livekit_subscription_requested", selected_channel=self.selected_channel)
-            elif not self.subscribed:
+                await self.event(
+                    "livekit_subscription_requested",
+                    selected_channel=self.selected_channel,
+                    publication_sid=getattr(publication, "sid", None),
+                    publication_name=resolved_name,
+                )
+
+            track = getattr(publication, "track", None)
+            publication_subscribed = bool(getattr(publication, "subscribed", False))
+            if publication_subscribed and track is not None:
+                action = "already_subscribed"
+            diag_key = f"{getattr(publication, 'sid', None)}:{action}"
+            if diag_key not in self.selected_publication_diagnostics_logged:
+                self.selected_publication_diagnostics_logged.add(diag_key)
+                await self.event(
+                    "livekit_selected_publication_diagnostic",
+                    selected_channel=self.selected_channel,
+                    publication_name=resolved_name,
+                    publication_sid=getattr(publication, "sid", None),
+                    publication_kind=str(getattr(publication, "kind", None) or getattr(track, "kind", None)),
+                    publication_subscribed=publication_subscribed,
+                    track_present=track is not None,
+                    action=action,
+                )
+
+            if track is None:
+                if not self.waiting_for_track_counted:
+                    self.waiting_for_track_counted = True
+                    await self.shared.inc("waiting_for_track")
                 now = time.monotonic()
-                if now - self.last_pending_log_ts >= 10.0:
-                    self.last_pending_log_ts = now
-                    await self.event("livekit_subscription_pending", selected_channel=self.selected_channel)
-            if getattr(publication, "subscribed", False) and track is not None:
+                event_name = "livekit_subscription_pending" if self.subscription_requested else "livekit_selected_track_waiting"
+                last_ts = self.last_pending_log_ts if self.subscription_requested else self.last_waiting_log_ts
+                if now - last_ts >= 10.0:
+                    if self.subscription_requested:
+                        self.last_pending_log_ts = now
+                    else:
+                        self.last_waiting_log_ts = now
+                    await self.event(event_name, selected_channel=self.selected_channel)
+                continue
+
+            if publication_subscribed:
                 await self.mark_subscribed(resolved_name)
                 return True
         if not found_match:
@@ -547,6 +591,22 @@ class Worker:
             name = self.get_publication_name(publication, track)
             if name == self.selected_channel:
                 self.safe_create_task(self.mark_subscribed(name), "track_subscribed")
+
+
+        @room.on("track_subscription_failed")
+        def on_track_subscription_failed(participant: Any, track_sid: Any, error: Any) -> None:
+            self.safe_create_task(
+                self.event(
+                    "livekit_track_subscription_failed",
+                    "ERROR",
+                    participant_identity=getattr(participant, "identity", None),
+                    participant_sid=getattr(participant, "sid", None),
+                    track_sid=str(track_sid) if track_sid is not None else None,
+                    error=str(error),
+                    selected_channel=self.selected_channel,
+                ),
+                "track_subscription_failed",
+            )
 
         @room.on("track_unpublished")
         def on_track_unpublished(publication: Any, participant: Any) -> None:
