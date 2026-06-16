@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from itertools import count
 from typing import Any
 
+from backend.config import (
+    derive_max_active_listeners,
+    derive_max_new_connections_per_sec,
+)
 from backend.domain.models import ListenerSession, PublisherSession, RuntimeState
 
 
@@ -27,6 +31,7 @@ class StateService:
         self.listener_connect_sec = int(time.time())
         self.listener_connect_count = 0
         self.listener_last_connect_by_ip: dict[str, int] = {}
+        self.listener_reject_counters: dict[str, int] = {}
         self.recording_active = False
         self.recording_started_ts: int | None = None
         self.recording_files: list[dict[str, Any]] = []
@@ -41,8 +46,8 @@ class StateService:
 
     def update_derived_limits(self, target_capacity: int) -> None:
         self.runtime.target_capacity = target_capacity
-        self.runtime.max_active_listeners = int(target_capacity * 1.05)
-        self.runtime.max_new_connections_per_sec = max(1, int(target_capacity / 15))
+        self.runtime.max_active_listeners = derive_max_active_listeners(target_capacity)
+        self.runtime.max_new_connections_per_sec = derive_max_new_connections_per_sec(target_capacity)
 
     def make_envelope(self, msg_type: str, payload: dict[str, Any], request_id: str | None = None) -> dict[str, Any]:
         return {
@@ -119,10 +124,13 @@ class StateService:
         self.state.publishers[publisher_id] = session
         return session
 
-    def add_listener(self, websocket: Any) -> ListenerSession:
+    def add_listener(self, websocket: Any, diagnostic_metadata: dict[str, Any] | None = None) -> ListenerSession:
         listener_id = f"listener_{self.state.listener_counter}"
         self.state.listener_counter += 1
         now = float(self.now_ts())
+        metadata = diagnostic_metadata or {}
+        worker_index = metadata.get("worker_index")
+        parsed_worker_index = worker_index if isinstance(worker_index, int) else None
         session = ListenerSession(
             listener_id=listener_id,
             websocket=websocket,
@@ -131,9 +139,19 @@ class StateService:
             last_heartbeat_ts=now,
             active_play=False,
             selected_channel=None,
+            client_type=metadata.get("client_type") if isinstance(metadata.get("client_type"), str) else None,
+            runner_id=metadata.get("runner_id") if isinstance(metadata.get("runner_id"), str) else None,
+            worker_id=metadata.get("worker_id") if isinstance(metadata.get("worker_id"), str) else None,
+            worker_index=parsed_worker_index,
+            selected_channel_mode=metadata.get("selected_channel_mode")
+            if isinstance(metadata.get("selected_channel_mode"), str)
+            else None,
         )
         self.state.listeners[listener_id] = session
         return session
+
+    def record_listener_reject(self, reject_code: str) -> None:
+        self.listener_reject_counters[reject_code] = self.listener_reject_counters.get(reject_code, 0) + 1
 
     def remove_listener_by_ws(self, websocket: Any) -> str | None:
         for listener_id, session in list(self.state.listeners.items()):

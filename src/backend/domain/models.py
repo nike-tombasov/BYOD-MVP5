@@ -46,6 +46,11 @@ class ListenerSession:
     active_play_started: bool = False
     active_play: bool = False
     selected_channel: str | None = None
+    client_type: str | None = None
+    runner_id: str | None = None
+    worker_id: str | None = None
+    worker_index: int | None = None
+    selected_channel_mode: str | None = None
 
 
 @dataclass

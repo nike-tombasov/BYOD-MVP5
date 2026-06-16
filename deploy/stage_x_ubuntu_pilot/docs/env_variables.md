@@ -16,6 +16,9 @@ Source template: `.env.example`.
 | `BYOD_RECORDING_STATE_PATH` | Yes | Recording markers JSON file path. | `/opt/byod/backend_data/recording_state_v1.json` |
 | `BYOD_DEFAULT_PIN` | Optional | Bootstrap PIN on clean deploy only. | `123456` |
 | `BYOD_TARGET_CAPACITY` | Optional | Bootstrap target listener capacity (pilot fixed to 200). | `200` |
+| `BYOD_MAX_ACTIVE_LISTENERS` | Optional | Override for active Listener sessions. Empty means derive from `target_capacity`. | `500` |
+| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC` | Optional | Override for global new Listener connections per second. Empty means derive from `target_capacity`. | `50` |
+| `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` | Optional | Per-IP Listener connect/reconnect throttle. Important for NAT/public Wi-Fi and stress tests. | `2` |
 | `BYOD_LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS` | Optional | TCP probe timeout for LiveKit reachability checks. | `1.5` |
 
 Notes:

@@ -12,6 +12,8 @@ from backend.config import (
     RECORDING_STATE_PATH,
     ROOM_CONFIG_PATH,
     RUNTIME_STATE_PATH,
+    derive_max_active_listeners,
+    derive_max_new_connections_per_sec,
 )
 from backend.console.commands import console_command_loop
 from backend.persistence.storage import JsonStorage
@@ -40,8 +42,8 @@ runtime_config = RuntimeConfig(
     room_name=DEFAULT_ROOM_CONFIG["i18n_library"]["room_name_i18n"]["en"],
     room_status="BLOCKED",
     target_capacity=DEFAULT_ROOM_CONFIG["target_capacity"],
-    max_active_listeners=int(DEFAULT_ROOM_CONFIG["target_capacity"] * 1.05),
-    max_new_connections_per_sec=max(1, int(DEFAULT_ROOM_CONFIG["target_capacity"] / 15)),
+    max_active_listeners=derive_max_active_listeners(DEFAULT_ROOM_CONFIG["target_capacity"]),
+    max_new_connections_per_sec=derive_max_new_connections_per_sec(DEFAULT_ROOM_CONFIG["target_capacity"]),
     i18n_library=DEFAULT_ROOM_CONFIG["i18n_library"],
 )
 state_service = StateService(channels=DEFAULT_ROOM_CONFIG["channels"], runtime_config=runtime_config)
