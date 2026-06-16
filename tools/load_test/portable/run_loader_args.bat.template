@@ -1,0 +1,7 @@
+@echo off
+setlocal EnableExtensions
+set "ROOT=%~dp0"
+if not exist "%ROOT%logs" mkdir "%ROOT%logs" >nul 2>nul
+pushd "%ROOT%" >nul
+"%ROOT%python\python.exe" "%ROOT%app\byod_listener_loader.py" %*
+exit /b %ERRORLEVEL%

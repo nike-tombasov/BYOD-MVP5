@@ -1,0 +1,73 @@
+@echo off
+setlocal EnableExtensions
+
+set "ROOT=%~dp0"
+set "PY=%ROOT%python\python.exe"
+set "APP=%ROOT%app\byod_listener_loader.py"
+
+if not exist "%PY%" (
+  echo [ERROR] Portable Python not found: "%PY%"
+  pause
+  exit /b 1
+)
+
+if not exist "%APP%" (
+  echo [ERROR] Loader app not found: "%APP%"
+  pause
+  exit /b 1
+)
+
+if not exist "%ROOT%logs" mkdir "%ROOT%logs" >nul 2>nul
+pushd "%ROOT%" >nul
+
+set "SERVER=http://127.0.0.1:8000"
+set "LISTENERS=1"
+set "RAMP_MODE=linear"
+set "LISTENER_EVERY_SEC=1"
+set "CHANNEL_MODE=fixed"
+set "CHANNEL_ID=channel_1"
+set "HOLD_SEC=120"
+set "RUNNER_ID=pc1"
+set "LOG_LEVEL=INFO"
+
+echo BYOD Stage XI Listener Loader portable launcher
+echo.
+echo Нажмите Enter, чтобы оставить значение по умолчанию в скобках.
+echo.
+set /p "SERVER=SERVER / адрес backend [%SERVER%]: "
+if "%SERVER%"=="" set "SERVER=http://127.0.0.1:8000"
+set /p "LISTENERS=LISTENERS / число listener workers [%LISTENERS%]: "
+if "%LISTENERS%"=="" set "LISTENERS=1"
+set /p "RAMP_MODE=RAMP_MODE / linear или burst [%RAMP_MODE%]: "
+if "%RAMP_MODE%"=="" set "RAMP_MODE=linear"
+set /p "LISTENER_EVERY_SEC=LISTENER_EVERY_SEC / секунд между listeners [%LISTENER_EVERY_SEC%]: "
+if "%LISTENER_EVERY_SEC%"=="" set "LISTENER_EVERY_SEC=1"
+set /p "CHANNEL_MODE=CHANNEL_MODE / fixed или random [%CHANNEL_MODE%]: "
+if "%CHANNEL_MODE%"=="" set "CHANNEL_MODE=fixed"
+set /p "CHANNEL_ID=CHANNEL_ID / например channel_1 [%CHANNEL_ID%]: "
+if "%CHANNEL_ID%"=="" set "CHANNEL_ID=channel_1"
+set /p "HOLD_SEC=HOLD_SEC / длительность HOLD в секундах [%HOLD_SEC%]: "
+if "%HOLD_SEC%"=="" set "HOLD_SEC=120"
+set /p "RUNNER_ID=RUNNER_ID / имя этого ПК, например pc1 [pc1]: "
+if "%RUNNER_ID%"=="" set "RUNNER_ID=pc1"
+set /p "LOG_LEVEL=LOG_LEVEL / INFO или DEBUG [%LOG_LEVEL%]: "
+if "%LOG_LEVEL%"=="" set "LOG_LEVEL=INFO"
+
+echo.
+echo Запуск Loader. Logs пишутся в "%ROOT%logs".
+"%PY%" "%APP%" ^
+  --server "%SERVER%" ^
+  --listeners "%LISTENERS%" ^
+  --ramp-mode "%RAMP_MODE%" ^
+  --listener-every-sec "%LISTENER_EVERY_SEC%" ^
+  --channel-mode "%CHANNEL_MODE%" ^
+  --channel-id "%CHANNEL_ID%" ^
+  --hold-sec "%HOLD_SEC%" ^
+  --runner-id "%RUNNER_ID%" ^
+  --log-level "%LOG_LEVEL%"
+
+set "EXIT_CODE=%ERRORLEVEL%"
+echo.
+echo Код завершения Loader: %EXIT_CODE%
+pause
+exit /b %EXIT_CODE%
