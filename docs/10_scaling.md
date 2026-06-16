@@ -25,8 +25,20 @@
 
 Recommended baseline formulas:
 - `max_active_listeners = target_capacity * 1.05`
-- `max_new_connections_per_sec = target_capacity / 15`
-- `min_reconnect_interval_sec = 2+`
+- `max_new_connections_per_sec = max(1, target_capacity / 15)`
+- `listener_min_reconnect_interval_per_ip_seconds = 2`
+
+Admission-control meanings:
+- `max_new_connections_per_sec` is a global backend Listener admission rate.
+- `listener_min_reconnect_interval_per_ip_seconds` is a per-IP Listener
+  connect/reconnect throttle.
+- In NAT/public Wi-Fi/hotel networks, many real users may share one public IP.
+- These two limits can stack: global new Listener connection rate plus per-IP
+  connect/reconnect interval.
+- This is intentional protection, but it must be adjustable for stress tests
+  and event emergency operations.
+- Important emergency/stress numbers are grouped in the top operator block of
+  `src/backend/config.py`; edit the number and restart `byod-backend`.
 
 Active PLAY heartbeat baseline:
 - heartbeat interval = `10 sec`

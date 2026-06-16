@@ -237,6 +237,11 @@ Baseline codes:
 - `LISTENER_OVERFLOW`
 - `CONNECTION_RATE_LIMIT`
 
+`RECONNECT_TOO_FAST` means Listener connect/reconnect was too fast according
+to the per-IP reconnect throttle
+`listener_min_reconnect_interval_per_ip_seconds`. The code name remains stable
+for client compatibility.
+
 ---
 
 ### 16.11 Hard ban of old formats

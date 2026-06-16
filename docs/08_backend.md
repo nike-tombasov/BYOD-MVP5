@@ -329,10 +329,22 @@ Runtime text mutation is not used in current project.
 - при превышении новых listeners не подключать (возврат отказа подключения).
 
 2) Rate-limit new connections:
-- максимум `target_capacity / 15` новых Listener подключений в секунду.
+- `max_new_connections_per_sec` — глобальный backend Listener admission rate;
+- baseline: `max(1, target_capacity / 15)` новых Listener подключений в секунду.
 
-3) Minimal reconnect interval:
-- для одного listener identity/IP новый reconnect допускается только при интервале `> 2 sec`.
+3) Per-IP reconnect/connect interval:
+- `listener_min_reconnect_interval_per_ip_seconds` — per-IP Listener
+  connect/reconnect throttle;
+- baseline: `2 sec`;
+- при NAT, public Wi-Fi или hotel networks несколько реальных пользователей
+  могут выглядеть для backend как один public IP;
+- этот лимит может складываться с `max_new_connections_per_sec`: сначала
+  действует global new Listener connection rate, затем per-IP interval;
+- это intentional protection, но оно должно быть adjustable для stress tests
+  и event emergency operations.
+- Важные emergency/stress числа сгруппированы в верхнем operator block
+  `src/backend/config.py`: изменить цифру, затем выполнить restart
+  `byod-backend`.
 
 4) Active PLAY heartbeat control:
 - после успешного backend WS connect backend ждёт `60 sec` первого ACTIVE PLAY trigger;

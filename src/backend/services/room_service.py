@@ -5,7 +5,7 @@ import logging
 import socket
 from datetime import timedelta
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from livekit import api as livekit_api
 
@@ -77,6 +77,97 @@ class RoomService:
     def log_livekit_unavailable(self, context: str, **fields: Any) -> None:
         self.storage.log_event("livekit_unreachable", context=context, livekit_url=self.livekit_url, **fields)
         logger.error("livekit_unreachable context=%s fields=%s", context, fields)
+
+    def livekit_http_api_url(self) -> str:
+        parsed = urlparse(self.livekit_url)
+        scheme = "https" if parsed.scheme == "wss" else "http"
+        return urlunparse((scheme, parsed.netloc, parsed.path, "", "", ""))
+
+    async def get_livekit_participant_snapshot(self) -> dict[str, Any]:
+        """Best-effort LiveKit RoomService visibility for local admin metrics.
+
+        The returned payload intentionally contains only room/participant/track
+        labels and counts. It never includes API keys, API secrets, JWTs, or PINs.
+        """
+        result: dict[str, Any] = {
+            "livekit_api_ok": False,
+            "livekit_api_error": None,
+            "livekit_rooms_count": 0,
+            "livekit_participants_count": 0,
+            "livekit_listener_participants_count": 0,
+            "livekit_publisher_participants_count": 0,
+            "livekit_participants_by_identity_prefix": {},
+            "livekit_room_names": [],
+            "livekit_room_participants": {},
+        }
+        try:
+            import aiohttp
+
+            timeout = aiohttp.ClientTimeout(total=2.0)
+            lk = livekit_api.LiveKitAPI(
+                url=self.livekit_http_api_url(),
+                api_key=LIVEKIT_API_KEY,
+                api_secret=LIVEKIT_API_SECRET,
+                timeout=timeout,
+            )
+            try:
+                rooms_response = await lk.room.list_rooms(livekit_api.ListRoomsRequest())
+                rooms = list(rooms_response.rooms)
+                result["livekit_rooms_count"] = len(rooms)
+                result["livekit_room_names"] = [str(room.name) for room in rooms]
+
+                prefix_counts: dict[str, int] = {}
+                participants_count = 0
+                listener_count = 0
+                publisher_count = 0
+                room_participants: dict[str, list[dict[str, Any]]] = {}
+
+                for room in rooms:
+                    room_name = str(room.name)
+                    participants_response = await lk.room.list_participants(
+                        livekit_api.ListParticipantsRequest(room=room_name)
+                    )
+                    summaries: list[dict[str, Any]] = []
+                    for participant in participants_response.participants:
+                        identity = str(participant.identity or "")
+                        prefix = identity.split("_", 1)[0] if "_" in identity else (identity or "unknown")
+                        prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
+                        participants_count += 1
+                        if identity.startswith("listener_"):
+                            listener_count += 1
+                        else:
+                            publisher_count += 1
+
+                        tracks = list(getattr(participant, "tracks", []) or [])
+                        published_track_names = [str(getattr(track, "name", "") or "") for track in tracks]
+                        audio_tracks = [
+                            track for track in tracks
+                            if str(getattr(track, "type", "")).lower().endswith("audio")
+                            or str(getattr(track, "kind", "")).lower().endswith("audio")
+                        ]
+                        summaries.append({
+                            "identity": identity,
+                            "sid": str(getattr(participant, "sid", "") or ""),
+                            "state": str(getattr(participant, "state", "") or ""),
+                            "tracks_count": len(tracks),
+                            "published_audio_tracks_count": len(audio_tracks),
+                            "published_track_names": published_track_names,
+                        })
+                    room_participants[room_name] = summaries
+
+                result.update({
+                    "livekit_api_ok": True,
+                    "livekit_participants_count": participants_count,
+                    "livekit_listener_participants_count": listener_count,
+                    "livekit_publisher_participants_count": publisher_count,
+                    "livekit_participants_by_identity_prefix": prefix_counts,
+                    "livekit_room_participants": room_participants,
+                })
+            finally:
+                await lk.aclose()
+        except Exception as exc:
+            result["livekit_api_error"] = f"{type(exc).__name__}: {exc}"
+        return result
 
     def create_livekit_token(self, identity: str) -> str:
         token = (

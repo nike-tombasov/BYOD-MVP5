@@ -15,12 +15,15 @@ Source template: `.env.example`.
 | `BYOD_RUNTIME_STATE_PATH` | Yes | Runtime state JSON file path. | `/opt/byod/backend_data/runtime_state_v1.json` |
 | `BYOD_RECORDING_STATE_PATH` | Yes | Recording markers JSON file path. | `/opt/byod/backend_data/recording_state_v1.json` |
 | `BYOD_DEFAULT_PIN` | Optional | Bootstrap PIN on clean deploy only. | `123456` |
-| `BYOD_TARGET_CAPACITY` | Optional | Bootstrap target listener capacity (pilot fixed to 200). | `200` |
-| `BYOD_LIVEKIT_HEALTHCHECK_TIMEOUT_SECONDS` | Optional | TCP probe timeout for LiveKit reachability checks. | `1.5` |
 
 Notes:
 - Clean deploy default `room_status` remains `BLOCKED`.
 - Bootstrap defaults are used only when no persisted room config exists.
+- Emergency/stress numeric backend limits, including `target_capacity`
+  baseline, active Listener headroom, global connection rate, per-IP reconnect
+  throttle, and LiveKit healthcheck timeout, are edited in the top operator
+  block of `src/backend/config.py`; after changing a number, restart
+  `byod-backend`.
 - For the IP-only pilot, use `BYOD_LIVEKIT_URL=ws://<VPS_PUBLIC_IP>:7880` and
   `BYOD_CORS_ALLOWED_ORIGIN=http://<VPS_PUBLIC_IP>`.
 - `BYOD_LIVEKIT_API_KEY` and `BYOD_LIVEKIT_API_SECRET` must exactly match the

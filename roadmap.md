@@ -7,8 +7,8 @@
 - Stage VIII is completed (Listener room status behavior baseline).
 - Stage IX is completed (Listener resilience baseline).
 - Stage X is completed (Ubuntu 22.04 LTS single-VPS pilot).
-- Next planned stage is Stage XI: load and capacity characterization on a
-  concrete VPS.
+- Current active stage is Stage XI: Protocol/engine load and capacity
+  characterization on a concrete VPS.
 
 ---
 
@@ -102,22 +102,37 @@ Canonical deploy package:
 ## Stage XI — Load and Capacity Characterization on a Concrete VPS (Priority 6)
 
 ### Status
-Planned only; not implemented.
+Initial tooling baseline implemented; real VPS measurement runs and final
+capacity characterization are still pending.
 
 ### Main target
-Measure the stable operating envelope and degradation behavior of the concrete
-single-VPS pilot environment.
+Measure and characterize how the concrete single-VPS pilot environment consumes
+CPU, RAM, network RX/TX, and disk under increasing Listener count using
+Protocol/engine load only. Stage XI compares resource usage curves, observed
+stable ranges, observed degradation points, and observed failure modes across
+VPS configurations. Browser/Web Listener UI load testing is out of scope and
+belongs to future Web Listener UI hardening.
 
 ### Planned work
-1) determine the maximum stable Listener count on the selected VPS;
-2) define realistic browser-based and protocol-level load-test roles;
-3) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
-4) define numeric pass/fail thresholds and expected degradation behavior;
-5) produce a reproducible test procedure and results report for that VPS.
+1) measure the observed stable range on the selected VPS;
+2) maintain the permanent specification in `docs/22_stress_tests.md`;
+3) implement a Windows-oriented, one-folder Python 3.11 Loader under
+   `tools/load_test/`;
+4) implement `95_metrics_analyzer.sh start|stop|status`, backed by systemd;
+5) evaluate LiveKit API metrics and provide the local-only backend endpoint
+   `/admin/metrics_snapshot` as fallback;
+6) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
+7) classify runs as VALID RUN, PARTIAL RUN, or INVALID RUN for analysis quality;
+8) produce a reproducible test procedure and results report for that VPS.
+
+Loader, Analyzer, service wrapper, deploy support, and backend metrics endpoint
+have an initial implementation baseline. Stage XI is not complete until actual
+VPS profiles are measured and documented.
 
 ### Exit criteria
-- bottlenecks, pass/fail thresholds, degradation behavior, and a safe operating
-  envelope are measured and documented for the tested VPS
+- resource usage curves, observed stable range, observed degradation point,
+  observed failure mode, and a safe operating envelope are measured and
+  documented for the tested VPS
 
 ---
 
