@@ -4,7 +4,8 @@ This repository contains the full technical specification of the BYOD Audio Dist
 
 Current status: MVP10 supports a single-node Ubuntu Server 22.04 LTS VPS pilot
 with self-hosted LiveKit. Stage X is completed; Stage XI load and capacity
-characterization is planned but not implemented.
+characterization has an initial Protocol/engine tooling baseline; real VPS
+measurement runs are pending.
 
 IMPORTANT:
 1. Read hard_rules.md first
@@ -68,13 +69,15 @@ future production-hardening work and are not Stage X requirements.
 
 ## Stage XI — Protocol/engine load measurement
 
-Stage XI is currently planned and covers **Protocol/engine load only**.
+Stage XI tooling baseline is implemented for **Protocol/engine load only**.
 Browser/Web Listener UI load testing is explicitly out of scope and is
 postponed to future Web Listener UI hardening. The goal is VPS resource
 characterization: CPU, RAM, network RX/TX, disk, and backend/LiveKit/nginx
-behavior under increasing Listener count. Planned implementation artifacts
-include the Loader, Analyzer, and any supporting local-only backend metrics
-endpoint.
+behavior under increasing Listener count. The tooling includes a Windows
+Python Loader, a VPS Analyzer, and a local-only backend metrics endpoint.
 
 Permanent test manual:
 - `docs/22_stress_tests.md`
+
+Loader manual:
+- `tools/load_test/README.md`

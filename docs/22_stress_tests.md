@@ -7,9 +7,10 @@
 изменений системы по нему повторно проверяется resource usage curve конкретного
 VPS, стабильность длительной работы и поведение при деградации.
 
-Implementation status: planned. Упомянутые ниже Loader, Analyzer,
-`metrics_snapshot`, скрипты и сервисы являются planned implementation
-artifacts.
+Implementation status: implemented for the first Stage XI tooling baseline.
+Loader, Analyzer, `metrics_snapshot`, scripts и operator docs являются рабочими
+implementation artifacts, которые могут уточняться по результатам реальных
+прогонов.
 
 ## A. Scope
 
@@ -49,9 +50,9 @@ UI hardening.
 - Серверная цель остаётся Ubuntu Server 22.04 LTS, один VPS, public IPv4.
 - Рабочие инструменты оператора остаются PuTTY и WinSCP.
 
-## C. Планируемая архитектура Loader
+## C. Архитектура Loader
 
-Будущий путь:
+Путь:
 
 ```text
 tools/load_test/
@@ -64,7 +65,8 @@ tools/load_test/
 One-folder script здесь означает обычную папку со скриптом, зависимостями и,
 опционально, вспомогательным `.bat`. Это не installable Python package.
 
-Implementation status: planned; папка и исполняемые файлы пока не созданы.
+Implementation status: implemented. Папка является one-folder script, а не
+installable Python package.
 
 ## D. Модель подключения Loader
 
@@ -112,11 +114,12 @@ Implementation status: planned; папка и исполняемые файлы 
   реальный Listener protocol и лимиты.
 - Первый предпочтительный источник LiveKit online counts — LiveKit API.
 - Если LiveKit API нельзя быстро сделать доступным и надёжным, fallback для
-  Analyzer — планируемый локальный endpoint:
+  Analyzer — локальный endpoint:
   `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
 - `/admin/metrics_snapshot` должен быть local-only и не должен публиковаться
   через nginx.
-- Implementation contract фиксирует endpoint; implementation status: planned.
+- Implementation status: implemented; endpoint дополнительно проверяет loopback
+  client и `X-Forwarded-For`.
 
 ## F. Runner identity
 
@@ -149,7 +152,7 @@ Implementation status: planned; папка и исполняемые файлы 
 schema позднее станет строже, изменение schema docs должно быть отдельным,
 осознанным решением.
 
-## G. Планируемый CLI
+## G. CLI
 
 Обязательные параметры:
 
@@ -319,9 +322,9 @@ failure mode, если метрики собраны достаточно пол
 конфигурации не реализуется. Фактические backend config values оператор вручную
 меняет после deploy перед соответствующим профилем.
 
-## L. План VPS Analyzer
+## L. VPS Analyzer
 
-Будущая команда:
+Команда управления:
 
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start|stop|status
@@ -337,22 +340,43 @@ Analyzer должен:
 - при перегрузке или reboot VPS естественно остановиться, сохранив уже
   записанные на диск логи.
 
-Planned implementation artifact: script и service unit для Analyzer.
+Implementation status: implemented. Script создаёт/обновляет systemd service
+unit при `start`.
 
 ## M. Путь вывода Analyzer
 
-Планируемый каталог:
+Каталог:
 
 ```text
 /opt/byod/metrics/
 ```
 
-Планируемые файлы одного запуска:
+Файлы одного запуска:
 
 ```text
 /opt/byod/metrics/byod_metrics_<timestamp>.csv
 /opt/byod/metrics/byod_metrics_<timestamp>.jsonl
 /opt/byod/metrics/byod_metrics_<timestamp>.log
+```
+
+Operator commands:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
+```
+
+Local metrics snapshot check на VPS:
+
+```bash
+curl -s http://127.0.0.1:8000/admin/metrics_snapshot
+```
+
+Manual resource viewer:
+
+```bash
+btop
 ```
 
 ## N. Метрики Analyzer
@@ -390,7 +414,7 @@ CSV предназначен для таблиц, JSONL — для machine parsi
 2. Если LiveKit API нельзя быстро и надёжно использовать, получать fallback из
    `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
 3. `/admin/metrics_snapshot` остаётся local-only и не публикуется через nginx.
-4. Endpoint имеет implementation status: planned.
+4. Endpoint имеет implementation status: implemented.
 5. Machine-readable JSON должен содержать как минимум:
 
    - `ts`;
@@ -405,11 +429,10 @@ CSV предназначен для таблиц, JSONL — для machine parsi
    - channel summary с `channel_id`, `listen`, `owner` и, если доступно,
      `active_listeners`.
 
-## P. Планируемое deploy-требование
+## P. Deploy requirement
 
 `btop` должен автоматически устанавливаться при подготовке Stage X/Stage XI
-VPS. Planned implementation artifact: обновление host packages так, чтобы
-`btop` устанавливался автоматически.
+VPS. `00_prepare_host.sh` добавляет `btop` в host packages.
 
 ## Q. Run validity categories
 

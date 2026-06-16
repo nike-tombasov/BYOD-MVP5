@@ -27,6 +27,7 @@ class StateService:
         self.listener_connect_sec = int(time.time())
         self.listener_connect_count = 0
         self.listener_last_connect_by_ip: dict[str, int] = {}
+        self.listener_reject_counters: dict[str, int] = {}
         self.recording_active = False
         self.recording_started_ts: int | None = None
         self.recording_files: list[dict[str, Any]] = []
@@ -119,10 +120,13 @@ class StateService:
         self.state.publishers[publisher_id] = session
         return session
 
-    def add_listener(self, websocket: Any) -> ListenerSession:
+    def add_listener(self, websocket: Any, diagnostic_metadata: dict[str, Any] | None = None) -> ListenerSession:
         listener_id = f"listener_{self.state.listener_counter}"
         self.state.listener_counter += 1
         now = float(self.now_ts())
+        metadata = diagnostic_metadata or {}
+        worker_index = metadata.get("worker_index")
+        parsed_worker_index = worker_index if isinstance(worker_index, int) else None
         session = ListenerSession(
             listener_id=listener_id,
             websocket=websocket,
@@ -131,9 +135,19 @@ class StateService:
             last_heartbeat_ts=now,
             active_play=False,
             selected_channel=None,
+            client_type=metadata.get("client_type") if isinstance(metadata.get("client_type"), str) else None,
+            runner_id=metadata.get("runner_id") if isinstance(metadata.get("runner_id"), str) else None,
+            worker_id=metadata.get("worker_id") if isinstance(metadata.get("worker_id"), str) else None,
+            worker_index=parsed_worker_index,
+            selected_channel_mode=metadata.get("selected_channel_mode")
+            if isinstance(metadata.get("selected_channel_mode"), str)
+            else None,
         )
         self.state.listeners[listener_id] = session
         return session
+
+    def record_listener_reject(self, reject_code: str) -> None:
+        self.listener_reject_counters[reject_code] = self.listener_reject_counters.get(reject_code, 0) + 1
 
     def remove_listener_by_ws(self, websocket: Any) -> str | None:
         for listener_id, session in list(self.state.listeners.items()):

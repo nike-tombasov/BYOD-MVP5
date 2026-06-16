@@ -328,6 +328,12 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                 logger.error("listener_schema_error request_id=%s reason=%s", request_id, reason)
                 await send_error(websocket, "SCHEMA_VALIDATION_ERROR", request_id, "listener", listener_id=listener_id)
                 return
+            payload = state_service.get_payload(first)
+            diagnostic_metadata = {
+                key: payload.get(key)
+                for key in ("client_type", "runner_id", "worker_id", "worker_index", "selected_channel_mode")
+                if key in payload
+            }
 
             now = state_service.now_ts()
             if now != state_service.listener_connect_sec:
@@ -346,11 +352,22 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     reject_code = "CONNECTION_RATE_LIMIT"
                 if reject_code is None:
                     state_service.listener_last_connect_by_ip[client_ip] = now
-                    listener_id = state_service.add_listener(websocket=websocket).listener_id
-                    storage.log_connection("listener_connected", listener_id=listener_id, ip=client_ip)
+                    listener_id = state_service.add_listener(
+                        websocket=websocket,
+                        diagnostic_metadata=diagnostic_metadata,
+                    ).listener_id
+                    storage.log_connection(
+                        "listener_connected",
+                        listener_id=listener_id,
+                        ip=client_ip,
+                        client_type=diagnostic_metadata.get("client_type"),
+                        runner_id=diagnostic_metadata.get("runner_id"),
+                        worker_id=diagnostic_metadata.get("worker_id"),
+                    )
                     room_service.persist_all()
 
             if reject_code:
+                state_service.record_listener_reject(reject_code)
                 storage.log_event("listener_rejected", reject_code=reject_code, request_id=request_id, client_ip=client_ip)
                 logger.warning("listener_rejected code=%s request_id=%s client_ip=%s", reject_code, request_id, client_ip)
                 await send_error(websocket, reject_code, request_id, "listener", listener_id=listener_id)

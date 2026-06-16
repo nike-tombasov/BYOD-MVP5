@@ -200,7 +200,39 @@ sudo bash deploy/stage_x_ubuntu_pilot/scripts/90_collect_diagnostics.sh
 реальные PIN, private keys и персональные/IP данные. Diagnostic bundle помогает
 расследованию, но не заменяет live service status и journal.
 
-## O. Dangerous commands
+## O. Stage XI metrics Analyzer и btop
+
+Перед Protocol/engine load test запустите Analyzer через PuTTY:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
+```
+
+Analyzer работает через systemd service `byod-metrics-analyzer.service`, поэтому
+он продолжает работать после закрытия окна PuTTY. Файлы метрик пишутся сюда:
+
+```text
+/opt/byod/metrics/
+```
+
+Локальная проверка backend metrics snapshot на VPS:
+
+```bash
+curl -s http://127.0.0.1:8000/admin/metrics_snapshot
+```
+
+Этот endpoint предназначен только для local loopback backend port и не должен
+быть доступен через nginx/public IP.
+
+Для ручного наблюдения за ресурсами можно открыть:
+
+```bash
+btop
+```
+
+## P. Dangerous commands
 
 Следующие команды **не являются smoke test**. Не запускайте их для обычной
 диагностики:
