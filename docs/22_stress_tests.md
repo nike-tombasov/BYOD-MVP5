@@ -251,6 +251,9 @@ Operational limits before profile runs:
 - перед Baseline/High/Extreme operator может вручную настроить
   `target_capacity`, `max_new_connections_per_sec` и
   `listener_min_reconnect_interval_per_ip_seconds`;
+- важные emergency/stress числа сгруппированы в верхнем operator block
+  `src/backend/config.py`: изменить цифру, затем выполнить restart
+  `byod-backend`;
 - heartbeat/stale timings можно менять только осторожно, потому что они влияют
   на stale-session и reconnect_required behavior;
 - `max_new_connections_per_sec` — global backend Listener admission rate;
@@ -260,6 +263,9 @@ Operational limits before profile runs:
   раньше, чем будет достигнута VPS capacity;
 - это валидный сигнал для admission-control testing, но для capacity
   characterization limit может потребоваться аккуратно повысить или отключить.
+- валидный Protocol/engine load run требует `livekit_track_subscribed` /
+  `subscribed > 0`; одного backend Listener count недостаточно для
+  media/subscription load measurement.
 
 ## K. Load profiles
 

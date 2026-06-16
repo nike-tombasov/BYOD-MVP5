@@ -37,6 +37,8 @@ Admission-control meanings:
   connect/reconnect interval.
 - This is intentional protection, but it must be adjustable for stress tests
   and event emergency operations.
+- Important emergency/stress numbers are grouped in the top operator block of
+  `src/backend/config.py`; edit the number and restart `byod-backend`.
 
 Active PLAY heartbeat baseline:
 - heartbeat interval = `10 sec`

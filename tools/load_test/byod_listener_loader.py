@@ -110,7 +110,9 @@ class Counters:
     workers_started: int = 0
     backend_connected: int = 0
     livekit_connected: int = 0
+    subscription_requested: int = 0
     subscribed: int = 0
+    waiting_for_track: int = 0
     playing_heartbeat_sent: int = 0
     failed: int = 0
     reconnecting: int = 0
@@ -148,6 +150,10 @@ class Worker:
         self.ws: WebSocketClientProtocol | None = None
         self.room: Any = None
         self.subscribed = False
+        self.subscription_requested = False
+        self.subscription_counted = False
+        self.waiting_for_track_counted = False
+        self.media_receive_not_confirmed_logged = False
         self.logger = logging.getLogger(f"worker.{self.worker_id}")
 
     async def event(self, event: str, level: str = "INFO", **fields: Any) -> None:
@@ -215,6 +221,7 @@ class Worker:
             token, livekit_url, channels = await self.wait_for_connect_and_channels(ws)
             self.selected_channel = self.choose_channel(channels)
             await self.connect_livekit(livekit_url, token)
+            subscription_task = asyncio.create_task(self.subscription_monitor_loop())
             heartbeat_task = asyncio.create_task(self.heartbeat_loop(ws))
             try:
                 await self.shared.inc("holding")
@@ -224,7 +231,10 @@ class Worker:
                 await self.shared.inc("completed")
                 await self.event("worker_hold_completed", selected_channel=self.selected_channel)
             finally:
+                subscription_task.cancel()
                 heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await subscription_task
                 with contextlib.suppress(asyncio.CancelledError):
                     await heartbeat_task
 
@@ -289,43 +299,180 @@ class Worker:
             raise RuntimeError("no listenable channels received")
         return random.choice(listenable)
 
+    def _value_or_none(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value)
+        return text if text else None
+
+    def get_publication_name(self, publication: Any, track: Any = None) -> str | None:
+        for attr in ("track_name", "trackName", "name"):
+            name = self._value_or_none(getattr(publication, attr, None))
+            if name:
+                return name
+        track_name = self._value_or_none(getattr(track, "name", None))
+        if track_name:
+            return track_name
+        for attr in ("sid", "track_sid", "trackSid"):
+            diagnostic_name = self._value_or_none(getattr(publication, attr, None))
+            if diagnostic_name:
+                return diagnostic_name
+        return None
+
+    def name_candidates(self, publication: Any, track: Any = None) -> dict[str, str | None]:
+        return {
+            "publication.track_name": self._value_or_none(getattr(publication, "track_name", None)),
+            "publication.trackName": self._value_or_none(getattr(publication, "trackName", None)),
+            "publication.name": self._value_or_none(getattr(publication, "name", None)),
+            "track.name": self._value_or_none(getattr(track, "name", None)),
+            "publication.sid": self._value_or_none(getattr(publication, "sid", None)),
+            "publication.track_sid": self._value_or_none(getattr(publication, "track_sid", None)),
+            "publication.trackSid": self._value_or_none(getattr(publication, "trackSid", None)),
+        }
+
+    def is_audio_publication(self, publication: Any, track: Any = None) -> bool:
+        for candidate in (getattr(publication, "kind", None), getattr(track, "kind", None)):
+            if candidate is None:
+                continue
+            enum_name = getattr(candidate, "name", None)
+            if isinstance(enum_name, str) and "AUDIO" in enum_name.upper():
+                return True
+            text = str(candidate).lower()
+            if "audio" in text:
+                return True
+            if rtc is not None and hasattr(rtc, "TrackKind") and candidate == getattr(rtc.TrackKind, "KIND_AUDIO", None):
+                return True
+        return False
+
+    def _iter_collection_values(self, collection: Any) -> list[Any]:
+        if collection is None:
+            return []
+        if hasattr(collection, "values"):
+            return list(collection.values())
+        if isinstance(collection, (list, tuple, set)):
+            return list(collection)
+        return []
+
+    def iter_audio_publications(self) -> list[tuple[Any, Any]]:
+        if self.room is None:
+            return []
+        results: list[tuple[Any, Any]] = []
+        participants = self._iter_collection_values(getattr(self.room, "remote_participants", None))
+        for participant in participants:
+            seen_ids: set[int] = set()
+            for attr in (
+                "track_publications",
+                "trackPublications",
+                "audio_track_publications",
+                "audioTrackPublications",
+            ):
+                for publication in self._iter_collection_values(getattr(participant, attr, None)):
+                    object_id = id(publication)
+                    if object_id in seen_ids:
+                        continue
+                    seen_ids.add(object_id)
+                    track = getattr(publication, "track", None)
+                    if self.is_audio_publication(publication, track):
+                        results.append((participant, publication))
+        return results
+
+    async def mark_subscribed(self, track_name: str | None) -> None:
+        self.subscribed = True
+        if not self.subscription_counted:
+            self.subscription_counted = True
+            await self.shared.inc("subscribed")
+        await self.event("livekit_track_subscribed", track_name=track_name)
+        if not self.media_receive_not_confirmed_logged:
+            self.media_receive_not_confirmed_logged = True
+            await self.event("livekit_media_receive_not_confirmed", selected_channel=self.selected_channel)
+
+    async def try_subscribe_selected_channel(self) -> bool:
+        found_match = False
+        for participant, publication in self.iter_audio_publications():
+            track = getattr(publication, "track", None)
+            resolved_name = self.get_publication_name(publication, track)
+            await self.event(
+                "livekit_publication_seen",
+                "DEBUG",
+                participant_identity=getattr(participant, "identity", None),
+                participant_sid=getattr(participant, "sid", None),
+                name_candidates=self.name_candidates(publication, track),
+                resolved_name=resolved_name,
+                kind=str(getattr(publication, "kind", None) or getattr(track, "kind", None)),
+                subscribed=getattr(publication, "subscribed", None),
+                track_present=track is not None,
+            )
+            if resolved_name != self.selected_channel:
+                continue
+            found_match = True
+            if not self.subscription_requested:
+                with contextlib.suppress(Exception):
+                    publication.set_subscribed(True)
+                self.subscription_requested = True
+                await self.shared.inc("subscription_requested")
+                await self.event("livekit_subscription_requested", selected_channel=self.selected_channel)
+            if getattr(publication, "subscribed", False) and track is not None:
+                await self.mark_subscribed(resolved_name)
+                return True
+        if not found_match:
+            if not self.waiting_for_track_counted:
+                self.waiting_for_track_counted = True
+                await self.shared.inc("waiting_for_track")
+            await self.event("livekit_selected_track_waiting", selected_channel=self.selected_channel)
+        return self.subscribed
+
+    async def subscription_monitor_loop(self) -> None:
+        while not self.shared.stop_event.is_set() and not self.subscribed:
+            await self.try_subscribe_selected_channel()
+            await asyncio.sleep(1.0)
+
     async def connect_livekit(self, livekit_url: str, token: str) -> None:
         if rtc is None:
             raise RuntimeError("livekit.rtc is not importable; install requirements.txt")
         room = rtc.Room()
         self.room = room
 
-        def maybe_subscribe(publication: Any) -> None:
-            name = getattr(publication, "name", None)
-            kind = getattr(publication, "kind", None)
-            if name == self.selected_channel and str(kind).lower().endswith("audio"):
-                with contextlib.suppress(Exception):
-                    publication.set_subscribed(True)
-                self.subscribed = True
-
         @room.on("track_published")
         def on_track_published(publication: Any, participant: Any) -> None:
-            maybe_subscribe(publication)
+            track = getattr(publication, "track", None)
+            asyncio.create_task(
+                self.event(
+                    "livekit_track_published",
+                    participant_identity=getattr(participant, "identity", None),
+                    track_name=self.get_publication_name(publication, track),
+                )
+            )
+            asyncio.create_task(self.try_subscribe_selected_channel())
 
         @room.on("track_subscribed")
         def on_track_subscribed(track: Any, publication: Any, participant: Any) -> None:
-            name = getattr(publication, "name", None) or getattr(track, "name", None)
+            name = self.get_publication_name(publication, track)
             if name == self.selected_channel:
-                self.subscribed = True
-                asyncio.create_task(self.shared.inc("subscribed"))
-                asyncio.create_task(self.event("livekit_track_subscribed", track_name=name))
+                asyncio.create_task(self.mark_subscribed(name))
+
+        @room.on("track_unpublished")
+        def on_track_unpublished(publication: Any, participant: Any) -> None:
+            track_name = self.get_publication_name(publication, getattr(publication, "track", None))
+            if track_name == self.selected_channel:
+                self.subscribed = False
+                self.subscription_requested = False
+                asyncio.create_task(self.event("livekit_track_unpublished", track_name=track_name))
+
+        @room.on("participant_connected")
+        def on_participant_connected(participant: Any) -> None:
+            asyncio.create_task(
+                self.event(
+                    "livekit_participant_connected",
+                    participant_identity=getattr(participant, "identity", None),
+                    participant_sid=getattr(participant, "sid", None),
+                )
+            )
+            asyncio.create_task(self.try_subscribe_selected_channel())
 
         await room.connect(livekit_url, token, rtc.RoomOptions(auto_subscribe=False, connect_timeout=self.shared.args.connect_timeout_sec))
         await self.shared.inc("livekit_connected")
         await self.event("livekit_connected", selected_channel=self.selected_channel)
-        for participant in room.remote_participants.values():
-            for publication in participant.track_publications.values():
-                maybe_subscribe(publication)
-        if self.subscribed:
-            await self.shared.inc("subscribed")
-            await self.event("livekit_subscription_requested", selected_channel=self.selected_channel)
-        else:
-            await self.event("livekit_track_not_published_yet", selected_channel=self.selected_channel)
+        await self.try_subscribe_selected_channel()
 
     async def heartbeat_loop(self, ws: WebSocketClientProtocol) -> None:
         while not self.shared.stop_event.is_set():

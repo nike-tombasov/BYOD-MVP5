@@ -114,7 +114,11 @@ For today's public-IP/HTTP pilot, set:
 - `BYOD_LIVEKIT_API_KEY=<pilot_key>`
 - `BYOD_LIVEKIT_API_SECRET=<pilot_secret>`
 - `BYOD_CORS_ALLOWED_ORIGIN=http://<VPS_PUBLIC_IP>`
-- `BYOD_TARGET_CAPACITY=200`
+
+Emergency/stress numeric backend limits, including clean-deploy
+`target_capacity`, are grouped in the top operator block of
+`src/backend/config.py`. Edit only the number on the right side, then restart
+`byod-backend`.
 
 Edit LiveKit config:
 

@@ -342,6 +342,9 @@ Runtime text mutation is not used in current project.
   действует global new Listener connection rate, затем per-IP interval;
 - это intentional protection, но оно должно быть adjustable для stress tests
   и event emergency operations.
+- Важные emergency/stress числа сгруппированы в верхнем operator block
+  `src/backend/config.py`: изменить цифру, затем выполнить restart
+  `byod-backend`.
 
 4) Active PLAY heartbeat control:
 - после успешного backend WS connect backend ждёт `60 sec` первого ACTIVE PLAY trigger;
