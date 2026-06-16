@@ -4,12 +4,12 @@
 
 Это постоянное руководство по нагрузочному тестированию BYOD на протяжении
 жизненного цикла проекта, а не временный артефакт Stage XI. После крупных
-изменений системы по нему повторно проверяется ёмкость конкретного VPS,
-стабильность длительной работы и поведение при деградации.
+изменений системы по нему повторно проверяется resource usage curve конкретного
+VPS, стабильность длительной работы и поведение при деградации.
 
-Этот документ является **Spec-first** контрактом. Упомянутые ниже Loader,
-Analyzer, `metrics_snapshot`, скрипты и сервисы описывают будущую реализацию и
-в этом PR не создаются.
+Implementation status: planned. Упомянутые ниже Loader, Analyzer,
+`metrics_snapshot`, скрипты и сервисы являются planned implementation
+artifacts.
 
 ## A. Scope
 
@@ -23,12 +23,19 @@ Browser/Web Listener UI load testing явно находится вне scope St
 и массового запуска вкладок относится к отдельной будущей задаче Web Listener
 UI hardening.
 
-Цель — определить для конкретного VPS:
+Цель — выполнить capacity characterization для конкретного VPS и сравнивать
+результаты между разными VPS configurations. Stage XI измеряет:
 
-- максимальную стабильную Listener capacity;
-- безопасный рабочий диапазон;
-- узкие места backend, LiveKit, nginx, VPS и сети;
-- характер контролируемой деградации и отказа под нагрузкой.
+- как BYOD потребляет CPU;
+- как BYOD потребляет RAM;
+- как BYOD потребляет network RX/TX;
+- как BYOD потребляет disk;
+- как backend, LiveKit и nginx ведут себя при увеличении Listener count;
+- observed stable range;
+- observed degradation point;
+- observed failure mode;
+- resource usage curve для каждого профиля нагрузки;
+- различия результатов между VPS configurations.
 
 ## B. Target environment
 
@@ -57,7 +64,7 @@ tools/load_test/
 One-folder script здесь означает обычную папку со скриптом, зависимостями и,
 опционально, вспомогательным `.bat`. Это не installable Python package.
 
-В данном PR папка и исполняемые файлы не создаются.
+Implementation status: planned; папка и исполняемые файлы пока не созданы.
 
 ## D. Модель подключения Loader
 
@@ -109,7 +116,7 @@ One-folder script здесь означает обычную папку со с�
   `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
 - `/admin/metrics_snapshot` должен быть local-only и не должен публиковаться
   через nginx.
-- В этом Spec-first PR фиксируется только контракт endpoint; реализации нет.
+- Implementation contract фиксирует endpoint; implementation status: planned.
 
 ## F. Runner identity
 
@@ -292,9 +299,25 @@ IP в примерах — адрес формата CLI-примера, а не
 - `channels-timeout-sec: 60`
 - `reconnect: true | false`
 
-Профили в этом PR — только documentation/manual targets. Автоматическое
-редактирование конфигурации не реализуется. Фактические backend config values
-оператор вручную меняет после deploy перед соответствующим профилем.
+### HOLD
+
+`hold` / HOLD — это observation period после завершения ramp-up. Во время HOLD
+каждый Listener worker сохраняет активными:
+
+- backend WebSocket;
+- LiveKit connection;
+- selected channel subscription;
+- Listener heartbeat.
+
+HOLD используется для сбора steady-state VPS/resource metrics: CPU, RAM,
+network RX/TX, disk, backend/LiveKit/nginx status и counts. HOLD не является
+pass/fail target. Если запуск деградировал или завершился во время HOLD, он всё
+равно может дать полезные данные об observed degradation point или observed
+failure mode, если метрики собраны достаточно полно.
+
+Профили являются documentation/manual targets. Автоматическое редактирование
+конфигурации не реализуется. Фактические backend config values оператор вручную
+меняет после deploy перед соответствующим профилем.
 
 ## L. План VPS Analyzer
 
@@ -314,7 +337,7 @@ Analyzer должен:
 - при перегрузке или reboot VPS естественно остановиться, сохранив уже
   записанные на диск логи.
 
-Скрипт и service unit будут созданы в отдельном implementation PR.
+Planned implementation artifact: script и service unit для Analyzer.
 
 ## M. Путь вывода Analyzer
 
@@ -367,7 +390,7 @@ CSV предназначен для таблиц, JSONL — для machine parsi
 2. Если LiveKit API нельзя быстро и надёжно использовать, получать fallback из
    `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
 3. `/admin/metrics_snapshot` остаётся local-only и не публикуется через nginx.
-4. Endpoint планируется для отдельного будущего implementation PR.
+4. Endpoint имеет implementation status: planned.
 5. Machine-readable JSON должен содержать как минимум:
 
    - `ts`;
@@ -382,23 +405,28 @@ CSV предназначен для таблиц, JSONL — для machine parsi
    - channel summary с `channel_id`, `listen`, `owner` и, если доступно,
      `active_listeners`.
 
-## P. Планируемое deploy-требование следующего code PR
+## P. Планируемое deploy-требование
 
 `btop` должен автоматически устанавливаться при подготовке Stage X/Stage XI
-VPS. В этом Spec-first PR `00_prepare_host.sh` не меняется. Будущий
-implementation PR должен добавить `btop` в host packages.
+VPS. Planned implementation artifact: обновление host packages так, чтобы
+`btop` устанавливался автоматически.
 
-## Q. PASS, DEGRADED и FAIL
+## Q. Run validity categories
 
-Точные числовые thresholds в Spec-first PR не финализированы. До первых
-реальных прогонов используются категории:
+Stage XI не является проверкой фиксированного capacity ceiling. Основная цель —
+измерение и сравнение resource usage curve, observed stable range, observed
+degradation point и observed failure mode. Для оценки качества данных
+используются run-validity categories:
 
-- **PASS** — целевое число listeners подключено, hold стабилен, нет крупной
-  disconnect storm, метрики доступны.
-- **DEGRADED** — тест продолжается, но ошибки, reconnects или resource pressure
-  превышают приемлемый уровень.
-- **FAIL** — backend, LiveKit или nginx недоступен; большая доля подключений не
-  устанавливается; метрики отсутствуют; VPS нестабилен или reboot.
+- **VALID RUN** — metrics complete enough for analysis. Данных достаточно,
+  чтобы построить resource usage curve и описать поведение backend, LiveKit и
+  nginx при заданном Listener count.
+- **PARTIAL RUN** — тест деградировал или завершился раньше ожидаемого HOLD, но
+  собранные данные всё ещё полезны для анализа observed degradation point или
+  observed failure mode.
+- **INVALID RUN** — данным нельзя доверять из-за ошибки Loader, Analyzer,
+  config, setup или другой проблемы методики; такой запуск не используется для
+  сравнения VPS configurations.
 
-Финальные числовые thresholds будут обновлены после первых реальных запусков
-Baseline, High и Extreme.
+Числовые thresholds могут появиться после накопления измерений, но они не
+заменяют raw metrics и не являются основной целью Stage XI.

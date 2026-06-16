@@ -66,13 +66,15 @@ Stage X is a public-IPv4, HTTP-only pilot without a domain. Domain setup, TLS,
 production monitoring, scaling, load balancing, and multi-node deployment are
 future production-hardening work and are not Stage X requirements.
 
-## Stage XI — Spec-first load characterization
+## Stage XI — Protocol/engine load measurement
 
-Stage XI is currently planned/spec-first and covers **Protocol/engine load
-only**. Browser/Web Listener UI load testing is explicitly out of scope and is
-postponed to future Web Listener UI hardening. The Loader and Analyzer, along
-with any supporting backend metrics endpoint, will be implemented in a
-separate later PR.
+Stage XI is currently planned and covers **Protocol/engine load only**.
+Browser/Web Listener UI load testing is explicitly out of scope and is
+postponed to future Web Listener UI hardening. The goal is VPS resource
+characterization: CPU, RAM, network RX/TX, disk, and backend/LiveKit/nginx
+behavior under increasing Listener count. Planned implementation artifacts
+include the Loader, Analyzer, and any supporting local-only backend metrics
+endpoint.
 
 Permanent test manual:
 - `docs/22_stress_tests.md`

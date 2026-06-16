@@ -34,9 +34,9 @@ Canonical sources:
 
 ### 15.2 Current unresolved items
 
-1) Maximum stable Listener count on the concrete Stage XI VPS
-- determine the largest Listener population that remains stable for the
-  selected VPS size and network conditions.
+1) Observed stable range on the concrete Stage XI VPS
+- determine the observed stable range for the selected VPS size and network
+  conditions.
 
 2) Stage XI Analyzer metrics implementation
 - collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics throughout
@@ -49,11 +49,9 @@ Canonical sources:
   required counts, or whether the planned local-only backend
   `/admin/metrics_snapshot` endpoint is needed.
 
-4) Stage XI pass/fail and degradation contract
-- define numeric pass/fail thresholds for connection success, audio behavior,
-  latency/jitter, reconnects, errors, and resource use;
-- define acceptable degradation and the point at which the VPS is considered
-  unstable.
+4) Stage XI run-validity and degradation contract
+- define when a run is VALID RUN, PARTIAL RUN, or INVALID RUN for analysis;
+- define how observed degradation point and observed failure mode are recorded.
 
 5) JSON strict validation final freeze
 - open decision: keep strict regex + reject-all policy or simplify for operator UX in first VPS cycle.

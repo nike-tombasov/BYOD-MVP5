@@ -105,30 +105,33 @@ Canonical deploy package:
 Planned only; not implemented.
 
 ### Main target
-Measure the stable operating envelope and degradation behavior of the concrete
-single-VPS pilot environment using Protocol/engine load only. Browser/Web
-Listener UI load testing is out of scope and belongs to future Web Listener UI
-hardening.
+Measure and characterize how the concrete single-VPS pilot environment consumes
+CPU, RAM, network RX/TX, and disk under increasing Listener count using
+Protocol/engine load only. Stage XI compares resource usage curves, observed
+stable ranges, observed degradation points, and observed failure modes across
+VPS configurations. Browser/Web Listener UI load testing is out of scope and
+belongs to future Web Listener UI hardening.
 
 ### Planned work
-1) determine the maximum stable Listener count on the selected VPS;
+1) measure the observed stable range on the selected VPS;
 2) maintain the permanent specification in `docs/22_stress_tests.md`;
-3) implement in a later PR a Windows-oriented, one-folder Python 3.11 Loader
-   under `tools/load_test/`;
-4) implement in a later PR
+3) planned implementation artifact: a Windows-oriented, one-folder Python 3.11
+   Loader under `tools/load_test/`;
+4) planned implementation artifact:
    `95_metrics_analyzer.sh start|stop|status`, backed by systemd;
-5) evaluate LiveKit API metrics and, if needed, implement in a later PR the
-   local-only backend endpoint `/admin/metrics_snapshot`;
+5) evaluate LiveKit API metrics and, if needed, planned implementation
+   artifact: local-only backend endpoint `/admin/metrics_snapshot`;
 6) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
-7) define numeric pass/fail thresholds and expected degradation behavior;
+7) classify runs as VALID RUN, PARTIAL RUN, or INVALID RUN for analysis quality;
 8) produce a reproducible test procedure and results report for that VPS.
 
-This stage remains planned/spec-first. None of the Loader, Analyzer, service,
-or backend metrics endpoint artifacts are implemented by the specification PR.
+This stage remains planned. Loader, Analyzer, service, and backend metrics
+endpoint artifacts have implementation status: planned.
 
 ### Exit criteria
-- bottlenecks, pass/fail thresholds, degradation behavior, and a safe operating
-  envelope are measured and documented for the tested VPS
+- resource usage curves, observed stable range, observed degradation point,
+  observed failure mode, and a safe operating envelope are measured and
+  documented for the tested VPS
 
 ---
 
