@@ -30,7 +30,7 @@ def _env_int(name: str, default: int, min_value: int = 1) -> int:
 # Менять только цифры справа. После изменения нужен restart byod-backend.
 
 # Сколько живёт LiveKit token, который backend выдаёт Listener/Publisher.
-JWT_LIFETIME_SECONDS = 2 * 60 * 60
+JWT_LIFETIME_SECONDS = 7200
 
 # Через сколько секунд без heartbeat backend считает сессию устаревшей.
 HEARTBEAT_TIMEOUT_SECONDS = 30

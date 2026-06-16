@@ -207,6 +207,16 @@ python tools/load_test/byod_listener_loader.py ^
 IP в примерах — адрес формата CLI-примера, а не credential или гарантия
 доступности конкретного сервера.
 
+
+## Валидность Protocol/engine run
+
+Для валидного LiveKit subscription load недостаточно видеть только
+`backend_connected`: это подтверждает лишь backend WebSocket. Минимальный
+критичный сигнал для media/subscription нагрузки — confirmed
+`livekit_track_subscribed`, который увеличивает `subscribed`. Если
+`livekit_connected` растёт, а `subscribed` почти не растёт, запуск считать
+`PARTIAL_RUN` или `INVALID_RUN` для capacity measurements до устранения причины.
+
 ## H. Выбор канала
 
 - `channel-mode=random` случайно выбирает только канал с `listen=true`.

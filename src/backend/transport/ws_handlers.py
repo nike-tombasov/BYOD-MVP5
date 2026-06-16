@@ -332,7 +332,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             payload = state_service.get_payload(first)
             diagnostic_metadata = {
                 key: payload.get(key)
-                for key in ("client_type", "runner_id", "worker_id", "worker_index", "selected_channel_mode")
+                for key in ("client_type", "runner_id", "loader_run_id", "worker_id", "worker_index", "selected_channel_mode")
                 if key in payload
             }
 
@@ -368,6 +368,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                         ip=client_ip,
                         client_type=diagnostic_metadata.get("client_type"),
                         runner_id=diagnostic_metadata.get("runner_id"),
+                        loader_run_id=diagnostic_metadata.get("loader_run_id"),
                         worker_id=diagnostic_metadata.get("worker_id"),
                     )
                     room_service.persist_all()

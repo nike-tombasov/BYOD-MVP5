@@ -222,3 +222,75 @@ HOLD нужен для steady-state метрик VPS Analyzer. HOLD не явл�
 ## 16. PyInstaller
 
 PyInstaller packaging опционален и не требуется для первых запусков. Сначала запускайте Loader из `.venv`. Упаковку можно рассмотреть позже, если она не замедляет MVP и не мешает диагностике.
+
+## 17. Ctrl+C shutdown и нормальное закрытие
+
+`Ctrl+C` является штатным способом остановки. Loader ставит общий stop flag,
+даёт worker'ам короткое время закрыть heartbeat/subscription monitor, затем
+закрывает LiveKit room и backend WebSocket с normal close. Backend close code
+`1000` считается нормальным shutdown, а не ошибкой; в JSONL появляется
+`backend_ws_closed_normal`, если backend WS закрылся во время остановки.
+
+Сообщение `Event loop is closed` после `Ctrl+C` означает shutdown bug и не
+должно повторяться или заливать console/log.
+
+## 18. loader_run_id и несколько окон Loader
+
+`runner_id` остаётся обязательным и читаемым идентификатором ПК/оператора.
+`worker_id` остаётся в формате:
+
+```text
+<runner_id>-L0001
+```
+
+Каждый запуск дополнительно имеет `loader_run_id`. Его можно передать явно:
+
+```bat
+--loader-run-id home-pc1-window-a
+```
+
+Если параметр не задан, Loader создаёт значение автоматически:
+
+```text
+<runner_id>-<YYYYMMDD-HHMMSS>-pid<PID>
+```
+
+`loader_run_id` попадает в каждое JSONL event, имена `.log`/`.jsonl`/`.csv`, и
+backend diagnostic metadata вместе с `runner_id`, `worker_id` и
+`worker_index`. Поэтому несколько Loader windows из одной папки и с одного ПК
+разрешены: используйте одинаковый `runner_id` для ПК и разные автоматические
+или ручные `loader_run_id` для run separation.
+
+## 19. Валидность run и subscribed
+
+Для LiveKit subscription load ключевой минимум — confirmed
+`livekit_track_subscribed`. `backend_connected` означает только, что backend
+WebSocket принят, и сам по себе не является валидным media/subscription load
+test.
+
+В финальном summary смотрите:
+
+- `backend_connected` — backend WebSocket session;
+- `livekit_connected` — LiveKit room connection;
+- `subscription_requested` — Loader запросил selected channel subscription;
+- `subscribed` — LiveKit подтвердил `livekit_track_subscribed`;
+- `run_validity` — `VALID_RUN`, `PARTIAL_RUN` или `INVALID_RUN`.
+
+Если много `livekit_connected`, но мало `subscribed`, LiveKit subscription side
+ещё не валиден для capacity measurements. Для debug можно задать
+`--subscription-timeout-sec N`; default `0` ждёт indefinitely и не fail'ит
+worker только из-за pending subscription.
+
+## 20. JSONL рост и debug-publications
+
+По умолчанию JSONL уважает `--log-level` и не пишет безлимитный поток DEBUG
+событий. Publication/participant шум ограничен: Loader пишет небольшой initial
+inventory, selected channel match/state change, subscription requested и
+subscription confirmed. Полный поток публикаций включается только флагом:
+
+```bat
+--debug-publications
+```
+
+Высокий рост JSONL обычно означает, что включён `--debug-publications` или
+сломался rate limiting для publication/participant events.

@@ -141,6 +141,7 @@ class StateService:
             selected_channel=None,
             client_type=metadata.get("client_type") if isinstance(metadata.get("client_type"), str) else None,
             runner_id=metadata.get("runner_id") if isinstance(metadata.get("runner_id"), str) else None,
+            loader_run_id=metadata.get("loader_run_id") if isinstance(metadata.get("loader_run_id"), str) else None,
             worker_id=metadata.get("worker_id") if isinstance(metadata.get("worker_id"), str) else None,
             worker_index=parsed_worker_index,
             selected_channel_mode=metadata.get("selected_channel_mode")

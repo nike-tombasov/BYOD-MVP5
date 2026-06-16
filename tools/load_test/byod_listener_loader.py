@@ -15,6 +15,7 @@ import csv
 import json
 import logging
 import random
+import os
 import signal
 import sys
 import time
@@ -25,7 +26,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import websockets
-from websockets import WebSocketClientProtocol
+from websockets import ConnectionClosedOK, WebSocketClientProtocol
 
 try:
     from livekit import rtc
@@ -103,6 +104,9 @@ class Args:
     channels_timeout_sec: float
     reconnect: bool
     log_level: str
+    loader_run_id: str
+    debug_publications: bool
+    subscription_timeout_sec: float
 
 
 @dataclass
@@ -131,6 +135,9 @@ class SharedState:
     jsonl_path: Path | None = None
     csv_path: Path | None = None
 
+    def should_log_jsonl(self, level: str) -> bool:
+        return getattr(logging, level.upper(), logging.INFO) >= getattr(logging, self.args.log_level, logging.INFO)
+
     async def inc(self, field_name: str, delta: int = 1) -> None:
         async with self.lock:
             setattr(self.counters, field_name, getattr(self.counters, field_name) + delta)
@@ -154,7 +161,63 @@ class Worker:
         self.subscription_counted = False
         self.waiting_for_track_counted = False
         self.media_receive_not_confirmed_logged = False
+        self.closing = False
+        self.closed = False
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.loop_closed_logged = False
+        self.subscription_task: asyncio.Task[None] | None = None
+        self.heartbeat_task: asyncio.Task[None] | None = None
+        self.last_waiting_log_ts = 0.0
+        self.last_pending_log_ts = 0.0
+        self.participant_connected_logged = False
+        self.publication_inventory_logged = False
+        self.selected_publication_state: tuple[bool, bool] | None = None
+        self.subscription_lifecycle = 0
+        self.subscribed_lifecycle_logged: set[int] = set()
         self.logger = logging.getLogger(f"worker.{self.worker_id}")
+
+
+    def safe_create_task(self, coro: Any, event_name: str | None = None) -> asyncio.Task[Any] | None:
+        if self.shared.stop_event.is_set() or self.closing or self.closed:
+            with contextlib.suppress(Exception):
+                coro.close()
+            return None
+        loop = self.loop
+        try:
+            if loop is None:
+                loop = asyncio.get_running_loop()
+                self.loop = loop
+            if loop.is_closed():
+                raise RuntimeError("Event loop is closed")
+            task_holder: dict[str, asyncio.Task[Any]] = {}
+
+            def _schedule() -> None:
+                if self.shared.stop_event.is_set() or self.closing or self.closed:
+                    with contextlib.suppress(Exception):
+                        coro.close()
+                    return
+                task_holder["task"] = loop.create_task(coro)
+
+            loop.call_soon_threadsafe(_schedule)
+            return task_holder.get("task")
+        except RuntimeError as exc:
+            with contextlib.suppress(Exception):
+                coro.close()
+            if "Event loop is closed" in str(exc) and not self.loop_closed_logged:
+                self.loop_closed_logged = True
+                self.logger.debug("livekit_callback_suppressed_after_loop_closed event=%s", event_name)
+            return None
+
+    async def stop_background_tasks(self) -> None:
+        for task in (self.subscription_task, self.heartbeat_task):
+            if task is not None and not task.done():
+                task.cancel()
+        for task in (self.subscription_task, self.heartbeat_task):
+            if task is not None:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        self.subscription_task = None
+        self.heartbeat_task = None
 
     async def event(self, event: str, level: str = "INFO", **fields: Any) -> None:
         payload = {
@@ -162,11 +225,13 @@ class Worker:
             "ts_utc": utc_iso(),
             "level": level,
             "event": event,
+            "runner_id": self.shared.args.runner_id,
+            "loader_run_id": self.shared.args.loader_run_id,
             "worker_id": self.worker_id,
             "worker_index": self.index,
             **fields,
         }
-        if self.shared.jsonl_path:
+        if self.shared.jsonl_path and self.shared.should_log_jsonl(level):
             with self.shared.jsonl_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
         getattr(self.logger, level.lower(), self.logger.info)("%s %s", event, fields)
@@ -181,6 +246,7 @@ class Worker:
         }
 
     async def run(self) -> None:
+        self.loop = asyncio.get_running_loop()
         await self.shared.inc("workers_started")
         while not self.shared.stop_event.is_set():
             try:
@@ -214,15 +280,22 @@ class Worker:
                 "client_role": "listener",
                 "client_type": "load_runner",
                 "runner_id": self.shared.args.runner_id,
+                "loader_run_id": self.shared.args.loader_run_id,
                 "worker_id": self.worker_id,
                 "worker_index": self.index,
                 "selected_channel_mode": self.shared.args.channel_mode,
             })))
-            token, livekit_url, channels = await self.wait_for_connect_and_channels(ws)
+            try:
+                token, livekit_url, channels = await self.wait_for_connect_and_channels(ws)
+            except ConnectionClosedOK:
+                if self.shared.stop_event.is_set() or self.closing:
+                    await self.event("backend_ws_closed_normal")
+                    return
+                raise
             self.selected_channel = self.choose_channel(channels)
             await self.connect_livekit(livekit_url, token)
-            subscription_task = asyncio.create_task(self.subscription_monitor_loop())
-            heartbeat_task = asyncio.create_task(self.heartbeat_loop(ws))
+            self.subscription_task = asyncio.create_task(self.subscription_monitor_loop())
+            self.heartbeat_task = asyncio.create_task(self.heartbeat_loop(ws))
             try:
                 await self.shared.inc("holding")
                 hold_deadline = time.monotonic() + self.shared.args.hold_sec
@@ -231,12 +304,7 @@ class Worker:
                 await self.shared.inc("completed")
                 await self.event("worker_hold_completed", selected_channel=self.selected_channel)
             finally:
-                subscription_task.cancel()
-                heartbeat_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await subscription_task
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat_task
+                await self.stop_background_tasks()
 
     async def preflight(self) -> None:
         import urllib.request
@@ -381,7 +449,9 @@ class Worker:
         if not self.subscription_counted:
             self.subscription_counted = True
             await self.shared.inc("subscribed")
-        await self.event("livekit_track_subscribed", track_name=track_name)
+        if self.subscription_lifecycle not in self.subscribed_lifecycle_logged:
+            self.subscribed_lifecycle_logged.add(self.subscription_lifecycle)
+            await self.event("livekit_track_subscribed", track_name=track_name, selected_channel=self.selected_channel)
         if not self.media_receive_not_confirmed_logged:
             self.media_receive_not_confirmed_logged = True
             await self.event("livekit_media_receive_not_confirmed", selected_channel=self.selected_channel)
@@ -391,26 +461,45 @@ class Worker:
         for participant, publication in self.iter_audio_publications():
             track = getattr(publication, "track", None)
             resolved_name = self.get_publication_name(publication, track)
-            await self.event(
-                "livekit_publication_seen",
-                "DEBUG",
-                participant_identity=getattr(participant, "identity", None),
-                participant_sid=getattr(participant, "sid", None),
-                name_candidates=self.name_candidates(publication, track),
-                resolved_name=resolved_name,
-                kind=str(getattr(publication, "kind", None) or getattr(track, "kind", None)),
-                subscribed=getattr(publication, "subscribed", None),
-                track_present=track is not None,
-            )
+            publication_state = (resolved_name == self.selected_channel, track is not None)
+            should_log_publication = self.shared.args.debug_publications
+            should_log_publication = should_log_publication or (not self.publication_inventory_logged)
+            should_log_publication = should_log_publication or (resolved_name == self.selected_channel and publication_state != self.selected_publication_state)
+            if should_log_publication:
+                self.publication_inventory_logged = True
+                if resolved_name == self.selected_channel:
+                    self.selected_publication_state = publication_state
+                await self.event(
+                    "livekit_publication_seen",
+                    "DEBUG" if self.shared.args.debug_publications else "INFO",
+                    participant_identity=getattr(participant, "identity", None),
+                    participant_sid=getattr(participant, "sid", None),
+                    name_candidates=self.name_candidates(publication, track),
+                    resolved_name=resolved_name,
+                    kind=str(getattr(publication, "kind", None) or getattr(track, "kind", None)),
+                    subscribed=getattr(publication, "subscribed", None),
+                    track_present=track is not None,
+                )
             if resolved_name != self.selected_channel:
                 continue
             found_match = True
+            if track is None:
+                now = time.monotonic()
+                if now - self.last_waiting_log_ts >= 10.0:
+                    self.last_waiting_log_ts = now
+                    await self.event("livekit_selected_track_waiting", selected_channel=self.selected_channel)
+                continue
             if not self.subscription_requested:
                 with contextlib.suppress(Exception):
                     publication.set_subscribed(True)
                 self.subscription_requested = True
                 await self.shared.inc("subscription_requested")
                 await self.event("livekit_subscription_requested", selected_channel=self.selected_channel)
+            elif not self.subscribed:
+                now = time.monotonic()
+                if now - self.last_pending_log_ts >= 10.0:
+                    self.last_pending_log_ts = now
+                    await self.event("livekit_subscription_pending", selected_channel=self.selected_channel)
             if getattr(publication, "subscribed", False) and track is not None:
                 await self.mark_subscribed(resolved_name)
                 return True
@@ -418,12 +507,21 @@ class Worker:
             if not self.waiting_for_track_counted:
                 self.waiting_for_track_counted = True
                 await self.shared.inc("waiting_for_track")
-            await self.event("livekit_selected_track_waiting", selected_channel=self.selected_channel)
+            now = time.monotonic()
+            if now - self.last_waiting_log_ts >= 10.0:
+                self.last_waiting_log_ts = now
+                await self.event("livekit_selected_track_waiting", selected_channel=self.selected_channel)
         return self.subscribed
 
     async def subscription_monitor_loop(self) -> None:
-        while not self.shared.stop_event.is_set() and not self.subscribed:
+        started = time.monotonic()
+        while not self.shared.stop_event.is_set():
             await self.try_subscribe_selected_channel()
+            timeout = self.shared.args.subscription_timeout_sec
+            if timeout > 0 and not self.subscribed and time.monotonic() - started >= timeout:
+                await self.event("livekit_subscription_timeout", "ERROR", selected_channel=self.selected_channel, timeout_sec=timeout)
+                await self.shared.inc("failed")
+                return
             await asyncio.sleep(1.0)
 
     async def connect_livekit(self, livekit_url: str, token: str) -> None:
@@ -435,20 +533,20 @@ class Worker:
         @room.on("track_published")
         def on_track_published(publication: Any, participant: Any) -> None:
             track = getattr(publication, "track", None)
-            asyncio.create_task(
+            self.safe_create_task(
                 self.event(
                     "livekit_track_published",
                     participant_identity=getattr(participant, "identity", None),
                     track_name=self.get_publication_name(publication, track),
                 )
             )
-            asyncio.create_task(self.try_subscribe_selected_channel())
+            self.safe_create_task(self.try_subscribe_selected_channel(), "try_subscribe_selected_channel")
 
         @room.on("track_subscribed")
         def on_track_subscribed(track: Any, publication: Any, participant: Any) -> None:
             name = self.get_publication_name(publication, track)
             if name == self.selected_channel:
-                asyncio.create_task(self.mark_subscribed(name))
+                self.safe_create_task(self.mark_subscribed(name), "track_subscribed")
 
         @room.on("track_unpublished")
         def on_track_unpublished(publication: Any, participant: Any) -> None:
@@ -456,18 +554,23 @@ class Worker:
             if track_name == self.selected_channel:
                 self.subscribed = False
                 self.subscription_requested = False
-                asyncio.create_task(self.event("livekit_track_unpublished", track_name=track_name))
+                self.subscription_lifecycle += 1
+                self.safe_create_task(self.event("livekit_track_unpublished", track_name=track_name), "track_unpublished")
 
         @room.on("participant_connected")
         def on_participant_connected(participant: Any) -> None:
-            asyncio.create_task(
-                self.event(
-                    "livekit_participant_connected",
-                    participant_identity=getattr(participant, "identity", None),
-                    participant_sid=getattr(participant, "sid", None),
+            if self.shared.args.debug_publications or not self.participant_connected_logged:
+                self.participant_connected_logged = True
+                self.safe_create_task(
+                    self.event(
+                        "livekit_participant_connected",
+                        "DEBUG" if self.shared.args.debug_publications else "INFO",
+                        participant_identity=getattr(participant, "identity", None),
+                        participant_sid=getattr(participant, "sid", None),
+                    ),
+                    "participant_connected",
                 )
-            )
-            asyncio.create_task(self.try_subscribe_selected_channel())
+            self.safe_create_task(self.try_subscribe_selected_channel(), "try_subscribe_selected_channel")
 
         await room.connect(livekit_url, token, rtc.RoomOptions(auto_subscribe=False, connect_timeout=self.shared.args.connect_timeout_sec))
         await self.shared.inc("livekit_connected")
@@ -486,12 +589,49 @@ class Worker:
             await asyncio.sleep(self.shared.args.heartbeat_sec)
 
     async def close(self) -> None:
+        if self.closed:
+            return
+        self.closing = True
+        await self.stop_background_tasks()
         if self.room is not None:
             with contextlib.suppress(Exception):
-                self.room.disconnect()
+                result = self.room.disconnect()
+                if hasattr(result, "__await__"):
+                    await result
+            await asyncio.sleep(0.1)
+            self.room = None
         if self.ws is not None:
             with contextlib.suppress(Exception):
-                await self.ws.close()
+                await self.ws.close(code=1000)
+            self.ws = None
+        self.closed = True
+
+def run_validity(args: Args, snap: dict[str, int]) -> str:
+    fatal_errors = snap.get("failed", 0) > 0 and snap.get("subscribed", 0) == 0
+    if snap.get("subscribed", 0) == 0:
+        return "INVALID_RUN"
+    if not fatal_errors and (snap.get("subscribed") == snap.get("workers_started") or snap.get("subscribed") == snap.get("livekit_connected")):
+        return "VALID_RUN"
+    return "PARTIAL_RUN"
+
+
+async def write_final_summary(shared: SharedState, csv_summary: Path) -> dict[str, Any]:
+    snap = await shared.snapshot()
+    summary = {
+        "workers_target": shared.args.listeners,
+        **snap,
+        "run_validity": run_validity(shared.args, snap),
+    }
+    with csv_summary.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["ts_local", *summary.keys()])
+        writer.writeheader()
+        writer.writerow({"ts_local": local_ts(), **summary})
+    if shared.jsonl_path:
+        payload = {"ts_local": local_ts(), "ts_utc": utc_iso(), "level": "INFO", "event": "loader_final_summary", "runner_id": shared.args.runner_id, "loader_run_id": shared.args.loader_run_id, **summary}
+        with shared.jsonl_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    print("FINAL " + " ".join(f"{k}={v}" for k, v in summary.items()), flush=True)
+    return summary
 
 
 async def status_loop(shared: SharedState) -> None:
@@ -520,6 +660,9 @@ def parse_args() -> Args:
     parser.add_argument("--channels-timeout-sec", type=float, default=60.0)
     parser.add_argument("--reconnect", nargs="?", const="true", default="false", type=parse_bool)
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--loader-run-id", help="Unique run id; default is <runner_id>-<YYYYMMDD-HHMMSS>-pid<PID>")
+    parser.add_argument("--debug-publications", action="store_true", help="Write verbose LiveKit publication/participant debug events")
+    parser.add_argument("--subscription-timeout-sec", type=float, default=0.0, help="0 means wait indefinitely")
     ns = parser.parse_args()
     if ns.listeners < 1:
         parser.error("--listeners must be >= 1")
@@ -531,15 +674,20 @@ def parse_args() -> Args:
         parser.error("--channel-id is required when --channel-mode fixed")
     if not ns.runner_id.strip():
         parser.error("--runner-id is mandatory and cannot be empty")
+    if ns.subscription_timeout_sec < 0:
+        parser.error("--subscription-timeout-sec must be >= 0")
+    ns.runner_id = ns.runner_id.strip()
+    if not ns.loader_run_id:
+        ns.loader_run_id = f"{ns.runner_id}-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-pid{os.getpid()}"
     return Args(**vars(ns))
 
 
-def setup_logging(level: str) -> tuple[Path, Path, Path]:
+def setup_logging(level: str, loader_run_id: str) -> tuple[Path, Path, Path]:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    run_id = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
-    human_log = LOG_DIR / f"byod_loader_{run_id}.log"
-    jsonl_log = LOG_DIR / f"byod_loader_{run_id}.jsonl"
-    csv_summary = LOG_DIR / f"byod_loader_{run_id}.csv"
+    safe_run_id = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in loader_run_id)
+    human_log = LOG_DIR / f"byod_loader_{safe_run_id}.log"
+    jsonl_log = LOG_DIR / f"byod_loader_{safe_run_id}.jsonl"
+    csv_summary = LOG_DIR / f"byod_loader_{safe_run_id}.csv"
     logging.basicConfig(
         level=getattr(logging, level),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -552,7 +700,7 @@ async def main_async() -> int:
     args = parse_args()
     backend_ws_url = build_ws_url(args.server)
     health_url = build_health_url(args.server)
-    human_log, jsonl_log, csv_summary = setup_logging(args.log_level)
+    human_log, jsonl_log, csv_summary = setup_logging(args.log_level, args.loader_run_id)
     stop_event = asyncio.Event()
     shared = SharedState(args=args, backend_ws_url=backend_ws_url, health_url=health_url, stop_event=stop_event, jsonl_path=jsonl_log, csv_path=csv_summary)
 
@@ -565,6 +713,7 @@ async def main_async() -> int:
     print(f"channel_mode={args.channel_mode} channel_id={args.channel_id or '-'}")
     print(f"hold_sec={args.hold_sec}")
     print(f"runner_id={args.runner_id}")
+    print(f"loader_run_id={args.loader_run_id}")
     print(f"python={sys.version.split()[0]}")
     print(f"log_path={LOG_DIR}")
     print("No PIN is required. Tokens are not logged.")
@@ -586,22 +735,24 @@ async def main_async() -> int:
             if args.ramp_mode == "linear" and idx < args.listeners:
                 await asyncio.sleep(args.listener_every_sec)
         if workers:
-            await asyncio.wait(workers)
+            wait_all = asyncio.gather(*workers, return_exceptions=True)
+            stop_wait = asyncio.create_task(stop_event.wait())
+            done, _ = await asyncio.wait({wait_all, stop_wait}, return_when=asyncio.FIRST_COMPLETED)
+            if stop_wait in done and not wait_all.done():
+                await asyncio.wait(workers, timeout=5.0)
     except KeyboardInterrupt:
         stop_event.set()
     finally:
         stop_event.set()
         status.cancel()
-        for task in workers:
-            task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await status
-        await asyncio.gather(*workers, return_exceptions=True)
-        snap = await shared.snapshot()
-        with csv_summary.open("w", newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=["ts_local", *snap.keys()])
-            writer.writeheader()
-            writer.writerow({"ts_local": local_ts(), **snap})
+        done, pending = await asyncio.wait(workers, timeout=5.0) if workers else (set(), set())
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        await write_final_summary(shared, csv_summary)
         print(f"Logs: {human_log} {jsonl_log} {csv_summary}")
     return 0
 
