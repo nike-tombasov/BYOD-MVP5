@@ -8,7 +8,26 @@
 - Не устанавливайте Python на целевой ПК специально для Loader.
 - Не создавайте venv на целевом ПК.
 - Не запускайте `pip` на целевом ПК.
+- Целевому ПК не нужен internet для запуска уже собранного пакета.
 - Не удаляйте подпапки `python/`, `app/` и `logs/`.
+
+## Сборка пакета на build PC
+
+Собирайте пакет на developer/build Windows PC, где есть Python 3.11 и internet:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1
+```
+
+Если official embedded Python zip уже скачан локально, передайте его явно:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1 -PythonEmbedZip C:\path\python-3.11.x-embed-amd64.zip
+```
+
+Builder проверяет portable Python, Loader `--help`, direct BAT launcher `--help`, imports `websockets`/`livekit`, а также базовое создание `livekit.rtc.Room()`. Если portable Python или LiveKit import/runtime validation падает, пакет не готов для копирования на другие ПК.
+
+Portable package не меняет поведение Loader, не скрывает `livekit_subscription_pending`, не подделывает `subscribed` и не превращает `PARTIAL_RUN` в `VALID_RUN`.
 
 ## Обычный запуск
 

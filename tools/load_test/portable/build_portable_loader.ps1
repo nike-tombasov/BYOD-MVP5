@@ -91,9 +91,19 @@ Invoke-Step "Validate Loader --help with portable Python" {
     if ($LASTEXITCODE -ne 0) { throw "Portable Loader --help validation failed with exit code $LASTEXITCODE" }
 }
 
+Invoke-Step "Validate generated direct BAT launcher" {
+    cmd /c "`"$OutDir\run_loader_args.bat`" --help"
+    if ($LASTEXITCODE -ne 0) { throw "Generated run_loader_args.bat validation failed with exit code $LASTEXITCODE" }
+}
+
 Invoke-Step "Validate portable dependency imports" {
     & (Join-Path $PythonDir "python.exe") -c "import websockets; from livekit import rtc; import livekit.api; print('OK')"
     if ($LASTEXITCODE -ne 0) { throw "Portable dependency import validation failed with exit code $LASTEXITCODE" }
+}
+
+Invoke-Step "Validate LiveKit runtime basics" {
+    & (Join-Path $PythonDir "python.exe") -c "from livekit import rtc; room = rtc.Room(); print('ROOM_OK')"
+    if ($LASTEXITCODE -ne 0) { throw "Portable LiveKit runtime validation failed with exit code $LASTEXITCODE" }
 }
 
 Invoke-Step "Create output zip" {

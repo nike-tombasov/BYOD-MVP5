@@ -460,4 +460,4 @@ Advanced запуск с полными аргументами:
 run_loader_args.bat --server http://192.168.1.50:8000 --listeners 50 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 600 --runner-id pc2
 ```
 
-Builder валидирует portable runtime командами `python.exe app\byod_listener_loader.py --help` и import check для `websockets`, `livekit.rtc`, `livekit.api`; при ошибке сборка останавливается с non-zero exit code.
+Builder валидирует portable runtime командами `python.exe app\byod_listener_loader.py --help`, `run_loader_args.bat --help`, import check для `websockets`, `livekit.rtc`, `livekit.api` и базовым `livekit.rtc.Room()` check; при ошибке сборка останавливается с non-zero exit code.
