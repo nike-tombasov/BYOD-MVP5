@@ -15,7 +15,6 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse, urlunparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -39,6 +38,9 @@ FIELDS = [
     "livekit_participants_count",
     "livekit_listener_participants_count",
     "livekit_publisher_participants_count",
+    "livekit_room_names",
+    "livekit_participant_identities_sample",
+    "livekit_published_tracks_sample",
     "backend_publishers_count",
     "backend_listeners_count",
     "backend_active_play_count",
@@ -130,81 +132,18 @@ def http_json(url: str, timeout: float = 2.0) -> tuple[dict[str, Any] | None, st
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def read_backend_env() -> dict[str, str]:
-    env_path = Path("/opt/byod/config/backend.env")
-    if not env_path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
-
-
-def livekit_api_url(livekit_url: str) -> str:
-    parsed = urlparse(livekit_url)
-    scheme = "https" if parsed.scheme == "wss" else "http"
-    return urlunparse((scheme, parsed.netloc, parsed.path, "", "", ""))
-
-
-def try_livekit_api() -> tuple[dict[str, Any], str | None]:
-    """Best-effort LiveKit API probe with quick fallback."""
-    env = read_backend_env()
-    url = env.get("BYOD_LIVEKIT_URL", "ws://127.0.0.1:7880")
-    api_key = env.get("BYOD_LIVEKIT_API_KEY")
-    api_secret = env.get("BYOD_LIVEKIT_API_SECRET")
-    if not api_key or not api_secret:
-        return {"livekit_api_ok": False, "livekit_api_error": "LiveKit API credentials not found"}, "LiveKit API credentials not found; using backend metrics snapshot"
-
-    async def probe() -> dict[str, Any]:
-        import aiohttp
-        from livekit import api as livekit_api
-
-        timeout = aiohttp.ClientTimeout(total=2.0)
-        lk = livekit_api.LiveKitAPI(
-            url=livekit_api_url(url),
-            api_key=api_key,
-            api_secret=api_secret,
-            timeout=timeout,
-        )
-        try:
-            rooms_response = await lk.room.list_rooms(livekit_api.ListRoomsRequest())
-            rooms = list(rooms_response.rooms)
-            participants = 0
-            publishers = 0
-            listeners = 0
-            for room in rooms:
-                participants_response = await lk.room.list_participants(
-                    livekit_api.ListParticipantsRequest(room=room.name)
-                )
-                for participant in participants_response.participants:
-                    participants += 1
-                    identity = str(participant.identity)
-                    if identity.startswith("listener_"):
-                        listeners += 1
-                    else:
-                        publishers += 1
-            return {
-                "livekit_api_ok": True,
-                "livekit_api_error": "",
-                "livekit_rooms_count": len(rooms),
-                "livekit_participants_count": participants,
-                "livekit_listener_participants_count": listeners,
-                "livekit_publisher_participants_count": publishers,
-            }
-        finally:
-            await lk.aclose()
-
-    try:
-        import asyncio
-
-        return asyncio.run(asyncio.wait_for(probe(), timeout=3.0)), None
-    except Exception as exc:
-        error = f"LiveKit API failed quickly ({type(exc).__name__}: {exc})"
-        return {"livekit_api_ok": False, "livekit_api_error": error}, f"{error}; using backend metrics snapshot"
+def copy_livekit_counts(backend_snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "livekit_api_ok": backend_snapshot.get("livekit_api_ok", False),
+        "livekit_api_error": backend_snapshot.get("livekit_api_error", "backend metrics snapshot unavailable"),
+        "livekit_rooms_count": backend_snapshot.get("livekit_rooms_count", 0),
+        "livekit_participants_count": backend_snapshot.get("livekit_participants_count", 0),
+        "livekit_listener_participants_count": backend_snapshot.get("livekit_listener_participants_count", 0),
+        "livekit_publisher_participants_count": backend_snapshot.get("livekit_publisher_participants_count", 0),
+        "livekit_room_names": backend_snapshot.get("livekit_room_names", []),
+        "livekit_participant_identities_sample": backend_snapshot.get("livekit_participant_identities_sample", []),
+        "livekit_published_tracks_sample": backend_snapshot.get("livekit_published_tracks_sample", []),
+    }
 
 def make_sample(
     prev_cpu: tuple[int, int] | None,
@@ -222,9 +161,11 @@ def make_sample(
         tx_mbps = round((current_net[1] - prev_net[1]) * 8 / elapsed / 1_000_000, 3)
 
     backend_snapshot, backend_warning = http_json(BACKEND_SNAPSHOT_URL)
-    livekit_counts, livekit_warning = try_livekit_api()
     backend_snapshot = backend_snapshot or {}
-    warning = livekit_warning or backend_warning
+    livekit_counts = copy_livekit_counts(backend_snapshot)
+    warning = backend_warning
+    if backend_snapshot and livekit_counts.get("livekit_api_ok") is not True:
+        warning = f"Backend LiveKit API visibility failed: {livekit_counts.get('livekit_api_error')}"
 
     sample = {
         "timestamp_local": local_ts(),
@@ -243,6 +184,9 @@ def make_sample(
         "livekit_participants_count": livekit_counts.get("livekit_participants_count", backend_snapshot.get("livekit_participants_count", 0)),
         "livekit_listener_participants_count": livekit_counts.get("livekit_listener_participants_count", backend_snapshot.get("livekit_listener_participants_count", 0)),
         "livekit_publisher_participants_count": livekit_counts.get("livekit_publisher_participants_count", backend_snapshot.get("livekit_publisher_participants_count", 0)),
+        "livekit_room_names": livekit_counts.get("livekit_room_names", []),
+        "livekit_participant_identities_sample": livekit_counts.get("livekit_participant_identities_sample", []),
+        "livekit_published_tracks_sample": livekit_counts.get("livekit_published_tracks_sample", []),
         "backend_publishers_count": backend_snapshot.get("backend_publishers_count", 0),
         "backend_listeners_count": backend_snapshot.get("backend_listeners_count", 0),
         "backend_active_play_count": backend_snapshot.get("backend_active_play_count", 0),

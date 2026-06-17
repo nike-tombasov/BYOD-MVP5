@@ -98,6 +98,8 @@ class RoomService:
             "livekit_publisher_participants_count": 0,
             "livekit_participants_by_identity_prefix": {},
             "livekit_room_names": [],
+            "livekit_participant_identities_sample": [],
+            "livekit_published_tracks_sample": [],
             "livekit_room_participants": {},
         }
         try:
@@ -121,6 +123,8 @@ class RoomService:
                 listener_count = 0
                 publisher_count = 0
                 room_participants: dict[str, list[dict[str, Any]]] = {}
+                participant_identity_sample: list[str] = []
+                published_tracks_sample: list[dict[str, Any]] = []
 
                 for room in rooms:
                     room_name = str(room.name)
@@ -140,6 +144,11 @@ class RoomService:
 
                         tracks = list(getattr(participant, "tracks", []) or [])
                         published_track_names = [str(getattr(track, "name", "") or "") for track in tracks]
+                        if len(participant_identity_sample) < 25:
+                            participant_identity_sample.append(identity)
+                        for track_name in published_track_names:
+                            if track_name and len(published_tracks_sample) < 25:
+                                published_tracks_sample.append({"room": room_name, "identity": identity, "track_name": track_name})
                         audio_tracks = [
                             track for track in tracks
                             if str(getattr(track, "type", "")).lower().endswith("audio")
@@ -161,6 +170,8 @@ class RoomService:
                     "livekit_listener_participants_count": listener_count,
                     "livekit_publisher_participants_count": publisher_count,
                     "livekit_participants_by_identity_prefix": prefix_counts,
+                    "livekit_participant_identities_sample": participant_identity_sample,
+                    "livekit_published_tracks_sample": published_tracks_sample,
                     "livekit_room_participants": room_participants,
                 })
             finally:

@@ -461,3 +461,85 @@ run_loader_args.bat --server http://192.168.1.50:8000 --listeners 50 --ramp-mode
 ```
 
 Builder валидирует portable runtime командами `python.exe app\byod_listener_loader.py --help`, `run_loader_args.bat --help`, import check для `websockets`, `livekit.rtc`, `livekit.api` и базовым `livekit.rtc.Room()` check; при ошибке сборка останавливается с non-zero exit code.
+
+## 24. Mandatory Python runtime for Stage XI measurements
+
+Stage XI Loader measurements require Python **3.11.x**. The Loader now performs
+startup validation and exits non-zero with a clear `ERROR` if it is launched
+with any other Python minor version.
+
+- Python 3.11 is mandatory for reproducible `livekit==1.1.5` stress results.
+- Python 3.13 is unsupported for formal stress measurements; logs that show
+  paths such as `Python313\Lib\asyncio` invalidate the run.
+- Prefer the portable Windows package over an unknown local Python install. The
+  portable package must also report Python 3.11 in Loader startup diagnostics.
+
+At startup, the Loader prints and records `loader_runtime_info` with:
+
+- `sys.executable`;
+- full Python version;
+- imported `livekit` path and package version when available;
+- imported `websockets` path and package version when available.
+
+## 25. Per-process safe operating limits
+
+Do not treat one Windows process with 200 WebRTC clients as the normal baseline.
+A single process at that size can become a Python SDK / Windows socket-stack
+stress test rather than a VPS backend/LiveKit capacity test.
+
+Recommended diagnostic baseline per Loader process:
+
+```bat
+run_loader_args.bat --server http://<server> --listeners 50 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 600 --runner-id pc1-50-fixed
+```
+
+Use one actually published channel for this diagnostic run. Scale capacity by
+multiple PCs or separate processes instead of one very large process:
+
+- PC1: 50-80 workers;
+- PC2: 50-80 workers;
+- PC3: 50-80 workers.
+
+`random` channel mode is unsuitable for debugging while some listenable channels
+are not currently published. It can randomly select a listenable channel with no
+active Publisher track and make a Loader/client issue look like a server issue.
+
+## 26. Fixed-channel validation before random stress
+
+Before any random-channel stress run, validate one fixed published channel:
+
+```bat
+run_loader_args.bat --server http://<server> --listeners 10 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 300 --runner-id pc1-fixed
+```
+
+Only after the Loader summary shows `subscribed=10` should you move to random
+mode.
+
+## 27. Server-side metrics snapshot debug command
+
+On the backend host, use the local-only admin snapshot to distinguish backend
+admission, LiveKit server, and Loader/client problems:
+
+```bash
+curl -s http://127.0.0.1:8000/admin/metrics_snapshot | python3 -m json.tool
+```
+
+The snapshot includes backend listener count, backend active play count,
+LiveKit API status/error, LiveKit room and participant counts, participant
+identity samples, and published track samples. This endpoint remains local-only
+and must not be exposed through nginx.
+
+## 28. Stricter final summary classification
+
+Formal runs are classified conservatively:
+
+- `VALID_RUN`: all or nearly all workers that reached LiveKit also reached
+  `livekit_track_subscribed`, stayed subscribed through shutdown, and did not
+  produce disconnect/recovery diagnostics during HOLD.
+- `PARTIAL_RUN`: subscriptions grew, but many workers disconnected, recovered,
+  or failed to remain subscribed.
+- `INVALID_RUN`: unsupported local Python runtime, no confirmed subscriptions,
+  or missing LiveKit API visibility for a formal test.
+
+Do not mark a formal run valid unless LiveKit subscription counters and
+server-side LiveKit visibility are sufficient.

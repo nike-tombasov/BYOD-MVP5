@@ -18,11 +18,18 @@ import random
 import os
 import signal
 import sys
+
+if sys.version_info[:2] != (3, 11):
+    raise SystemExit(
+        f"ERROR: BYOD Loader requires Python 3.11.x. Current Python: {sys.version.split()[0]} ({sys.executable})"
+    )
+
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from importlib import metadata
 from urllib.parse import urlparse, urlunparse
 
 import websockets
@@ -122,6 +129,12 @@ class Counters:
     reconnecting: int = 0
     holding: int = 0
     completed: int = 0
+    livekit_signal_ping_timeout: int = 0
+    livekit_connection_reset: int = 0
+    livekit_recovered: int = 0
+    backend_ws_read_timeout_or_os_error: int = 0
+    workers_disconnected_after_subscribed: int = 0
+    workers_still_subscribed_at_shutdown: int = 0
 
 
 @dataclass
@@ -145,6 +158,41 @@ class SharedState:
     async def snapshot(self) -> dict[str, int]:
         async with self.lock:
             return dict(self.counters.__dict__)
+
+    async def event(self, event: str, level: str = "INFO", **fields: Any) -> None:
+        payload = {
+            "ts_local": local_ts(),
+            "ts_utc": utc_iso(),
+            "level": level,
+            "event": event,
+            "runner_id": self.args.runner_id,
+            "loader_run_id": self.args.loader_run_id,
+            **fields,
+        }
+        if self.jsonl_path and self.should_log_jsonl(level):
+            with self.jsonl_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        logging.getLogger("loader").log(getattr(logging, level.upper(), logging.INFO), "%s %s", event, fields)
+
+
+class LiveKitDiagnosticCounter(logging.Handler):
+    PATTERNS = (
+        ("signal client closed: \"ping timeout\"", "livekit_signal_ping_timeout"),
+        ("RtcEngine successfully recovered", "livekit_recovered"),
+        ("ConnectionReset", "livekit_connection_reset"),
+    )
+
+    def __init__(self, shared: SharedState, loop: asyncio.AbstractEventLoop) -> None:
+        super().__init__(level=logging.INFO)
+        self.shared = shared
+        self.loop = loop
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        for pattern, field_name in self.PATTERNS:
+            if pattern in message:
+                self.loop.call_soon_threadsafe(asyncio.create_task, self.shared.inc(field_name))
+                break
 
 
 class Worker:
@@ -326,7 +374,12 @@ class Worker:
         deadline = time.monotonic() + self.shared.args.channels_timeout_sec
         while time.monotonic() < deadline:
             timeout = max(0.1, deadline - time.monotonic())
-            raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+            except (asyncio.TimeoutError, TimeoutError, OSError) as exc:
+                await self.shared.inc("backend_ws_read_timeout_or_os_error")
+                await self.event("backend_ws_read_timeout_or_os_error", "ERROR", error_type=type(exc).__name__, error=str(exc))
+                raise
             msg = json.loads(raw)
             msg_type = msg.get("type")
             payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
@@ -617,6 +670,19 @@ class Worker:
                 self.subscription_lifecycle += 1
                 self.safe_create_task(self.event("livekit_track_unpublished", track_name=track_name), "track_unpublished")
 
+        @room.on("disconnected")
+        def on_disconnected(*args: Any) -> None:
+            if self.subscribed:
+                self.subscribed = False
+                self.subscription_lifecycle += 1
+                self.safe_create_task(self.shared.inc("workers_disconnected_after_subscribed"), "disconnected_after_subscribed")
+                self.safe_create_task(self.event("workers_disconnected_after_subscribed"), "disconnected_after_subscribed")
+
+        @room.on("reconnected")
+        def on_reconnected(*args: Any) -> None:
+            self.safe_create_task(self.shared.inc("livekit_recovered"), "livekit_recovered")
+            self.safe_create_task(self.event("livekit_recovered"), "livekit_recovered")
+
         @room.on("participant_connected")
         def on_participant_connected(participant: Any) -> None:
             if self.shared.args.debug_publications or not self.participant_connected_logged:
@@ -654,6 +720,8 @@ class Worker:
         self.closing = True
         await self.stop_background_tasks()
         if self.room is not None:
+            if self.subscribed:
+                await self.shared.inc("workers_still_subscribed_at_shutdown")
             with contextlib.suppress(Exception):
                 result = self.room.disconnect()
                 if hasattr(result, "__await__"):
@@ -667,10 +735,16 @@ class Worker:
         self.closed = True
 
 def run_validity(args: Args, snap: dict[str, int]) -> str:
-    fatal_errors = snap.get("failed", 0) > 0 and snap.get("subscribed", 0) == 0
-    if snap.get("subscribed", 0) == 0:
+    subscribed = snap.get("subscribed", 0)
+    livekit_connected = snap.get("livekit_connected", 0)
+    disconnected = snap.get("workers_disconnected_after_subscribed", 0)
+    recovered = snap.get("livekit_recovered", 0)
+    if sys.version_info[:2] != (3, 11) or subscribed == 0:
         return "INVALID_RUN"
-    if not fatal_errors and (snap.get("subscribed") == snap.get("workers_started") or snap.get("subscribed") == snap.get("livekit_connected")):
+    denominator = max(1, livekit_connected)
+    nearly_all_subscribed = subscribed >= max(1, int(denominator * 0.95))
+    still_subscribed_ok = snap.get("workers_still_subscribed_at_shutdown", 0) >= max(1, int(subscribed * 0.95))
+    if nearly_all_subscribed and disconnected == 0 and recovered == 0 and still_subscribed_ok:
         return "VALID_RUN"
     return "PARTIAL_RUN"
 
@@ -756,6 +830,25 @@ def setup_logging(level: str, loader_run_id: str) -> tuple[Path, Path, Path]:
     return human_log, jsonl_log, csv_summary
 
 
+def package_version(package_name: str) -> str | None:
+    try:
+        return metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def runtime_info() -> dict[str, Any]:
+    import livekit
+
+    return {
+        "sys_executable": sys.executable,
+        "python_version": sys.version.replace("\n", " "),
+        "livekit_path": getattr(livekit, "__file__", None),
+        "websockets_path": getattr(websockets, "__file__", None),
+        "livekit_version": package_version("livekit") or package_version("livekit-api") or getattr(livekit, "__version__", None),
+        "websockets_version": package_version("websockets") or getattr(websockets, "__version__", None),
+    }
+
 async def main_async() -> int:
     args = parse_args()
     backend_ws_url = build_ws_url(args.server)
@@ -774,11 +867,21 @@ async def main_async() -> int:
     print(f"hold_sec={args.hold_sec}")
     print(f"runner_id={args.runner_id}")
     print(f"loader_run_id={args.loader_run_id}")
+    info = runtime_info()
     print(f"python={sys.version.split()[0]}")
+    print(f"sys_executable={info['sys_executable']}")
+    print(f"python_version={info['python_version']}")
+    print(f"livekit_path={info['livekit_path']}")
+    print(f"websockets_path={info['websockets_path']}")
+    print(f"livekit_version={info['livekit_version'] or 'unknown'}")
+    print(f"websockets_version={info['websockets_version'] or 'unknown'}")
     print(f"log_path={LOG_DIR}")
     print("No PIN is required. Tokens are not logged.")
 
+    await shared.event("loader_runtime_info", **info)
+
     loop = asyncio.get_running_loop()
+    logging.getLogger("livekit").addHandler(LiveKitDiagnosticCounter(shared, loop))
     for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
         if sig is not None:
             with contextlib.suppress(NotImplementedError):
