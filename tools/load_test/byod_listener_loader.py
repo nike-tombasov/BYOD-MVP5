@@ -188,11 +188,26 @@ class LiveKitDiagnosticCounter(logging.Handler):
         self.loop = loop
 
     def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        for pattern, field_name in self.PATTERNS:
-            if pattern in message:
-                self.loop.call_soon_threadsafe(asyncio.create_task, self.shared.inc(field_name))
-                break
+        try:
+            message = record.getMessage()
+            field_name = next((field for pattern, field in self.PATTERNS if pattern in message), None)
+            if field_name is None or self.loop.is_closed():
+                return
+
+            def _schedule_increment() -> None:
+                if self.loop.is_closed():
+                    return
+                coro = self.shared.inc(field_name)
+                try:
+                    asyncio.create_task(coro)
+                except RuntimeError:
+                    coro.close()
+
+            self.loop.call_soon_threadsafe(_schedule_increment)
+        except RuntimeError:
+            return
+        except Exception:
+            return
 
 
 class Worker:
@@ -881,7 +896,9 @@ async def main_async() -> int:
     await shared.event("loader_runtime_info", **info)
 
     loop = asyncio.get_running_loop()
-    logging.getLogger("livekit").addHandler(LiveKitDiagnosticCounter(shared, loop))
+    livekit_logger = logging.getLogger("livekit")
+    livekit_diagnostic_handler = LiveKitDiagnosticCounter(shared, loop)
+    livekit_logger.addHandler(livekit_diagnostic_handler)
     for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
         if sig is not None:
             with contextlib.suppress(NotImplementedError):
@@ -907,6 +924,8 @@ async def main_async() -> int:
         stop_event.set()
     finally:
         stop_event.set()
+        livekit_logger.removeHandler(livekit_diagnostic_handler)
+        livekit_diagnostic_handler.close()
         status.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await status
