@@ -68,22 +68,31 @@ Invoke-Step "Copy Loader app and launcher templates" {
 }
 
 Invoke-Step "Configure embedded Python import paths" {
-    $pthFiles = Get-ChildItem -Path $PythonDir -Filter "python*._pth" -File
+    $pthFiles = @(Get-ChildItem -Path $PythonDir -Filter "python*._pth" -File)
     if ($pthFiles.Count -gt 0) {
         $pthPath = $pthFiles[0].FullName
     } else {
         $pthPath = Join-Path $PythonDir "python311._pth"
     }
 
-    @(
+    $expectedPthLines = @(
         ".",
         "python311.zip",
         "Lib\site-packages",
         "..\app",
         "import site"
-    ) | Set-Content -Path $pthPath -Encoding ASCII
+    )
 
-    Write-Host "Wrote $pthPath"
+    $expectedPthLines | Set-Content -Path $pthPath -Encoding ASCII
+
+    $actualPthLines = @(Get-Content -Path $pthPath)
+    foreach ($requiredLine in $expectedPthLines) {
+        if ($actualPthLines -notcontains $requiredLine) {
+            throw "Embedded Python ._pth validation failed: missing '$requiredLine' in $pthPath"
+        }
+    }
+
+    Write-Host "Wrote and validated $pthPath"
 }
 
 Invoke-Step "Validate Loader --help with portable Python" {
@@ -94,6 +103,11 @@ Invoke-Step "Validate Loader --help with portable Python" {
 Invoke-Step "Validate generated direct BAT launcher" {
     cmd /c "`"$OutDir\run_loader_args.bat`" --help"
     if ($LASTEXITCODE -ne 0) { throw "Generated run_loader_args.bat validation failed with exit code $LASTEXITCODE" }
+}
+
+Invoke-Step "Print portable Python sys.path" {
+    & (Join-Path $PythonDir "python.exe") -c "import sys; print('\n'.join(sys.path))"
+    if ($LASTEXITCODE -ne 0) { throw "Portable sys.path diagnostic failed with exit code $LASTEXITCODE" }
 }
 
 Invoke-Step "Validate portable dependency imports" {
