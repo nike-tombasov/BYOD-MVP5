@@ -1,0 +1,114 @@
+# BYOD Loader Portable Win64
+
+Эта папка является portable-пакетом Stage XI Listener Loader для Windows 10/11 x64. Её можно скопировать целиком на другой ПК и запускать без установки Python.
+
+## Важно
+
+- Python уже находится внутри папки `python/`.
+- Не устанавливайте Python на целевой ПК специально для Loader.
+- Не создавайте venv на целевом ПК.
+- Не запускайте `pip` на целевом ПК.
+- Целевому ПК не нужен internet для запуска уже собранного пакета.
+- Не удаляйте подпапки `python/`, `app/` и `logs/`.
+
+## Сборка пакета на build PC
+
+Собирайте пакет на developer/build Windows PC, где есть Python 3.11 и internet:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1
+```
+
+Если official embedded Python zip уже скачан локально, передайте его явно:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1 -PythonEmbedZip C:\path\python-3.11.x-embed-amd64.zip
+```
+
+Builder проверяет portable Python, Loader `--help`, direct BAT launcher `--help`, imports `websockets`/`livekit`, а также базовое создание `livekit.rtc.Room()`. Если portable Python или LiveKit import/runtime validation падает, пакет не готов для копирования на другие ПК.
+
+Portable package не меняет поведение Loader, не скрывает `livekit_subscription_pending`, не подделывает `subscribed` и не превращает `PARTIAL_RUN` в `VALID_RUN`.
+
+## Обычный запуск
+
+Запустите:
+
+```bat
+run_loader.bat
+```
+
+Launcher спросит параметры на русском/консольном вводе. Если значение по умолчанию подходит, нажмите Enter.
+
+## Расширенный запуск с аргументами
+
+Для опытных пользователей можно передать полный набор аргументов:
+
+```bat
+run_loader_args.bat --server http://192.168.1.50:8000 --listeners 50 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 600 --runner-id pc2
+```
+
+## Logs
+
+Logs находятся в папке:
+
+```text
+logs/
+```
+
+В logs ожидаются human-readable `.log`, worker events `.jsonl` и summary `.csv`.
+
+## Базовая проверка на 1 listener
+
+Перед нагрузочным тестом проверьте 1 listener при уже запущенном Publisher на `channel_1`:
+
+```bat
+run_loader_args.bat --server http://127.0.0.1:8000 --listeners 1 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 120 --runner-id pc1 --log-level INFO
+```
+
+Для плавного ramp рекомендуется:
+
+```text
+listener-every-sec = 1
+```
+
+`listener-every-sec 0.1` означает примерно 10 listeners/sec, а не 1 listener каждые 10 секунд.
+
+## Multi-PC запуск
+
+Для нескольких ПК задавайте разный `runner-id` на каждом ПК:
+
+- `pc1`
+- `pc2`
+- `pc3`
+
+Пример LAN backend URL:
+
+```text
+http://192.168.1.50:8000
+```
+
+LiveKit URL, который backend возвращает Loader, тоже должен быть доступен по LAN, например:
+
+```text
+ws://192.168.1.50:7880
+```
+
+Если второй ПК получает LiveKit URL вида `127.0.0.1`, значит env/config backend настроен неправильно для LAN.
+
+## Как понять, что run валидный
+
+Валидный запуск требует, чтобы росли counters:
+
+- `backend_connected`
+- `livekit_connected`
+- `subscribed`
+
+В конце summary должен быть `VALID_RUN` или приемлемый для вашей цели `PARTIAL_RUN`. Portable package не скрывает нестабильность LiveKit subscription pending, не подделывает `subscribed` и не превращает `PARTIAL_RUN` в `VALID_RUN`.
+
+## Troubleshooting
+
+- Если `subscribed` сильно отстаёт, ramp может быть слишком быстрым или LiveKit subscription ещё pending.
+- Для диагностики используйте `listener-every-sec=1`.
+- Если backend URL на втором ПК приводит к LiveKit URL `127.0.0.1`, исправьте backend env/config на LAN-accessible адрес.
+- Windows Defender или antivirus может блокировать неизвестную portable runtime папку.
+- Если Windows пометил zip/folder как downloaded, разблокируйте zip/folder в Properties перед запуском.

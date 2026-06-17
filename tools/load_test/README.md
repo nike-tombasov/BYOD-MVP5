@@ -418,3 +418,46 @@ Decision table:
 | Backend/admission likely issue | `backend_connected` much lower than target; backend logs show connection rate/reconnect/room-full rejects. |
 | LiveKit/server likely issue | `backend_connected` normal; `livekit_connected` much lower; LiveKit logs show participant disconnect/failure; LiveKit API participants do not match backend sessions. |
 | Loader/subscription likely issue | `backend_connected` normal; `livekit_connected` normal; `subscription_requested` normal; `subscribed` lags but catches up with slower ramp; browser Listener hears audio at the same time. |
+
+## Portable Windows package без PyInstaller
+
+Для операторов, которым нужен запуск без установки Python, venv и `pip` на целевом Windows 10/11 x64 ПК, поддерживается one-folder portable package:
+
+```text
+dist\BYOD-Loader-Portable-Win64\
+```
+
+Package использует embedded/portable CPython runtime в подпапке `python\`; PyInstaller не используется и single `.exe` не создаётся. Backend protocol, Web Listener UI, Publisher, audio constants и LiveKit track naming не меняются.
+
+Сборка на developer/build Windows PC с Python 3.11 и internet:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1
+```
+
+Если embedded Python zip уже скачан локально:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1 -PythonEmbedZip C:\path\python-3.11.x-embed-amd64.zip
+```
+
+Builder создаёт:
+
+```text
+dist\BYOD-Loader-Portable-Win64\
+dist\BYOD-Loader-Portable-Win64.zip
+```
+
+Target-user запуск после копирования/распаковки папки:
+
+```bat
+run_loader.bat
+```
+
+Advanced запуск с полными аргументами:
+
+```bat
+run_loader_args.bat --server http://192.168.1.50:8000 --listeners 50 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 600 --runner-id pc2
+```
+
+Builder валидирует portable runtime командами `python.exe app\byod_listener_loader.py --help`, `run_loader_args.bat --help`, import check для `websockets`, `livekit.rtc`, `livekit.api` и базовым `livekit.rtc.Room()` check; при ошибке сборка останавливается с non-zero exit code.

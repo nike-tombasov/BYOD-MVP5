@@ -1,0 +1,10 @@
+@echo off
+chcp 65001 >nul
+setlocal EnableExtensions
+set "ROOT=%~dp0"
+if not exist "%ROOT%logs" mkdir "%ROOT%logs" >nul 2>nul
+pushd "%ROOT%" >nul
+"%ROOT%python\python.exe" "%ROOT%app\byod_listener_loader.py" %*
+set "EXIT_CODE=%ERRORLEVEL%"
+popd >nul
+exit /b %EXIT_CODE%
