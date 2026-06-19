@@ -102,7 +102,7 @@ Canonical deploy package:
 ## Stage XI — Load and Capacity Characterization on a Concrete VPS (Priority 6)
 
 ### Status
-Initial tooling baseline implemented; real VPS measurement runs and final
+Initial tooling baseline implementing; real VPS measurement runs and final
 capacity characterization are still pending.
 
 ### Main target
@@ -116,9 +116,8 @@ belongs to future Web Listener UI hardening.
 ### Planned work
 1) measure the observed stable range on the selected VPS;
 2) maintain the permanent specification in `docs/22_stress_tests.md`;
-3) implement a Windows-oriented, one-folder Python 3.11 Loader under
-   `tools/load_test/`;
-4) implement `95_metrics_analyzer.sh start|stop|status`, backed by systemd;
+3) implement Go LiveKit SDK loadgen;
+4) implement `95_metrics_analyzer.sh start|stop|status`, backed by systemd (IMPLEMENTED);
 5) evaluate LiveKit API metrics and provide the local-only backend endpoint
    `/admin/metrics_snapshot` as fallback;
 6) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
