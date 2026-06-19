@@ -6,7 +6,11 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from backend.config import LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS
+from backend.config import (
+    LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS,
+    LOADGEN_RECONNECT_BYPASS_ENABLED,
+    LOADGEN_RECONNECT_BYPASS_KEY,
+)
 from backend.services.room_service import RoomService
 from backend.services.state_service import StateService
 
@@ -332,7 +336,16 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             payload = state_service.get_payload(first)
             diagnostic_metadata = {
                 key: payload.get(key)
-                for key in ("client_type", "runner_id", "loader_run_id", "worker_id", "worker_index", "selected_channel_mode")
+                for key in (
+                    "client_type",
+                    "runner_id",
+                    "loader_run_id",
+                    "worker_id",
+                    "worker_index",
+                    "selected_channel_mode",
+                    "loadgen_key",
+                    "loadgen_mode",
+                )
                 if key in payload
             }
 
@@ -346,8 +359,15 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
             async with state_lock:
                 last_connect = state_service.listener_last_connect_by_ip.get(client_ip)
                 last_connect_delta_seconds = now - last_connect if last_connect is not None else None
+                loadgen_reconnect_bypass = (
+                    LOADGEN_RECONNECT_BYPASS_ENABLED
+                    and diagnostic_metadata.get("client_type") == "load_runner"
+                    and diagnostic_metadata.get("loadgen_key")
+                    and diagnostic_metadata.get("loadgen_key") == LOADGEN_RECONNECT_BYPASS_KEY
+                )
                 if (
-                    last_connect_delta_seconds is not None
+                    not loadgen_reconnect_bypass
+                    and last_connect_delta_seconds is not None
                     and LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS > 0
                     and last_connect_delta_seconds <= LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS
                 ):
@@ -381,6 +401,7 @@ def build_ws_router(state_service: StateService, room_service: RoomService, stat
                     "client_ip": client_ip,
                     "min_reconnect_interval_per_ip_seconds": LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS,
                     "last_connect_delta_seconds": last_connect_delta_seconds,
+                    "loadgen_reconnect_bypass_enabled": LOADGEN_RECONNECT_BYPASS_ENABLED,
                 }
                 storage.log_event("listener_rejected", **reject_fields)
                 logger.warning("listener_rejected fields=%s", reject_fields)

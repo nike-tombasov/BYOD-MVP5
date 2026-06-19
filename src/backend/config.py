@@ -10,6 +10,18 @@ def _env_str(name: str, default: str) -> str:
     return value if value else default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 def _env_int(name: str, default: int, min_value: int = 1) -> int:
     value = os.getenv(name)
     if value is None or value.strip() == "":
@@ -61,6 +73,10 @@ MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE = None
 
 # Минимальный интервал между Listener connect/reconnect с одного client IP. Важно: это per IP. При NAT/общественном Wi-Fi много реальных пользователей могут выглядеть как один IP.
 LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS = 2
+
+# Temporary loadgen-only bypass for per-IP reconnect throttle. Safe by default.
+LOADGEN_RECONNECT_BYPASS_ENABLED = _env_bool("BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED", False)
+LOADGEN_RECONNECT_BYPASS_KEY = _env_str("BYOD_LOADGEN_RECONNECT_BYPASS_KEY", "") or None
 
 
 # Обычная deploy/config секция. Эти значения обычно задаются через env/deploy,
