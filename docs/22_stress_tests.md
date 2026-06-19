@@ -1,556 +1,269 @@
-# 22. Stress/load testing: Protocol/engine load и метрики VPS
+# Stress/load testing architecture — MVP11
 
-## Назначение документа
+This document is the single active guide for BYOD MVP11 stress/load testing architecture. It defines the future Windows-first Go LiveKit SDK load generator, the mandatory validation gates, and the metrics required for trusted capacity characterization.
 
-Это постоянное руководство по нагрузочному тестированию BYOD на протяжении
-жизненного цикла проекта, а не временный артефакт Stage XI. После крупных
-изменений системы по нему повторно проверяется resource usage curve конкретного
-VPS, стабильность длительной работы и поведение при деградации.
+## 1. Current status
 
-Implementation status: implemented for the first Stage XI tooling baseline.
-Loader, Analyzer, `metrics_snapshot`, scripts и operator docs являются рабочими
-implementation artifacts, которые могут уточняться по результатам реальных
-прогонов.
+- The previous Windows/Python portable loader has been frozen as **Legacy** under `legacy/stage_xi_failed_python_loader/`.
+- The Legacy Python loader is **not valid** for formal capacity characterization, MVP11 acceptance, or VPS scaling decisions.
+- It is retained only as a forensic/protocol reference for understanding the listener protocol, old counters, and observed failure modes.
+- The active future architecture is a **Windows-first Go LiveKit SDK loadgen**.
+- Do not use `python tools/load_test/byod_listener_loader.py` as an active capacity-testing command. The old Python commands are intentionally absent from this active guide.
+- This PR documents architecture only: it does not implement the Go loadgen, does not change backend runtime logic, does not change nginx runtime scripts, and does not change LiveKit runtime config.
 
-## A. Scope
+## 2. Scope and non-goals
 
-Stage XI проверяет только **Protocol/engine load**. Каждый виртуальный Listener
-должен проходить реальный протокол backend и быть полноценным WebRTC/LiveKit
-participant, но браузер и Web Listener UI не используются как генератор
-нагрузки.
+Stage XI/Protocol-engine load is not browser UI load. A loadgen worker emulates the backend listener protocol and, in LiveKit modes, the LiveKit participant/media behavior needed for capacity measurement. It does not validate Web Listener UI rendering, browser audio output, browser autoplay behavior, CSS/layout, or human-facing UX.
 
-Browser/Web Listener UI load testing явно находится вне scope Stage XI.
-Нагрузочное тестирование браузерного UI, DOM, rendering, browser audio output
-и массового запуска вкладок относится к отдельной будущей задаче Web Listener
-UI hardening.
+Browser/Web Listener UI mass testing is out of scope. One or two real browser listeners may be used as monitoring clients during VPS tests, but thousands of browser tabs are not part of this plan.
 
-Цель — выполнить capacity characterization для конкретного VPS и сравнивать
-результаты между разными VPS configurations. Stage XI измеряет:
+The loadgen must not require PIN. It must use the normal listener backend protocol and backend admission path that real listeners use after the relevant room/channel has been configured. The loadgen must not use the Publisher endpoint and must not use an admin token endpoint to bypass backend admission.
 
-- как BYOD потребляет CPU;
-- как BYOD потребляет RAM;
-- как BYOD потребляет network RX/TX;
-- как BYOD потребляет disk;
-- как backend, LiveKit и nginx ведут себя при увеличении Listener count;
-- observed stable range;
-- observed degradation point;
-- observed failure mode;
-- resource usage curve для каждого профиля нагрузки;
-- различия результатов между VPS configurations.
+`/admin/metrics_snapshot` remains local-only and must not be exposed through nginx. It can be read on the VPS host for diagnostics, analyzer inputs, or operator checks, but it is not a public loadgen API.
 
-## B. Target environment
+## 3. Overall MVP11 capacity goal
 
-- Loader запускается оператором на Windows 10/11.
-- Основной runtime — Python 3.11.
-- Первая цель реализации — простой one-folder Python script.
-- Позднее допустима упаковка PyInstaller в one-folder или one-file, только если
-  она не замедляет MVP.
-- Node.js допустим лишь как fallback, если Python-подход к LiveKit/WebRTC не
-  заработает. Node.js не является предпочтительным вариантом.
-- Серверная цель остаётся Ubuntu Server 22.04 LTS, один VPS, public IPv4.
-- Рабочие инструменты оператора остаются PuTTY и WinSCP.
+MVP-level acceptance succeeds when one VPS sustains **500 emulated listeners for 10 minutes** without observed degradation.
 
-## C. Архитектура Loader
+An **emulated listener** means:
 
-Путь:
+- backend listener WebSocket connected;
+- LiveKit token received;
+- LiveKit RTC connection established in LiveKit modes;
+- for media mode, audio track subscribed and RTP packets read/discarded;
+- heartbeat maintained during HOLD.
 
-```text
-tools/load_test/
-├── requirements.txt
-├── byod_listener_loader.py
-├── run_loader.bat          # optional
-└── README.md
-```
+Bonus/non-blocking scaling confidence target: up to **2000 active emulated listeners** with 1–2 publishers and 1–2 real browser listeners. The 2000 target is not required to pass MVP on the current small VPS; hitting VPS capacity is acceptable if the bottleneck and metrics are measured. The point of the 2000 target is to verify architectural scalability and expose the next bottleneck after the old 382 WebSocket ceiling.
 
-One-folder script здесь означает обычную папку со скриптом, зависимостями и,
-опционально, вспомогательным `.bat`. Это не installable Python package.
+Raw metrics remain more important than a single pass/fail label. A clean failure with trustworthy metrics is more useful than a green label from an untrusted generator.
 
-Implementation status: implemented. Папка является one-folder script, а не
-installable Python package.
+## 4. Important capacity distinction
 
-## D. Модель подключения Loader
+`target_capacity` is room/listener business capacity, not the raw WebSocket file-descriptor ceiling. Do not change the current backend default `DEFAULT_TARGET_CAPACITY = 200` in this documentation/relocation PR.
 
-Каждый Listener worker обязан быть полноценным WebRTC participant и пройти
-тот же путь, что нормальный Listener:
+For stress events, operator/imported room config may raise the room target manually. WebSocket/server limits must have separate headroom for:
 
-1. Выполнить HTTP preflight к VPS по IP, например запрос `/health`.
-2. Подключиться к backend WebSocket через штатный Listener endpoint:
-   `ws://<VPS_PUBLIC_IP>/ws/listener`.
-3. Отправить стандартный WS schema v1 envelope `connecting` с ролью Listener.
-4. Получить ответ backend `connecting` с `token`, `livekit_url` и
-   `listener_id`.
-5. Получить `i18n_library` и `listener_state`.
-6. Подключиться к LiveKit с полученными `token` и `livekit_url`.
-7. Выбрать один доступный для прослушивания канал.
-8. Подписаться на audio track выбранного канала.
-9. Продолжать получать media как LiveKit participant.
-10. В первой реализации не декодировать и не воспроизводить звук через
-    физический audio output.
-11. Отправлять штатный Listener heartbeat:
+- listeners;
+- publishers;
+- real browser monitoring;
+- admin UI;
+- metrics/smoke/diagnostic clients;
+- reconnect overlap.
 
-    ```json
-    {
-      "client_role": "listener",
-      "selected_channel": "<channel_id>",
-      "playback_state": "PLAYING"
-    }
-    ```
+Future runtime implementation should support at least:
 
-12. Логировать ошибки, disconnect, reconnect и текущее состояние.
+- required minimum: 500 emulated listeners plus service headroom;
+- ideal stress ceiling: 2000 emulated listeners plus service headroom;
+- acceptable formula: either explicit 2000+ peer ceiling or `target_capacity * 1.5` with safe lower/upper bounds.
 
-Ограничения:
+Do not make `target_capacity` the only raw WS ceiling. Future stress override policy should be controlled, explicit, and loadgen-only where appropriate; it must not silently weaken production listener admission semantics.
 
-- Loader не требует PIN.
-- Loader получает только listener rights.
-- Loader не использует Publisher endpoint.
-- Loader не получает токены через отдельный admin endpoint и не обходит
-  backend.
-- Тест обязан проверять реальный Listener protocol и backend admission limits.
+## 5. Mandatory loadgen gates
 
-## E. Варианты backend endpoint
+The future Go loadgen must implement these gates in order. A later gate is not considered meaningful until the earlier gate is understood for the same endpoint profile and target range.
 
-- Все Loader workers используют `/ws/listener`.
-- `/admin/loader_token` для Stage XI не создаётся: такой endpoint обошёл бы
-  реальный Listener protocol и лимиты.
-- Первый предпочтительный источник LiveKit online counts — LiveKit API.
-- Если LiveKit API нельзя быстро сделать доступным и надёжным, fallback для
-  Analyzer — локальный endpoint:
-  `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
-- `/admin/metrics_snapshot` должен быть local-only и не должен публиковаться
-  через nginx.
-- Implementation status: implemented; endpoint дополнительно проверяет loopback
-  client и `X-Forwarded-For`.
+### Gate A — backend-ws-only
 
-## F. Runner identity
+Purpose:
 
-`runner_id` обязателен. Оператор вводит его вручную после остальных параметров
-либо явно передаёт последним CLI-аргументом. Он отличает разные ПК, а также
-несколько Loader instances на одном ПК.
+- Tests nginx/backend WebSocket admission, heartbeat, rate limits, stale cleanup, and backend metrics.
+- Does not connect to LiveKit.
+- Must support local-direct and vps-nginx endpoint profiles.
+- Must not stall in a local LAN test without nginx.
 
-Формат `worker_id`:
+Validity:
+
+- connected backend WS count reaches requested target;
+- heartbeats continue during HOLD;
+- backend reject counters and close codes are summarized;
+- HOLD duration completes or failure mode is clearly logged.
+
+### Gate B — livekit-connect-only
+
+Purpose:
+
+- Tests backend WS plus LiveKit token issuance, LiveKit signaling, ICE, and participant connection.
+- Does not subscribe to audio tracks.
+- Measures LiveKit room/participant scale without media egress.
+
+Validity:
+
+- backend WS connected;
+- token received;
+- LiveKit room connected;
+- transport mode observed;
+- stable during HOLD.
+
+### Gate C — livekit-subscribe-discard-rtp
+
+Purpose:
+
+- Tests backend WS plus LiveKit participant plus audio subscription and actual media egress.
+- Must subscribe to selected audio track.
+- Must read RTP packets and immediately discard payload.
+- Must not decode Opus.
+- Must not use physical audio output.
+
+Validity:
+
+- backend WS connected;
+- LiveKit room connected;
+- selected publication seen;
+- subscription requested;
+- track subscribed;
+- RTP packet counter grows during HOLD;
+- heartbeat maintained.
+
+Missing audio track is not automatically a VPS failure. In Gate C it may indicate publisher setup, channel selection, LiveKit publication timing, or loadgen subscription behavior. The run classification must explain the observed failure mode.
+
+## 6. Endpoint profiles
 
 ```text
-<runner_id>-L<zero_padded_index>
+local-direct
+  backend_base=http://127.0.0.1:8000
+  listener_ws=ws://127.0.0.1:8000/ws/listener
+  livekit_url normally ws://127.0.0.1:7880 or backend-issued equivalent
+  no nginx required
+
+vps-nginx
+  backend_base=http://<VPS_PUBLIC_IP>
+  listener_ws=ws://<VPS_PUBLIC_IP>/ws/listener
+  livekit_url normally ws://<VPS_PUBLIC_IP>:7880 from backend token response
+  nginx is part of the test path for backend WS
 ```
 
-Примеры:
+No domain and no HTTPS/WSS are assumed for the MVP11 public-IP pilot.
 
-- `home-pc1-L0001`
-- `home-pc1-L0002`
-- `gsm-laptop-L0001`
-- `remote-pc3-L0412`
+## 7. Windows-first Go loadgen target
 
-`connecting.payload` Loader может содержать диагностические metadata:
-
-- `client_type: "load_runner"`
-- `runner_id`
-- `worker_id`
-- `worker_index`
-- `selected_channel_mode`
-
-Эти поля диагностические и не должны ломать canonical protocol. Если backend
-schema позднее станет строже, изменение schema docs должно быть отдельным,
-осознанным решением.
-
-## G. CLI
-
-Обязательные параметры:
-
-- URL/IP VPS;
-- число listeners;
-- `ramp-mode`: `linear` или `burst`;
-- интервал запуска одного Listener каждые N секунд для `linear`;
-- `channel-mode`: `random` или `fixed`;
-- `channel-id` при `fixed`;
-- hold duration;
-- обязательный `runner_id`, запрашиваемый в конце или передаваемый явно.
-
-Burst:
-
-```bash
-python tools/load_test/byod_listener_loader.py ^
-  --server http://80.78.244.210 ^
-  --listeners 50 ^
-  --ramp-mode burst ^
-  --channel-mode random ^
-  --hold-sec 600 ^
-  --runner-id home-pc1
-```
-
-Linear:
-
-```bash
-python tools/load_test/byod_listener_loader.py ^
-  --server http://80.78.244.210 ^
-  --listeners 500 ^
-  --ramp-mode linear ^
-  --listener-every-sec 0.25 ^
-  --channel-mode random ^
-  --hold-sec 900 ^
-  --runner-id home-pc1
-```
-
-Fixed channel:
-
-```bash
-python tools/load_test/byod_listener_loader.py ^
-  --server http://80.78.244.210 ^
-  --listeners 100 ^
-  --ramp-mode linear ^
-  --listener-every-sec 0.5 ^
-  --channel-mode fixed ^
-  --channel-id channel_1 ^
-  --hold-sec 900 ^
-  --runner-id gsm-laptop
-```
-
-IP в примерах — адрес формата CLI-примера, а не credential или гарантия
-доступности конкретного сервера.
-
-
-## Валидность Protocol/engine run
-
-Для валидного LiveKit subscription load недостаточно видеть только
-`backend_connected`: это подтверждает лишь backend WebSocket. Минимальный
-критичный сигнал для media/subscription нагрузки — confirmed
-`livekit_track_subscribed`, который увеличивает `subscribed`. Если
-`livekit_connected` растёт, а `subscribed` почти не растёт, запуск считать
-`PARTIAL_RUN` или `INVALID_RUN` для capacity measurements до устранения причины.
-
-## H. Выбор канала
-
-- `channel-mode=random` случайно выбирает только канал с `listen=true`.
-- `channel-mode=fixed` использует строго `--channel-id`.
-- Если fixed channel отсутствует или имеет `listen=false`, Loader выполняет
-  fail fast.
-- Тихий fallback с fixed на random запрещён: он искажает валидность теста.
-- Если backend не передал каналы за 60 секунд, Loader сообщает об ошибке.
-- Если выбранный канал существует, но audio track сейчас не опубликован,
-  Listener worker остаётся в room и ждёт без ограничения времени, как обычный
-  Listener.
-- Отсутствующий audio track сам по себе не означает отказ VPS.
-- Ошибками считаются нарушения backend/LiveKit/connectivity/protocol.
-
-## I. Audio/media behavior
-
-Начальный режим реализации:
-
-- подписаться на audio track выбранного канала;
-- не создавать физическое audio playback;
-- по возможности не выполнять decode/playback;
-- проверить, действительно ли LiveKit передаёт media без чтения frames;
-- если frames необходимо потреблять, позднее добавить опцию
-  `--consume-audio-frames true`.
-
-Это проверка валидности Protocol/engine load, а не функция UI. Базовые audio
-инварианты проекта не меняются: 48000 Hz, stereo, frame size 960,
-`track.name == channel_id`, selective subscribe и queue drop-oldest.
-
-## J. Политика ручного ramp-up
-
-- Оператор может запускать Loader несколько раз с одного или нескольких ПК.
-- Manual ramp-up разрешён и ожидается.
-- `runner_id` делает каждый запуск различимым в метриках.
-- Для исключения локального интернет bottleneck можно использовать несколько
-  ПК и разные подключения.
-- Ориентир, сообщённый руководителем проекта: около 45 Mbit/s для одного
-  Publisher плюс Listener loader. Допустимы дополнительные GSM и remote links.
-
-Operational limits before profile runs:
-
-- перед Baseline/High/Extreme operator может вручную настроить
-  `target_capacity`, `max_new_connections_per_sec` и
-  `listener_min_reconnect_interval_per_ip_seconds`;
-- важные emergency/stress числа сгруппированы в верхнем operator block
-  `src/backend/config.py`: изменить цифру, затем выполнить restart
-  `byod-backend`;
-- heartbeat/stale timings можно менять только осторожно, потому что они влияют
-  на stale-session и reconnect_required behavior;
-- `max_new_connections_per_sec` — global backend Listener admission rate;
-- `listener_min_reconnect_interval_per_ip_seconds` — per-IP Listener
-  connect/reconnect throttle;
-- при запуске Loader с одного PC/NAT per-IP throttle может остановить Loader
-  раньше, чем будет достигнута VPS capacity;
-- это валидный сигнал для admission-control testing, но для capacity
-  characterization limit может потребоваться аккуратно повысить или отключить.
-- валидный Protocol/engine load run требует `livekit_track_subscribed` /
-  `subscribed > 0`; одного backend Listener count недостаточно для
-  media/subscription load measurement.
-
-
-### Safe multi-PC ramp и LiveKit visibility
-
-Для multi-PC запусков сначала используйте плавный ramp `--listener-every-sec 1`: например PC1 — 120 listeners every 1 sec, PC2 — 50 listeners every 1 sec, затем PC2 — 120 listeners every 1 sec. Не начинайте несколько ПК с `--listener-every-sec 0.1`: это примерно 10 workers/sec, а не 0.1 worker/sec. `livekit_subscription_pending` при быстром ramp не является автоматическим backend failure, если позже workers переходят в `livekit_track_subscribed`.
-
-`GET http://127.0.0.1:8000/admin/metrics_snapshot` остаётся local-only и добавляет LiveKit API visibility по rooms/participants. LiveKit API gives room/participant visibility: показывает участников room и опубликованные tracks, но не доказывает каждую subscription. Confirmed subscription load по-прежнему проверяется в первую очередь по Loader `livekit_track_subscribed` / `subscribed`, пока не добавлена точная server-side subscription metric.
-
-Краткая decision table:
-
-| Вероятная зона | Признаки |
-|---|---|
-| Backend/admission likely issue | `backend_connected` much lower than target; backend logs show connection rate/reconnect/room-full rejects. |
-| LiveKit/server likely issue | `backend_connected` normal; `livekit_connected` much lower; LiveKit logs show participant disconnect/failure; LiveKit API participants do not match backend sessions. |
-| Loader/subscription likely issue | `backend_connected` normal; `livekit_connected` normal; `subscription_requested` normal; `subscribed` lags but catches up with slower ramp; browser Listener hears audio at the same time. |
-
-## K. Load profiles
-
-### Baseline
-
-| Поле | Значение |
-|---|---|
-| listeners | 50 |
-| connection_rate_per_sec | текущий/default backend limit |
-| hold | 10 минут |
-
-Значение профиля:
-
-- проверяет штатный backend listener limit и connection-rate controls;
-- выполняется первым после рабочего deploy;
-- не требует разблокировки конфигурации сверх нормальных deploy values.
-
-### High
-
-| Поле | Значение |
-|---|---|
-| listeners | 500 |
-| connection_rate_per_sec | повышенный, но контролируемый |
-| hold | 15 минут |
-
-Значение профиля:
-
-- проверяет практическую высокую нагрузку;
-- connection rate вручную повышается в конфигурации до теста, но не становится
-  unlimited;
-- предпочтительный `ramp-mode` — `linear`;
-- цель — стабильная ёмкость и контролируемая деградация, а не мгновенный crash.
-
-### Extreme
-
-| Поле | Значение |
-|---|---|
-| listeners | 2000 |
-| connection_rate_per_sec | повышенный для stress |
-| hold | 20 минут |
-
-Значение профиля:
-
-- ищет верхнюю границу и failure modes;
-- config limits вручную меняются до теста;
-- ограничения интернета и Loader client могут потребовать несколько ПК/links;
-- деградация или crash допустимы как результат, если они измерены.
-
-Дополнительные простые опции профиля:
-
-- `ramp-mode: burst | linear`
-- `channel-mode: random | fixed`
-- `heartbeat-sec: 10`
-- `connect-timeout-sec: 30`
-- `channels-timeout-sec: 60`
-- `reconnect: true | false`
-
-### HOLD
-
-`hold` / HOLD — это observation period после завершения ramp-up. Во время HOLD
-каждый Listener worker сохраняет активными:
-
-- backend WebSocket;
-- LiveKit connection;
-- selected channel subscription;
-- Listener heartbeat.
-
-HOLD используется для сбора steady-state VPS/resource metrics: CPU, RAM,
-network RX/TX, disk, backend/LiveKit/nginx status и counts. HOLD не является
-pass/fail target. Если запуск деградировал или завершился во время HOLD, он всё
-равно может дать полезные данные об observed degradation point или observed
-failure mode, если метрики собраны достаточно полно.
-
-Профили являются documentation/manual targets. Автоматическое редактирование
-конфигурации не реализуется. Фактические backend config values оператор вручную
-меняет после deploy перед соответствующим профилем.
-
-## L. VPS Analyzer
-
-Команда управления:
-
-```bash
-sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start|stop|status
-```
-
-Analyzer должен:
-
-- работать через systemd, а не через `nohup` или pid-only shell background;
-- использовать service name `byod-metrics-analyzer.service`;
-- работать в фоне до явной остановки;
-- по умолчанию снимать sample каждые 120 секунд;
-- переживать закрытие окна PuTTY благодаря systemd;
-- при перегрузке или reboot VPS естественно остановиться, сохранив уже
-  записанные на диск логи.
-
-Implementation status: implemented. Script создаёт/обновляет systemd service
-unit при `start`.
-
-## M. Путь вывода Analyzer
-
-Каталог:
+Future implementation target location:
 
 ```text
-/opt/byod/metrics/
+tools/go_livekit_loadgen/
 ```
 
-Файлы одного запуска:
+Initial operator workflow:
 
-```text
-/opt/byod/metrics/byod_metrics_<timestamp>.csv
-/opt/byod/metrics/byod_metrics_<timestamp>.jsonl
-/opt/byod/metrics/byod_metrics_<timestamp>.log
-```
+- run from a Windows 10-11 developer/operator machine;
+- first from PyCharm/terminal using Go CLI + PowerShell `.ps1` helpers;
+- no Linux-first requirement;
+- no requirement for portable packaging in the first implementation;
+- portable one-folder package may be added after the tool is trusted;
+- keep commands simple and few.
 
-Operator commands:
-
-```bash
-sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
-sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
-sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
-```
-
-Local metrics snapshot check на VPS:
-
-```bash
-curl -s http://127.0.0.1:8000/admin/metrics_snapshot
-```
-
-Manual resource viewer:
-
-```bash
-btop
-```
-
-## N. Метрики Analyzer
-
-Минимальный набор:
-
-- `timestamp_local`
-- `timestamp_utc`
-- `cpu_percent`
-- `ram_used_gb`
-- `ram_total_gb`
-- `disk_used_gb`
-- `disk_total_gb`
-- `net_iface`
-- `rx_mbps`
-- `tx_mbps`
-- `livekit_api_ok`
-- `livekit_api_error`
-- `livekit_rooms_count`
-- `livekit_participants_count`
-- `livekit_listener_participants_count`
-- `livekit_publisher_participants_count`
-- `backend_publishers_count`
-- `backend_listeners_count`
-- `backend_active_play_count`
-- `byod_backend_status`
-- `byod_livekit_status`
-- `nginx_status`
-
-CSV предназначен для таблиц, JSONL — для machine parsing, human-readable
-`.log` — для быстрого ручного просмотра. Временные отметки должны быть понятны
-оператору: одновременно записываются local и UTC timestamps.
-
-## O. Стратегия источников метрик
-
-1. Сначала использовать LiveKit API для количества rooms, participants,
-   Publisher и Listener.
-2. Если LiveKit API нельзя быстро и надёжно использовать, получать fallback из
-   `GET http://127.0.0.1:8000/admin/metrics_snapshot`.
-3. `/admin/metrics_snapshot` остаётся local-only и не публикуется через nginx.
-4. Endpoint имеет implementation status: implemented.
-5. Machine-readable JSON должен содержать как минимум:
-
-   - `ts`;
-   - `room_status`;
-   - `target_capacity`;
-   - `max_active_listeners`;
-   - `max_new_connections_per_sec`;
-   - `backend_publishers_count`;
-   - `backend_listeners_count`;
-   - `backend_active_play_count`;
-   - `backend_listeners_by_runner`;
-   - `livekit_api_ok`;
-   - `livekit_api_error`;
-   - `livekit_rooms_count`;
-   - `livekit_participants_count`;
-   - `livekit_listener_participants_count`;
-   - `livekit_publisher_participants_count`;
-   - `livekit_participants_by_identity_prefix`;
-   - `livekit_room_names`;
-   - per-room participant summaries when LiveKit API is reachable;
-   - channel summary с `channel_id`, `listen`, `owner` и, если доступно,
-     `active_listeners`.
-
-## P. Deploy requirement
-
-`btop` должен автоматически устанавливаться при подготовке Stage X/Stage XI
-VPS. `00_prepare_host.sh` добавляет `btop` в host packages.
-
-## Q. Run validity categories
-
-Stage XI не является проверкой фиксированного capacity ceiling. Основная цель —
-измерение и сравнение resource usage curve, observed stable range, observed
-degradation point и observed failure mode. Для оценки качества данных
-используются run-validity categories:
-
-- **VALID RUN** — metrics complete enough for analysis. Данных достаточно,
-  чтобы построить resource usage curve и описать поведение backend, LiveKit и
-  nginx при заданном Listener count.
-- **PARTIAL RUN** — тест деградировал или завершился раньше ожидаемого HOLD, но
-  собранные данные всё ещё полезны для анализа observed degradation point или
-  observed failure mode.
-- **INVALID RUN** — данным нельзя доверять из-за ошибки Loader, Analyzer,
-  config, setup или другой проблемы методики; такой запуск не используется для
-  сравнения VPS configurations.
-
-Числовые thresholds могут появиться после накопления измерений, но они не
-заменяют raw metrics и не являются основной целью Stage XI.
-
-## Portable Windows package без PyInstaller
-
-Для операторов, которым нужен запуск без установки Python, venv и `pip` на целевом Windows 10/11 x64 ПК, поддерживается one-folder portable package:
-
-```text
-dist\BYOD-Loader-Portable-Win64\
-```
-
-Package использует embedded/portable CPython runtime в подпапке `python\`; PyInstaller не используется и single `.exe` не создаётся. Backend protocol, Web Listener UI, Publisher, audio constants и LiveKit track naming не меняются.
-
-Сборка на developer/build Windows PC с Python 3.11 и internet:
+Expected command shape, not implemented in this PR:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1
+.\run_loadgen.ps1 -Profile local-direct -Mode backend-ws-only -Server http://127.0.0.1:8000 -Listeners 500 -RampPerSec 50 -HoldSec 600 -RunnerId win-dev-1
+
+.\run_loadgen.ps1 -Profile vps-nginx -Mode livekit-connect-only -Server http://<VPS_PUBLIC_IP> -Listeners 500 -RampPerSec 25 -HoldSec 600 -RunnerId win-home-1
+
+.\run_loadgen.ps1 -Profile vps-nginx -Mode livekit-subscribe-discard-rtp -Server http://<VPS_PUBLIC_IP> -Listeners 500 -RampPerSec 10 -HoldSec 600 -RunnerId win-home-1
 ```
 
-Если embedded Python zip уже скачан локально:
+## 8. Protocol identity and channel invariants
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\load_test\portable\build_portable_loader.ps1 -PythonEmbedZip C:\path\python-3.11.x-embed-amd64.zip
-```
+`runner_id` remains mandatory. The operator supplies it explicitly so every run can be separated in metrics, logs, and analyzer output.
 
-Builder создаёт:
+`worker_id` remains traceable. A recommended format is `<runner_id>-L<zero_padded_index>`, but the exact format may evolve if it remains stable and searchable.
+
+`client_type: "load_runner"` remains diagnostic metadata, not a general listener protocol change and not a privilege escalation. It helps separate loadgen clients from real browser listeners in logs and metrics.
+
+Fixed channel mode must fail fast if the channel is invalid. Silent fallback from fixed channel to random is forbidden because it makes capacity results impossible to interpret.
+
+Future loadgen-only reconnect throttle bypass must be explicitly enabled and must require both client_type="load_runner" and a static loadgen event key/ID. Default production behavior must remain protected.
+
+## 9. Live and final summaries required from future Go loadgen
+
+Live summary must include at least:
+
+- target listeners;
+- workers started;
+- backend WS connected;
+- backend WS failed/rejected;
+- LiveKit connected;
+- publication seen;
+- subscription requested;
+- track subscribed;
+- RTP packets per second;
+- RTP bytes per second;
+- UDP connections;
+- TCP connections;
+- UDP/TCP ratio;
+- reconnects;
+- disconnects;
+- current HOLD elapsed;
+- current error summary.
+
+Final summary must include at least:
+
+- requested mode;
+- endpoint profile;
+- target listeners;
+- ramp settings;
+- HOLD duration requested and actual;
+- backend connected total;
+- LiveKit connected total;
+- subscribed total;
+- RTP packet/byte totals for media mode;
+- UDP connections;
+- TCP connections;
+- UDP/TCP ratio;
+- first failure timestamp;
+- top error categories;
+- pass/partial/invalid classification;
+- generated log paths.
+
+TCP is allowed and must be measured. UDP/TCP ratio is diagnostic, not an automatic pass/fail by itself.
+
+Analyzer output remains CSV + JSONL + human-readable log. The future analyzer may consume Go loadgen output, backend metrics snapshots, LiveKit API snapshots, nginx logs, and host observations, but the durable output formats remain machine-readable CSV/JSONL plus an operator-readable log.
+
+## 10. HOLD and run classification
+
+HOLD is the steady-state observation period after ramp-up. During HOLD, workers must maintain heartbeat and the loadgen must report current connected/subscribed/media counters. HOLD is where CPU, RAM, network RX/TX, backend status, LiveKit status, nginx behavior, reconnects, and close/error codes are observed.
 
 ```text
-dist\BYOD-Loader-Portable-Win64\
-dist\BYOD-Loader-Portable-Win64.zip
+VALID_RUN
 ```
 
-Target-user запуск после копирования/распаковки папки:
+The run reached the gate-specific target and held it for the requested HOLD duration with enough metrics to trust the result.
 
-```bat
-run_loader.bat
+```text
+PARTIAL_RUN
 ```
 
-Advanced запуск с полными аргументами:
+Some useful capacity/degradation data was collected, but the run did not fully satisfy the gate.
 
-```bat
-run_loader_args.bat --server http://192.168.1.50:8000 --listeners 50 --ramp-mode linear --listener-every-sec 1 --channel-mode fixed --channel-id channel_1 --hold-sec 600 --runner-id pc2
+```text
+INVALID_RUN
 ```
 
-Builder валидирует portable runtime командами `python.exe app\byod_listener_loader.py --help`, `run_loader_args.bat --help`, import check для `websockets`, `livekit.rtc`, `livekit.api` и базовым `livekit.rtc.Room()` check; при ошибке сборка останавливается с non-zero exit code.
+The load generator, local machine, setup, config, or metrics failed in a way that makes capacity interpretation unreliable.
+
+## 11. LiveKit UDP strategy for future implementation
+
+Intended future stress profile:
+
+- Primary stress UDP range: `50000-54000/udp`.
+- Reason: about 4001 UDP ports, enough for approximately 2000 peers if two UDP ports per participant are needed.
+- Fallback profile: `rtc.udp_port: 7882`, with firewall `7882/udp`, if wide UDP range causes VPS/provider/setup problems.
+- Do not switch to `7882/udp` as the first default in this PR.
+- Do not change actual config in this PR.
+
+The current stage pilot config may still use a narrower UDP range, and existing smoke/deploy scripts may still print older expectations. Those runtime files are intentionally not changed here; this document records the intended future stress profile.
+
+## 12. VPS/operator observations
+
+`btop` remains expected on the VPS for operator-visible CPU, memory, process, and network observation during stress events. Backend and LiveKit metrics should be captured near the same time as loadgen summaries whenever possible.
+
+Raw metrics remain more important than a single pass/fail label. Operators should preserve terminal output, generated logs, CSV/JSONL files, backend snapshots, and host observations for each run.
+
+## 13. Next implementation tasks
+
+1. Implement `tools/go_livekit_loadgen/`.
+2. Add future controlled loadgen-only bypass for per-IP reconnect throttle.
+3. Add future nginx full config/template with `worker_connections 65535`.
+4. Add future LiveKit config profile for `50000-54000/udp` and fallback `7882/udp`.
+5. Add future room config import helper script from `/tmp`.
+6. Add future simplified smoke test one-line-per-service output.
+7. Add future timestamp field `ts_iso` rounded to tenths of a second with Moscow timezone `+03:00`.

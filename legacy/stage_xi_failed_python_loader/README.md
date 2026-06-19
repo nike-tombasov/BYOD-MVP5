@@ -1,3 +1,16 @@
+# LEGACY — failed Stage XI Python portable loader
+
+This loader is preserved only as a forensic/protocol reference. It must not be used for formal capacity characterization, MVP11 acceptance, or VPS scaling decisions.
+
+Known invalidating issues:
+- Windows/Python/LiveKit SDK instability distorted measurements.
+- The loader was strongly TCP-biased in observed runs.
+- It produced internal errors and shutdown noise.
+- It could not reliably ramp to the required 500–2000 emulated listener target.
+- Its counters were useful for diagnosis but not sufficient as a trusted load generator.
+
+---
+
 # Stage XI Listener Loader для Protocol/engine load
 
 ## 1. Что делает Loader
