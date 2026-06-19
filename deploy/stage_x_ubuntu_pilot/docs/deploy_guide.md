@@ -30,7 +30,7 @@ sudo apt-get update
 sudo apt-get install -y git
 sudo mkdir -p /opt/byod
 sudo chown "$USER:$USER" /opt/byod
-git clone --branch MVP10 <your_repo_url> /opt/byod/app-src
+git clone --branch MVP11 https://github.com/nike-tombasov/BYOD-MVP5 /opt/byod/app-src
 cd /opt/byod/app-src
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/00_prepare_host.sh
 ```
