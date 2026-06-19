@@ -144,8 +144,8 @@ tools/go_livekit_loadgen/
 
 Initial operator workflow:
 
-- run from a Windows developer/operator machine;
-- first from PyCharm/terminal using PowerShell `.ps1` helpers;
+- run from a Windows 10-11 developer/operator machine;
+- first from PyCharm/terminal using Go CLI + PowerShell `.ps1` helpers;
 - no Linux-first requirement;
 - no requirement for portable packaging in the first implementation;
 - portable one-folder package may be added after the tool is trusted;
@@ -170,6 +170,8 @@ Expected command shape, not implemented in this PR:
 `client_type: "load_runner"` remains diagnostic metadata, not a general listener protocol change and not a privilege escalation. It helps separate loadgen clients from real browser listeners in logs and metrics.
 
 Fixed channel mode must fail fast if the channel is invalid. Silent fallback from fixed channel to random is forbidden because it makes capacity results impossible to interpret.
+
+Future loadgen-only reconnect throttle bypass must be explicitly enabled and must require both client_type="load_runner" and a static loadgen event key/ID. Default production behavior must remain protected.
 
 ## 9. Live and final summaries required from future Go loadgen
 
@@ -204,6 +206,8 @@ Final summary must include at least:
 - LiveKit connected total;
 - subscribed total;
 - RTP packet/byte totals for media mode;
+- UDP connections;
+- TCP connections;
 - UDP/TCP ratio;
 - first failure timestamp;
 - top error categories;
