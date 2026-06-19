@@ -73,8 +73,8 @@ Stage XI tooling baseline is implemented for **Protocol/engine load only**.
 Browser/Web Listener UI load testing is explicitly out of scope and is
 postponed to future Web Listener UI hardening. The goal is VPS resource
 characterization: CPU, RAM, network RX/TX, disk, and backend/LiveKit/nginx
-behavior under increasing Listener count. The tooling includes a Windows
-Python Loader, a VPS Analyzer, and a local-only backend metrics endpoint.
+behavior under increasing Listener count. The tooling includes Go LiveKit SDK loadgen, 
+a VPS Analyzer, and a local-only backend metrics endpoint.
 
 Permanent test manual:
 - `docs/22_stress_tests.md`
