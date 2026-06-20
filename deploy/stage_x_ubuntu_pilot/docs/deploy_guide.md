@@ -23,7 +23,7 @@ Typical workflow for File Transfer Convention (WinSCP):
 
 Do not assume command-line file-transfer tooling.
 
-## 1) Bootstrap the clean VPS and clone branch MVP10
+## 1) Bootstrap the clean VPS and clone branch MVP11
 
 ```bash
 sudo apt-get update
@@ -35,8 +35,7 @@ cd /opt/byod/app-src
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/00_prepare_host.sh
 ```
 
-The prepare script installs the remaining host packages (and ensures `git` is
-present), creates the `byod` service account, and creates these directories:
+The prepare script installs the remaining host packages (including `btop` for operator monitoring, and ensuring `git` is present), creates the `byod` service account, and creates these directories:
 
 - `/opt/byod/app`
 - `/opt/byod/config`
@@ -153,6 +152,8 @@ sudo sed -i 's/\r$//' /opt/byod/config/livekit.yaml
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
 ```
 
+This installs the full BYOD `/etc/nginx/nginx.conf` template, keeps `byod-listener.conf` as the site config, backs up the previous nginx main config before replacement, validates with `nginx -t`, and installs service file descriptor limits: nginx override `LimitNOFILE=200000` and backend `LimitNOFILE=200000`.
+
 ## 6) Configure the provider firewall
 
 The VPS provider firewall must allow inbound `80/tcp`, `7880/tcp`, `7881/tcp`,
@@ -168,6 +169,8 @@ Run the automated smoke test on the VPS:
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
 ```
+
+Expected output is concise one-line service status, for example: `backend: active, health=ok, port=8000-listening`, `nginx: active, config=ok, worker_connections=65535, nofile=200000`, `livekit: active, port=7880-listening, tcp=7881-listening`, plus `btop`, vendor, and local metrics checks.
 
 Then perform the public client checks:
 
