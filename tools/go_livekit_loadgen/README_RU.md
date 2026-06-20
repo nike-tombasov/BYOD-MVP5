@@ -1,6 +1,6 @@
 # Go loadgen BYOD: Gate A (`backend-ws-only`)
 
-Этот каталог содержит новый Windows-first Go loadgen для первой ступени нагрузочного тестирования BYOD. Gate A проверяет только backend WebSocket путь Listener: подключение к `/ws/listener`, обычный `connecting` envelope, backend heartbeat и удержание открытых WebSocket соединений во время HOLD.
+Этот каталог содержит новый Windows-first Go loadgen для первой ступени нагрузочного тестирования BYOD. Gate A проверяет только backend WebSocket путь Listener: подключение к `/ws/listener`, обычный `connecting` envelope, backend heartbeat и удержание открытых WebSocket соединений во время HOLD. После получения `listener_state` loadgen выбирает первый канал с `listen=true` только для того, чтобы heartbeat соответствовал обычной backend семантике Listener.
 
 ## 1. Что проверяет Gate A
 
@@ -11,13 +11,13 @@ Gate A отвечает на вопрос: «Сколько Listener WebSocket �
 - backend endpoint `/ws/listener`;
 - схема обычного Listener `connecting` сообщения;
 - admission/reject логика backend;
-- backend heartbeat протокол Listener;
+- backend heartbeat протокол Listener с первым listenable каналом из `listener_state`;
 - устойчивость WebSocket соединений во время HOLD;
 - путь через nginx, если используется профиль `vps-nginx`.
 
 ## 2. Что Gate A не проверяет
 
-Gate A не подключается к LiveKit и не проверяет медиа.
+Gate A не подключается к LiveKit и не проверяет медиа. Выбранный listenable канал используется только в backend heartbeat; это не браузерное воспроизведение и не LiveKit subscription.
 
 Не проверяются:
 
@@ -87,7 +87,7 @@ Helper:
 3. `100` listeners — первый реальный backend admission тест.
 4. `500` listeners — stress run только после успешных меньших ступеней.
 
-Для каждой ступени смотрите `backend_rejected`, `backend_closed`, `heartbeat_failed` и итоговую классификацию run.
+Для каждой ступени смотрите `backend_active`, `backend_rejected`, `backend_closed`, `heartbeat_failed` и итоговую классификацию run. HOLD начинается только после того, как ramp завершён и `backend_active` достиг `target_listeners`; одних накопленных successful connect недостаточно.
 
 ## 6. Что означают числа в live summary
 
@@ -96,15 +96,17 @@ Loadgen печатает одну короткую строку примерно
 - `ts_iso` — время по Москве `+03:00`, округлено до десятых секунды;
 - `mode` — сейчас только `backend-ws-only`;
 - `profile` — `local-direct` или `vps-nginx`;
-- `target` — WebSocket URL, куда идёт тест;
+- `target_listeners` — сколько активных Listener нужно набрать перед HOLD;
+- `target_ws` — WebSocket URL, куда идёт тест;
 - `started` — сколько worker goroutine стартовало;
-- `backend_connected` — сколько Listener получили успешный backend `connecting` ответ;
+- `backend_connected` — сколько Listener получили успешный backend state и выбрали listenable канал;
+- `backend_active` — сколько workers сейчас удерживают активное backend WebSocket соединение;
 - `backend_rejected` — сколько Listener получили backend error/reject;
 - `backend_closed` — сколько соединений backend закрыл во время активного run;
 - `heartbeat_ok` — сколько heartbeat сообщений успешно отправлено;
 - `heartbeat_failed` — сколько heartbeat отправить не удалось;
 - `ramp_done` — все запланированные workers уже стартовали;
-- `hold_elapsed` — сколько секунд прошло в HOLD после завершения ramp;
+- `hold_elapsed` — сколько секунд прошло в HOLD после достижения `backend_active >= target_listeners`;
 - `errors_top` — самые частые ошибки;
 - `transport_udp_tcp=n/a` — UDP/TCP не измеряется в Gate A, потому что LiveKit не используется.
 
@@ -112,15 +114,15 @@ Loadgen печатает одну короткую строку примерно
 
 Итоговый JSON summary содержит классификацию:
 
-- `VALID_RUN` — target достигнут, все Listener подключились, HOLD завершён, reject/close во время активного run нет.
-- `PARTIAL_RUN` — данные полезны, но target или HOLD выполнены не полностью, либо были reject/close/error.
+- `VALID_RUN` — target был активно удержан: `backend_active >= target_listeners` на старте HOLD, HOLD завершён, reject/close/heartbeat failure во время HOLD нет.
+- `PARTIAL_RUN` — данные полезны, но target активных backend соединений или HOLD выполнены не полностью, либо были reject/close/error.
 - `INVALID_RUN` — локальная настройка, протокол или логирование сломались так, что результату нельзя доверять.
 
 ## 8. Как распознать потолок nginx/WS
 
 Для профиля `vps-nginx` возможный nginx/WebSocket ceiling выглядит так:
 
-- `started` растёт, но `backend_connected` перестаёт догонять target;
+- `started` растёт, но `backend_active` не достигает `target_listeners`;
 - `backend_closed` растёт во время HOLD;
 - появляются handshake/connection reset/timeout ошибки в `errors_top`;
 - локальный `local-direct` на той же мощности лучше, чем `vps-nginx`.
