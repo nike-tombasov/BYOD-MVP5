@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +22,7 @@ import (
 type Event struct {
 	Kind, WorkerID, ListenerID, Error string
 	CloseCode                         int
+	WasConnected                      bool
 }
 type Conn struct {
 	c net.Conn
@@ -168,6 +170,30 @@ func (c *Conn) readFrame() (byte, []byte, error) {
 	}
 	return op, p, nil
 }
+
+func FirstListenableChannelID(message map[string]any) (string, error) {
+	payload, ok := message["payload"].(map[string]any)
+	if !ok {
+		return "", errors.New("listener_state_missing_payload")
+	}
+	channels, ok := payload["channels"].([]any)
+	if !ok {
+		return "", errors.New("listener_state_missing_channels")
+	}
+	for _, item := range channels {
+		channel, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		listen, _ := channel["listen"].(bool)
+		channelID, _ := channel["channel_id"].(string)
+		if listen && channelID != "" {
+			return channelID, nil
+		}
+	}
+	return "", errors.New("no_listenable_channel")
+}
+
 func RunWorker(ctx context.Context, target, runnerID, key string, idx int, events chan<- Event) {
 	wid := fmt.Sprintf("%s-L%04d", runnerID, idx)
 	events <- Event{Kind: "started", WorkerID: wid}
@@ -183,25 +209,44 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, event
 		return
 	}
 	done := make(chan struct{})
+	selectedChannel := make(chan string, 1)
 	go func() {
 		defer close(done)
+		listenerID := ""
+		connected := false
 		for {
 			var msg map[string]any
 			if err := c.ReadJSON(&msg); err != nil {
-				events <- Event{Kind: "closed", WorkerID: wid, Error: err.Error()}
+				if ctx.Err() == nil {
+					events <- Event{Kind: "closed", WorkerID: wid, ListenerID: listenerID, Error: err.Error(), WasConnected: connected}
+				}
 				return
 			}
 			if msg["type"] == "error" {
-				events <- Event{Kind: "rejected", WorkerID: wid, Error: fmt.Sprint(msg["payload"])}
+				events <- Event{Kind: "rejected", WorkerID: wid, ListenerID: listenerID, Error: fmt.Sprint(msg["payload"])}
 				return
 			}
 			if msg["type"] == "connecting" {
 				if p, ok := msg["payload"].(map[string]any); ok {
-					events <- Event{Kind: "connected", WorkerID: wid, ListenerID: fmt.Sprint(p["listener_id"])}
+					listenerID = fmt.Sprint(p["listener_id"])
+				}
+				continue
+			}
+			if msg["type"] == "listener_state" {
+				channelID, err := FirstListenableChannelID(msg)
+				if err != nil {
+					events <- Event{Kind: "error", WorkerID: wid, ListenerID: listenerID, Error: err.Error()}
+					return
+				}
+				if !connected {
+					connected = true
+					events <- Event{Kind: "connected", WorkerID: wid, ListenerID: listenerID}
+					selectedChannel <- channelID
 				}
 			}
 		}
 	}()
+	var heartbeatChannel string
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -211,8 +256,12 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, event
 			return
 		case <-done:
 			return
+		case heartbeatChannel = <-selectedChannel:
 		case <-ticker.C:
-			if err := c.WriteJSON(envelope("heartbeat", "heartbeat-"+wid, map[string]any{"client_role": "listener", "selected_channel": "", "playback_state": "IDLE"})); err != nil {
+			if heartbeatChannel == "" {
+				continue
+			}
+			if err := c.WriteJSON(envelope("heartbeat", "heartbeat-"+wid, map[string]any{"client_role": "listener", "selected_channel": heartbeatChannel, "playback_state": "PLAYING"})); err != nil {
 				events <- Event{Kind: "heartbeat_failed", WorkerID: wid, Error: err.Error()}
 			} else {
 				events <- Event{Kind: "heartbeat_ok", WorkerID: wid}
