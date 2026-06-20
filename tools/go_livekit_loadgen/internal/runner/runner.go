@@ -52,7 +52,6 @@ func (r *Runner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	events := make(chan backendws.Event, 1024)
-	started := time.Now()
 	var rampDone atomic.Bool
 	go func() {
 		defer rampDone.Store(true)
@@ -67,16 +66,18 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	holdTimer := time.NewTimer(time.Duration(r.C.HoldSec) * time.Second)
 	live := time.NewTicker(time.Second)
 	defer live.Stop()
 	holdCompleted := false
+	holdStarted := false
+	var holdStart time.Time
+	var holdTimer <-chan time.Time
 	for !holdCompleted {
 		select {
 		case <-ctx.Done():
 			holdCompleted = false
 			goto END
-		case <-holdTimer.C:
+		case <-holdTimer:
 			holdCompleted = true
 			cancel()
 		case e := <-events:
@@ -84,7 +85,12 @@ func (r *Runner) Run(ctx context.Context) error {
 			lg.Event(map[string]any{"ts_iso": TS(), "event": e.Kind, "worker_id": e.WorkerID, "listener_id": e.ListenerID, "error": e.Error, "close_code": e.CloseCode})
 		case <-live.C:
 			r.counts.RampDone = rampDone.Load()
-			fmt.Println(r.liveLine(started))
+			if r.counts.RampDone && !holdStarted {
+				holdStarted = true
+				holdStart = time.Now()
+				holdTimer = time.After(time.Duration(r.C.HoldSec) * time.Second)
+			}
+			fmt.Println(r.liveLine(holdStart, holdStarted))
 		}
 	}
 END:
@@ -102,7 +108,7 @@ END:
 	r.counts.RampDone = rampDone.Load()
 	r.counts.HoldCompleted = holdCompleted
 	class := summary.Classify(r.C.Listeners, r.counts)
-	out := map[string]any{"ts_iso": TS(), "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": time.Since(started).Seconds(), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_rejected": r.counts.BackendRejected, "backend_closed": r.counts.BackendClosed, "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
+	out := map[string]any{"ts_iso": TS(), "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_rejected": r.counts.BackendRejected, "backend_closed": r.counts.BackendClosed, "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
 	b, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(sumpath, b, 0644); err != nil {
 		return err
@@ -149,6 +155,13 @@ func (r *Runner) topErrors() []string {
 	}
 	return xs
 }
-func (r *Runner) liveLine(start time.Time) string {
-	return fmt.Sprintf("ts_iso=%s mode=%s profile=%s target=%s started=%d backend_connected=%d backend_rejected=%d backend_closed=%d heartbeat_ok=%d heartbeat_failed=%d ramp_done=%t hold_elapsed=%.0fs errors_top=%v transport_udp_tcp=n/a", TS(), r.C.Mode, r.C.Profile, r.target, r.counts.Started, r.counts.BackendConnected, r.counts.BackendRejected, r.counts.BackendClosed, r.counts.HeartbeatOK, r.counts.HeartbeatFailed, r.counts.RampDone, time.Since(start).Seconds(), r.topErrors())
+func holdElapsedSeconds(start time.Time, started bool) float64 {
+	if !started {
+		return 0
+	}
+	return time.Since(start).Seconds()
+}
+
+func (r *Runner) liveLine(holdStart time.Time, holdStarted bool) string {
+	return fmt.Sprintf("ts_iso=%s mode=%s profile=%s target=%s started=%d backend_connected=%d backend_rejected=%d backend_closed=%d heartbeat_ok=%d heartbeat_failed=%d ramp_done=%t hold_elapsed=%.0fs errors_top=%v transport_udp_tcp=n/a", TS(), r.C.Mode, r.C.Profile, r.target, r.counts.Started, r.counts.BackendConnected, r.counts.BackendRejected, r.counts.BackendClosed, r.counts.HeartbeatOK, r.counts.HeartbeatFailed, r.counts.RampDone, holdElapsedSeconds(holdStart, holdStarted), r.topErrors())
 }

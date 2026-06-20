@@ -188,7 +188,9 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, event
 		for {
 			var msg map[string]any
 			if err := c.ReadJSON(&msg); err != nil {
-				events <- Event{Kind: "closed", WorkerID: wid, Error: err.Error()}
+				if ctx.Err() == nil {
+					events <- Event{Kind: "closed", WorkerID: wid, Error: err.Error()}
+				}
 				return
 			}
 			if msg["type"] == "error" {
