@@ -250,7 +250,16 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 	}
 	done := make(chan struct{})
 	selectedChannel := make(chan string, 1)
+	type roomReadyEvent struct {
+		room       livekitconn.Room
+		listenerID string
+		livekitURL string
+	}
+	roomReady := make(chan roomReadyEvent, 1)
 	var livekitRoom livekitconn.Room
+	var livekitDone <-chan struct{}
+	var livekitListenerID string
+	var livekitURL string
 	go func() {
 		defer close(done)
 		listenerID := ""
@@ -353,7 +362,6 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 						events <- e
 						return
 					}
-					livekitRoom = room
 					liveKitConnected = true
 					e = withKind(eventBase, "worker_livekit_connected")
 					e.ListenerID = listenerID
@@ -361,6 +369,7 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 					// Transport is intentionally unknown until PR47 adds SDK stats plumbing.
 					e.Transport = "unknown"
 					events <- e
+					roomReady <- roomReadyEvent{room: room, listenerID: listenerID, livekitURL: info.URL}
 				}
 			}
 			if mode == "livekit-connect-only" && !gotListenerState && msg["type"] == "i18n_library" {
@@ -387,6 +396,23 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 		case <-done:
 			return
 		case heartbeatChannel = <-selectedChannel:
+		case ready := <-roomReady:
+			livekitRoom = ready.room
+			livekitDone = ready.room.Done()
+			livekitListenerID = ready.listenerID
+			livekitURL = ready.livekitURL
+		case <-livekitDone:
+			if ctx.Err() == nil {
+				e := withKind(eventBase, "worker_livekit_disconnected")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.Error = "livekit_disconnected"
+				if livekitRoom != nil && livekitRoom.Err() != nil {
+					e.Error = livekitRoom.Err().Error()
+				}
+				events <- e
+			}
+			return
 		case <-ticker.C:
 			if heartbeatChannel == "" {
 				continue
