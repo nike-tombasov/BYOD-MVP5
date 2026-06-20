@@ -176,4 +176,6 @@ sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/66_install_livek
 sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
 ```
 
-Скрипт проверяет, что source file существует и не пустой, копирует его атомарно в `/opt/byod/listener/vendor/`, ставит owner `www-data:www-data` и mode `0644`. Это локальный VPS operator tool; он не открывает backend admin endpoints наружу.
+Скрипт проверяет, что source file существует и не пустой, копирует его атомарно в runtime path `/opt/byod/listener/vendor/`, ставит owner `www-data:www-data` и mode `0644`. Это локальный VPS operator tool; он не открывает backend admin endpoints наружу.
+
+Отсутствие local vendor больше не блокирует установку Listener: `30_install_listener.sh` продолжит deploy, а браузер должен использовать CDN fallback. `66_install_livekit_vendor_from_tmp.sh` — post-install runtime tool. Если позже повторно запустить `30_install_listener.sh`, он снова синхронизирует `/opt/byod/listener` из `src/listener` и очищает runtime directory, поэтому local runtime vendor может потребоваться поставить заново.

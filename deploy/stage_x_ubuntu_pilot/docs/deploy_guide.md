@@ -85,15 +85,16 @@ in the repository checkout:
 src/listener/vendor/livekit-client.umd.1.15.13.js
 ```
 
-If it is missing, put `livekit-client.umd.1.15.13.js` into
-`src/listener/vendor` before deploy. The listener installer intentionally stops
-with this instruction rather than deploying a Listener that depends on CDN
-availability. If the pinned file is transferred to the VPS later via `/tmp`, install it with:
+A local pinned vendor in `src/listener/vendor` is preferred but optional. If it is missing, `30_install_listener.sh` continues and the browser should fall back to the CDN URL already referenced by `src/listener/index.html`.
+
+If the pinned file is transferred to the VPS later via `/tmp`, install it after Listener install into the runtime path `/opt/byod/listener/vendor/` with:
 
 ```bash
 sudo cp <LOCAL_OR_TRANSFERRED_FILE> /tmp/livekit-client.umd.1.15.13.js
 sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/66_install_livekit_vendor_from_tmp.sh
 ```
+
+Do not copy the file directly to `/opt/byod/listener/vendor/` before running `30_install_listener.sh`: that installer re-syncs `/opt/byod/listener` from `src/listener` and clears the runtime directory first.
 
 ```bash
 sudo bash deploy/stage_x_ubuntu_pilot/scripts/20_install_backend.sh
