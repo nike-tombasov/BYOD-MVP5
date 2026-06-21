@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-const ModeBackendWSOnly = "backend-ws-only"
+const (
+	ModeBackendWSOnly              = "backend-ws-only"
+	ModeLiveKitConnectOnly         = "livekit-connect-only"
+	ModeLiveKitSubscribeDiscardRTP = "livekit-subscribe-discard-rtp"
+)
 
 type Config struct {
 	Profile, Mode, Server          string
@@ -40,11 +44,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("unsupported profile %q", c.Profile)
 	}
 	switch c.Mode {
-	case ModeBackendWSOnly:
-	case "livekit-connect-only":
-		return errors.New("mode livekit-connect-only is documented but not implemented in this PR")
-	case "livekit-subscribe-discard-rtp":
-		return errors.New("mode livekit-subscribe-discard-rtp is documented but not implemented in this PR")
+	case ModeBackendWSOnly, ModeLiveKitConnectOnly, ModeLiveKitSubscribeDiscardRTP:
 	default:
 		return fmt.Errorf("unsupported mode %q", c.Mode)
 	}

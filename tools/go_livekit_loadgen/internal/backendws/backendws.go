@@ -2,6 +2,7 @@ package backendws
 
 import (
 	"bufio"
+	"byod-loadgen/internal/livekitconn"
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
@@ -9,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,8 +21,10 @@ import (
 )
 
 type Event struct {
-	Kind, WorkerID, ListenerID, Error string
-	CloseCode                         int
+	Kind, RunnerID, WorkerID, ListenerID, Error string
+	Mode, Profile, LiveKitURL, Transport        string
+	WorkerIndex, CloseCode                      int
+	WasConnected, WasLiveKitConnected           bool
 }
 type Conn struct {
 	c net.Conn
@@ -168,55 +172,302 @@ func (c *Conn) readFrame() (byte, []byte, error) {
 	}
 	return op, p, nil
 }
-func RunWorker(ctx context.Context, target, runnerID, key string, idx int, events chan<- Event) {
+
+type LiveKitConnectInfo struct {
+	Token, URL, ListenerID, RoomName string
+}
+
+func LiveKitConnectInfoFromConnecting(message map[string]any) (LiveKitConnectInfo, error) {
+	payload, ok := message["payload"].(map[string]any)
+	if !ok {
+		return LiveKitConnectInfo{}, errors.New("missing_connecting_payload")
+	}
+	info := LiveKitConnectInfo{}
+	if v, ok := payload["token"].(string); ok {
+		info.Token = v
+	}
+	if v, ok := payload["livekit_url"].(string); ok {
+		info.URL = v
+	}
+	if v, ok := payload["listener_id"].(string); ok {
+		info.ListenerID = v
+	}
+	if v, ok := payload["room"].(string); ok {
+		info.RoomName = v
+	} else if v, ok := payload["room_name"].(string); ok {
+		info.RoomName = v
+	}
+	if info.Token == "" {
+		return info, errors.New("missing_livekit_token")
+	}
+	if info.URL == "" {
+		return info, errors.New("missing_livekit_url")
+	}
+	return info, nil
+}
+
+func FirstListenableChannelID(message map[string]any) (string, error) {
+	payload, ok := message["payload"].(map[string]any)
+	if !ok {
+		return "", errors.New("listener_state_missing_payload")
+	}
+	channels, ok := payload["channels"].([]any)
+	if !ok {
+		return "", errors.New("listener_state_missing_channels")
+	}
+	for _, item := range channels {
+		channel, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		listen, _ := channel["listen"].(bool)
+		channelID, _ := channel["channel_id"].(string)
+		if listen && channelID != "" {
+			return channelID, nil
+		}
+	}
+	return "", errors.New("no_listenable_channel")
+}
+
+func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode string, connector livekitconn.Connector, events chan<- Event) {
 	wid := fmt.Sprintf("%s-L%04d", runnerID, idx)
-	events <- Event{Kind: "started", WorkerID: wid}
+	eventBase := Event{RunnerID: runnerID, WorkerID: wid, WorkerIndex: idx, Mode: mode}
+	events <- withKind(eventBase, "started")
 	c, err := dial(ctx, target)
 	if err != nil {
-		events <- Event{Kind: "error", WorkerID: wid, Error: err.Error()}
+		e := withKind(eventBase, "error")
+		e.Error = err.Error()
+		events <- e
 		return
 	}
 	defer c.Close()
-	payload := map[string]any{"client_role": "listener", "client_type": "load_runner", "runner_id": runnerID, "worker_id": wid, "worker_index": idx, "loadgen_key": key, "loadgen_mode": "backend-ws-only"}
+	payload := map[string]any{"client_role": "listener", "client_type": "load_runner", "runner_id": runnerID, "worker_id": wid, "worker_index": idx, "loadgen_key": key, "loadgen_mode": mode}
 	if err := c.WriteJSON(envelope("connecting", "connect-"+wid, payload)); err != nil {
-		events <- Event{Kind: "error", WorkerID: wid, Error: err.Error()}
+		e := withKind(eventBase, "error")
+		e.Error = err.Error()
+		events <- e
 		return
 	}
 	done := make(chan struct{})
+	selectedChannel := make(chan string, 1)
+	type roomReadyEvent struct {
+		room       livekitconn.Room
+		listenerID string
+		livekitURL string
+	}
+	roomReady := make(chan roomReadyEvent, 1)
+	var livekitRoom livekitconn.Room
+	var livekitDone <-chan struct{}
+	var livekitEvents <-chan livekitconn.Event
+	var livekitListenerID string
+	var livekitURL string
+	var audioTrackTimer <-chan time.Time
+	audioTrackReceived := false
 	go func() {
 		defer close(done)
+		listenerID := ""
+		backendConnected := false
+		liveKitConnected := false
+		gotListenerState := false
+		var info LiveKitConnectInfo
 		for {
 			var msg map[string]any
 			if err := c.ReadJSON(&msg); err != nil {
-				events <- Event{Kind: "closed", WorkerID: wid, Error: err.Error()}
+				if ctx.Err() == nil {
+					if mode != "backend-ws-only" && !gotListenerState {
+						e := withKind(eventBase, "error")
+						e.ListenerID = listenerID
+						e.Error = "missing_listener_state"
+						events <- e
+						return
+					}
+					e := withKind(eventBase, "worker_closed")
+					e.ListenerID = listenerID
+					e.Error = err.Error()
+					e.WasConnected = backendConnected
+					e.WasLiveKitConnected = liveKitConnected
+					events <- e
+				}
 				return
 			}
 			if msg["type"] == "error" {
-				events <- Event{Kind: "rejected", WorkerID: wid, Error: fmt.Sprint(msg["payload"])}
+				e := withKind(eventBase, "rejected")
+				e.ListenerID = listenerID
+				e.Error = fmt.Sprint(msg["payload"])
+				events <- e
 				return
 			}
 			if msg["type"] == "connecting" {
-				if p, ok := msg["payload"].(map[string]any); ok {
-					events <- Event{Kind: "connected", WorkerID: wid, ListenerID: fmt.Sprint(p["listener_id"])}
+				parsed, err := LiveKitConnectInfoFromConnecting(msg)
+				if parsed.ListenerID != "" {
+					listenerID = parsed.ListenerID
 				}
+				if mode != "backend-ws-only" {
+					if err != nil {
+						e := withKind(eventBase, "error")
+						e.ListenerID = listenerID
+						e.Error = err.Error()
+						events <- e
+						return
+					}
+					info = parsed
+					e := withKind(eventBase, "worker_token_received")
+					e.ListenerID = listenerID
+					e.LiveKitURL = info.URL
+					events <- e
+				} else if p, ok := msg["payload"].(map[string]any); ok && listenerID == "" {
+					listenerID = fmt.Sprint(p["listener_id"])
+				}
+				continue
+			}
+			if msg["type"] == "listener_state" {
+				gotListenerState = true
+				channelID, err := FirstListenableChannelID(msg)
+				if err != nil {
+					e := withKind(eventBase, "error")
+					e.ListenerID = listenerID
+					e.Error = err.Error()
+					events <- e
+					return
+				}
+				if !backendConnected {
+					backendConnected = true
+					e := withKind(eventBase, "worker_backend_connected")
+					e.ListenerID = listenerID
+					events <- e
+					selectedChannel <- channelID
+				}
+				if mode != "backend-ws-only" && !liveKitConnected {
+					if info.Token == "" {
+						e := withKind(eventBase, "error")
+						e.ListenerID = listenerID
+						e.Error = "missing_livekit_token"
+						events <- e
+						return
+					}
+					if info.URL == "" {
+						e := withKind(eventBase, "error")
+						e.ListenerID = listenerID
+						e.Error = "missing_livekit_url"
+						events <- e
+						return
+					}
+					e := withKind(eventBase, "worker_livekit_connecting")
+					e.ListenerID = listenerID
+					e.LiveKitURL = info.URL
+					events <- e
+					room, err := connector.Connect(ctx, info.URL, info.Token, livekitconn.Mode(mode))
+					if err != nil {
+						e := withKind(eventBase, "worker_livekit_failed")
+						e.ListenerID = listenerID
+						e.LiveKitURL = info.URL
+						e.Error = err.Error()
+						events <- e
+						return
+					}
+					liveKitConnected = true
+					e = withKind(eventBase, "worker_livekit_connected")
+					e.ListenerID = listenerID
+					e.LiveKitURL = info.URL
+					// Transport is intentionally unknown until PR47 adds SDK stats plumbing.
+					e.Transport = "unknown"
+					events <- e
+					roomReady <- roomReadyEvent{room: room, listenerID: listenerID, livekitURL: info.URL}
+				}
+			}
+			if mode != "backend-ws-only" && !gotListenerState && msg["type"] == "i18n_library" {
+				continue
 			}
 		}
 	}()
+	var heartbeatChannel string
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+	defer func() {
+		if livekitRoom != nil {
+			livekitRoom.Disconnect()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			c.CloseNormal()
+			if livekitRoom != nil {
+				livekitRoom.Disconnect()
+			}
 			return
 		case <-done:
 			return
+		case heartbeatChannel = <-selectedChannel:
+		case ready := <-roomReady:
+			livekitRoom = ready.room
+			livekitDone = ready.room.Done()
+			livekitEvents = ready.room.Events()
+			livekitListenerID = ready.listenerID
+			livekitURL = ready.livekitURL
+			if mode == "livekit-subscribe-discard-rtp" {
+				audioTrackTimer = time.After(30 * time.Second)
+			}
+		case le := <-livekitEvents:
+			switch le.Kind {
+			case "audio_track_subscribed":
+				audioTrackReceived = true
+				audioTrackTimer = nil
+				e := withKind(eventBase, "worker_audio_track_subscribed")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				events <- e
+			case "rtp_packet":
+				e := withKind(eventBase, "worker_rtp_packet")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.RTPPackets = le.Packets
+				e.RTPBytes = le.Bytes
+				events <- e
+			case "rtp_read_error":
+				e := withKind(eventBase, "worker_rtp_read_error")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.Error = le.Error
+				events <- e
+			}
+		case <-audioTrackTimer:
+			if ctx.Err() == nil && !audioTrackReceived {
+				e := withKind(eventBase, "worker_no_audio_track_timeout")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.Error = "no_audio_track"
+				events <- e
+			}
+			return
+		case <-livekitDone:
+			if ctx.Err() == nil {
+				e := withKind(eventBase, "worker_livekit_disconnected")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.Error = "livekit_disconnected"
+				if livekitRoom != nil && livekitRoom.Err() != nil {
+					e.Error = livekitRoom.Err().Error()
+				}
+				events <- e
+			}
+			return
 		case <-ticker.C:
-			if err := c.WriteJSON(envelope("heartbeat", "heartbeat-"+wid, map[string]any{"client_role": "listener", "selected_channel": "", "playback_state": "IDLE"})); err != nil {
-				events <- Event{Kind: "heartbeat_failed", WorkerID: wid, Error: err.Error()}
+			if heartbeatChannel == "" {
+				continue
+			}
+			if err := c.WriteJSON(envelope("heartbeat", "heartbeat-"+wid, map[string]any{"client_role": "listener", "selected_channel": heartbeatChannel, "playback_state": "PLAYING"})); err != nil {
+				e := withKind(eventBase, "heartbeat_failed")
+				e.Error = err.Error()
+				events <- e
 			} else {
-				events <- Event{Kind: "heartbeat_ok", WorkerID: wid}
+				events <- withKind(eventBase, "heartbeat_ok")
 			}
 		}
 	}
+}
+
+func withKind(e Event, kind string) Event {
+	e.Kind = kind
+	return e
 }

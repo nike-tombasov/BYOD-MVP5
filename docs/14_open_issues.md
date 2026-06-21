@@ -64,3 +64,7 @@ Canonical sources:
 
 8) Post-pilot logging contract formalization
 - exact logging contract for backend and Publisher UI is not finalized (required events, severity, format, retention, mandatory diagnostics fields).
+
+9) Deploy rollback hardening for nginx config replacement
+- current deploy flow backs up `/etc/nginx/nginx.conf` before replacement and validates with `nginx -t`, but if validation fails after installing the BYOD site config, files on disk may remain in a non-working state even though the running nginx process was not restarted;
+- define and implement rollback behavior so failed validation restores the previous known-good nginx main/site config before exit.

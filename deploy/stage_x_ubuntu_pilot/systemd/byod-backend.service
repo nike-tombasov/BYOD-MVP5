@@ -14,6 +14,7 @@ Restart=always
 RestartSec=2
 StandardOutput=append:/opt/byod/logs/backend.stdout.log
 StandardError=append:/opt/byod/logs/backend.stderr.log
+LimitNOFILE=200000
 
 [Install]
 WantedBy=multi-user.target
