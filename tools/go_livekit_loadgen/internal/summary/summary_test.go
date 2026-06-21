@@ -50,15 +50,22 @@ func TestClassifyGateCRequiresAudioTarget(t *testing.T) {
 	if got == "VALID_RUN" {
 		t.Fatal("Gate C produced VALID_RUN without audio target")
 	}
-	got = Classify(2, Counts{Started: 2, BackendConnected: 2, BackendActive: 2, BackendTargetReached: true, LiveKitRequired: true, MediaRequired: true, LiveKitConnected: 2, LiveKitActive: 2, LiveKitTargetReached: true, AudioTracksSubscribed: 2, WorkersWithAudioTrack: 2, AudioTargetReached: true, RTPPackets: 10, HoldCompleted: true})
+	got = Classify(2, Counts{Started: 2, BackendConnected: 2, BackendActive: 2, BackendTargetReached: true, LiveKitRequired: true, MediaRequired: true, LiveKitConnected: 2, LiveKitActive: 2, LiveKitTargetReached: true, AudioTracksSubscribed: 2, WorkersWithAudioTrack: 2, AudioTargetReached: true, WorkersWithRTP: 2, RTPTargetReached: true, RTPPackets: 10, RTPBytes: 100, HoldCompleted: true})
 	if got != "VALID_RUN" {
 		t.Fatal(got)
 	}
 }
 
 func TestClassifyGateCRejectsRTPReadErrors(t *testing.T) {
-	got := Classify(1, Counts{Started: 1, BackendConnected: 1, BackendActive: 1, BackendTargetReached: true, LiveKitRequired: true, MediaRequired: true, LiveKitConnected: 1, LiveKitActive: 1, LiveKitTargetReached: true, AudioTracksSubscribed: 1, WorkersWithAudioTrack: 1, AudioTargetReached: true, RTPPackets: 1, RTPReadErrors: 1, HoldCompleted: true})
+	got := Classify(1, Counts{Started: 1, BackendConnected: 1, BackendActive: 1, BackendTargetReached: true, LiveKitRequired: true, MediaRequired: true, LiveKitConnected: 1, LiveKitActive: 1, LiveKitTargetReached: true, AudioTracksSubscribed: 1, WorkersWithAudioTrack: 1, AudioTargetReached: true, WorkersWithRTP: 1, RTPTargetReached: true, RTPPackets: 1, RTPBytes: 10, RTPReadErrors: 1, HoldCompleted: true})
 	if got == "VALID_RUN" {
 		t.Fatal("Gate C produced VALID_RUN with RTP read errors")
+	}
+}
+
+func TestClassifyGateCRejectsSubscriptionWithoutRTP(t *testing.T) {
+	got := Classify(1, Counts{Started: 1, BackendConnected: 1, BackendActive: 1, BackendTargetReached: true, LiveKitRequired: true, MediaRequired: true, LiveKitConnected: 1, LiveKitActive: 1, LiveKitTargetReached: true, AudioTracksSubscribed: 1, WorkersWithAudioTrack: 1, AudioTargetReached: true, HoldCompleted: true})
+	if got == "VALID_RUN" {
+		t.Fatal("Gate C produced VALID_RUN with subscription but no RTP")
 	}
 }

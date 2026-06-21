@@ -24,11 +24,13 @@ func TS() string {
 }
 
 type Runner struct {
-	C            config.Config
-	target       string
-	counts       summary.Counts
-	firstFailure string
-	errs         map[string]int
+	C                     config.Config
+	target                string
+	counts                summary.Counts
+	firstFailure          string
+	errs                  map[string]int
+	workersWithAudioTrack map[string]bool
+	workersWithRTP        map[string]bool
 }
 
 func New(c config.Config) (*Runner, error) {
@@ -36,7 +38,7 @@ func New(c config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{C: c, target: t, errs: map[string]int{}}, nil
+	return &Runner{C: c, target: t, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}}, nil
 }
 func (r *Runner) Run(ctx context.Context) error {
 	if err := os.MkdirAll(r.C.OutDir, 0755); err != nil {
@@ -130,7 +132,7 @@ END:
 	r.counts.RampDone = rampDone.Load()
 	r.counts.HoldCompleted = holdCompleted
 	class := summary.Classify(r.C.Listeners, r.counts)
-	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
+	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_with_rtp": r.counts.WorkersWithRTP, "rtp_target_reached": r.counts.RTPTargetReached, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
 	lg.Event(out)
 	b, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(sumpath, b, 0644); err != nil {
@@ -183,10 +185,17 @@ func (r *Runner) apply(e backendws.Event, holdStarted bool) {
 		r.fail(e.Error)
 	case "worker_audio_track_subscribed":
 		r.counts.AudioTracksSubscribed++
-		r.counts.WorkersWithAudioTrack++
+		if !r.workersWithAudioTrack[e.WorkerID] {
+			r.workersWithAudioTrack[e.WorkerID] = true
+			r.counts.WorkersWithAudioTrack++
+		}
 	case "worker_rtp_packet":
 		r.counts.RTPPackets += e.RTPPackets
 		r.counts.RTPBytes += e.RTPBytes
+		if e.RTPPackets > 0 && !r.workersWithRTP[e.WorkerID] {
+			r.workersWithRTP[e.WorkerID] = true
+			r.counts.WorkersWithRTP++
+		}
 	case "worker_rtp_read_error":
 		r.counts.RTPReadErrors++
 		if holdStarted {
@@ -240,11 +249,15 @@ func (r *Runner) topErrors() []string {
 func (r *Runner) shouldStartHold() bool {
 	backendReady := r.counts.RampDone && r.counts.BackendActive >= r.C.Listeners
 	livekitReady := (r.C.Mode != config.ModeLiveKitConnectOnly && r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP) || r.counts.LiveKitActive >= r.C.Listeners
-	mediaReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithAudioTrack >= r.C.Listeners
-	if mediaReady {
+	audioReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithAudioTrack >= r.C.Listeners
+	rtpReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithRTP >= r.C.Listeners
+	if audioReady {
 		r.counts.AudioTargetReached = true
 	}
-	return backendReady && livekitReady && mediaReady && !r.counts.FatalSetupError && r.counts.BackendRejected == 0 && r.counts.BackendClosed == 0 && r.counts.LiveKitFailed == 0
+	if rtpReady {
+		r.counts.RTPTargetReached = true
+	}
+	return backendReady && livekitReady && audioReady && rtpReady && !r.counts.FatalSetupError && r.counts.BackendRejected == 0 && r.counts.BackendClosed == 0 && r.counts.LiveKitFailed == 0
 }
 
 func (r *Runner) targetCannotBeReached() bool {
@@ -263,7 +276,7 @@ func holdElapsedSeconds(start time.Time, started bool) float64 {
 }
 
 func (r *Runner) liveLine(holdStart time.Time, holdStarted bool) string {
-	return fmt.Sprintf("ts_iso=%s mode=%s profile=%s target_listeners=%d target_ws=%s started=%d backend_active=%d backend_rejected=%d backend_closed=%d livekit_connected=%d livekit_failed=%d livekit_disconnected=%d transport_udp=%d transport_tcp=%d transport_unknown=%d udp_tcp_ratio=%s audio_tracks_subscribed=%d workers_with_audio_track=%d workers_without_audio_track=%d rtp_packets=%d rtp_bytes=%d rtp_read_errors=%d heartbeat_ok=%d heartbeat_failed=%d ramp_done=%t hold_elapsed=%.0fs errors_top=%v", TS(), r.C.Mode, r.C.Profile, r.C.Listeners, r.target, r.counts.Started, r.counts.BackendActive, r.counts.BackendRejected, r.counts.BackendClosed, r.counts.LiveKitConnected, r.counts.LiveKitFailed, r.counts.LiveKitDisconnected, r.counts.TransportUDP, r.counts.TransportTCP, r.counts.TransportUnknown, r.udpTCPRatio(), r.counts.AudioTracksSubscribed, r.counts.WorkersWithAudioTrack, r.workersWithoutAudioTrack(), r.counts.RTPPackets, r.counts.RTPBytes, r.counts.RTPReadErrors, r.counts.HeartbeatOK, r.counts.HeartbeatFailed, r.counts.RampDone, holdElapsedSeconds(holdStart, holdStarted), r.topErrors())
+	return fmt.Sprintf("ts_iso=%s mode=%s profile=%s target_listeners=%d target_ws=%s started=%d backend_active=%d backend_rejected=%d backend_closed=%d livekit_connected=%d livekit_failed=%d livekit_disconnected=%d transport_udp=%d transport_tcp=%d transport_unknown=%d udp_tcp_ratio=%s audio_tracks_subscribed=%d workers_with_audio_track=%d workers_with_rtp=%d workers_without_audio_track=%d rtp_target_reached=%t rtp_packets=%d rtp_bytes=%d rtp_read_errors=%d heartbeat_ok=%d heartbeat_failed=%d ramp_done=%t hold_elapsed=%.0fs errors_top=%v", TS(), r.C.Mode, r.C.Profile, r.C.Listeners, r.target, r.counts.Started, r.counts.BackendActive, r.counts.BackendRejected, r.counts.BackendClosed, r.counts.LiveKitConnected, r.counts.LiveKitFailed, r.counts.LiveKitDisconnected, r.counts.TransportUDP, r.counts.TransportTCP, r.counts.TransportUnknown, r.udpTCPRatio(), r.counts.AudioTracksSubscribed, r.counts.WorkersWithAudioTrack, r.counts.WorkersWithRTP, r.workersWithoutAudioTrack(), r.counts.RTPTargetReached, r.counts.RTPPackets, r.counts.RTPBytes, r.counts.RTPReadErrors, r.counts.HeartbeatOK, r.counts.HeartbeatFailed, r.counts.RampDone, holdElapsedSeconds(holdStart, holdStarted), r.topErrors())
 }
 
 func (r *Runner) eventPayload(e backendws.Event) map[string]any {
