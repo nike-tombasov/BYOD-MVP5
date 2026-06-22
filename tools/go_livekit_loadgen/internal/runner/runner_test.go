@@ -84,3 +84,21 @@ func TestGateCHoldRequiresAudioAndRTPActiveTargets(t *testing.T) {
 		t.Fatal("Gate C hold did not start after audio and RTP targets")
 	}
 }
+
+func TestConnectionRateLimitRejectIncrementsDedicatedCounter(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 1, Mode: config.ModeBackendWSOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}}
+	r.apply(backendws.Event{Kind: "rejected", WorkerID: "w1", Error: "CONNECTION_RATE_LIMIT"}, false)
+	if r.counts.BackendRejected != 1 {
+		t.Fatalf("backend rejected = %d", r.counts.BackendRejected)
+	}
+	if r.counts.BackendRejectedConnectionRateLimit != 1 {
+		t.Fatalf("rate-limit rejects = %d", r.counts.BackendRejectedConnectionRateLimit)
+	}
+	r.apply(backendws.Event{Kind: "rejected", WorkerID: "w2", Error: "ROOM_FULL"}, false)
+	if r.counts.BackendRejected != 2 {
+		t.Fatalf("backend rejected after generic reject = %d", r.counts.BackendRejected)
+	}
+	if r.counts.BackendRejectedConnectionRateLimit != 1 {
+		t.Fatalf("generic reject changed rate-limit rejects to %d", r.counts.BackendRejectedConnectionRateLimit)
+	}
+}

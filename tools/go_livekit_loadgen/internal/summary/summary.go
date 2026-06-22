@@ -2,6 +2,7 @@ package summary
 
 type Counts struct {
 	Started, BackendConnected, BackendActive, BackendRejected, BackendClosed               int
+	BackendRejectedConnectionRateLimit                                                     int `json:"backend_rejected_connection_rate_limit"`
 	HeartbeatOK, HeartbeatFailed, Errors                                                   int
 	LiveKitConnected, LiveKitActive, LiveKitFailed, LiveKitDisconnected                    int
 	AudioTracksSubscribed, WorkersWithAudioTrack, WorkersWithoutAudioTrack                 int
