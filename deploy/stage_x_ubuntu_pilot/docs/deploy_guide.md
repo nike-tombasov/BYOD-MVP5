@@ -170,10 +170,10 @@ This installs the full BYOD `/etc/nginx/nginx.conf` template, keeps `byod-listen
 ## 6) Configure the provider firewall
 
 The VPS provider firewall must allow inbound `80/tcp`, `7880/tcp`, `7881/tcp`,
-and `50000-54000/udp`. Port `8000/tcp` stays private because the backend binds
+and `50000-59999/udp`. Port `8000/tcp` stays private because the backend binds
 to `127.0.0.1` and nginx proxies backend HTTP and WebSocket traffic.
 
-Configure these rules before attempting the final browser and Publisher tests. Fallback LiveKit UDP mux profile uses `7882/udp` instead of the wide UDP range; do not enable that fallback unless the primary `50000-54000/udp` range causes provider/VPS problems.
+Configure these rules before attempting the final browser and Publisher tests. Fallback LiveKit UDP mux profile uses `7882/udp` instead of the wide UDP range; do not enable that fallback unless the primary `50000-59999/udp` range causes provider/VPS problems.
 
 ## 7) Run smoke and client tests
 

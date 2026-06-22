@@ -111,7 +111,7 @@ sudo ss -tanp | grep ':8000' | wc -l
 
 ## 8. Проверка LiveKit UDP profile
 
-Primary Stage XI profile использует широкий UDP range `50000-54000/udp` в `/opt/byod/config/livekit.yaml`. Проверьте активный config:
+Primary Stage XI profile использует широкий UDP range `50000-59999/udp` в `/opt/byod/config/livekit.yaml`. Проверьте активный config:
 
 ```bash
 grep -E 'port_range_start|port_range_end|tcp_port|use_external_ip' /opt/byod/config/livekit.yaml
@@ -122,7 +122,7 @@ grep -E 'port_range_start|port_range_end|tcp_port|use_external_ip' /opt/byod/con
 ```text
 tcp_port: 7881
 port_range_start: 50000
-port_range_end: 54000
+port_range_end: 59999
 use_external_ip: true
 ```
 
@@ -131,16 +131,16 @@ Provider firewall для primary profile должен разрешать inbound
 - `80/tcp`
 - `7880/tcp`
 - `7881/tcp`
-- `50000-54000/udp`
+- `50000-59999/udp`
 
 `ss -lunp` может не показать тысячи UDP портов до активного WebRTC traffic. Пустой вывод по wide range сам по себе не означает, что UDP profile сломан. Более сильное доказательство — видеть UDP traffic во время реального browser playback или будущего Gate B/C run:
 
 ```bash
 sudo ss -lunp | grep livekit || true
-sudo tcpdump -ni any 'udp portrange 50000-54000 or udp port 7882 or tcp port 7881'
+sudo tcpdump -ni any 'udp portrange 50000-59999 or udp port 7882 or tcp port 7881'
 ```
 
-Fallback `7882/udp` — это не default. Его используют только если wide UDP range `50000-54000/udp` создаёт проблемы у provider/VPS. При fallback provider firewall должен разрешать `7882/udp` вместо wide UDP range.
+Fallback `7882/udp` — это не default. Его используют только если wide UDP range `50000-59999/udp` создаёт проблемы у provider/VPS. При fallback provider firewall должен разрешать `7882/udp` вместо wide UDP range.
 
 Manual fallback procedure без отдельного switching script:
 

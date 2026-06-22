@@ -285,3 +285,73 @@ go run ./cmd/byod-loadgen `
 - `transport_udp/tcp/unknown` и `udp_tcp_ratio` остаются best-effort diagnostics; UDP/TCP может быть `unknown`, пока не добавлены transport stats.
 
 `VALID_RUN` для Gate C требует backend target, LiveKit target, audio track target, HOLD completion и отсутствие backend/LiveKit/heartbeat/RTP failures during HOLD.
+
+## Быстрая проверка VPS на десятки listeners
+
+Перед proof test включите stress profile backend на VPS, чтобы глобальный connection rate limit не стал искусственным bottleneck. Начинайте с короткого HOLD; long HOLD degradation сейчас не цель.
+
+### A. Gate A burst 50
+
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode backend-ws-only `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 50 `
+  -start-mode burst `
+  -burst-size 50 `
+  -burst-interval-ms 0 `
+  -hold-sec 60 `
+  -runner-id win1 `
+  -loadgen-key byod_loadgen_key_01
+```
+
+### B. Gate B burst 50
+
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-connect-only `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 50 `
+  -start-mode burst `
+  -burst-size 50 `
+  -burst-interval-ms 0 `
+  -hold-sec 60 `
+  -runner-id win1 `
+  -loadgen-key byod_loadgen_key_01
+```
+
+### C. Gate C selected 30
+
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-subscribe-discard-rtp `
+  -subscribe-mode selected `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 30 `
+  -start-mode burst `
+  -burst-size 30 `
+  -burst-interval-ms 0 `
+  -hold-sec 60 `
+  -runner-id win1 `
+  -loadgen-key byod_loadgen_key_01
+```
+
+### D. Multi-IP synchronized Gate B
+
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-connect-only `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 30 `
+  -start-mode start-at `
+  -start-at 2026-06-22T20:15:00+03:00 `
+  -hold-sec 60 `
+  -runner-id win1 `
+  -loadgen-key byod_loadgen_key_01
+```
+
+Запустите такую же команду с другой машины/IP, но с другим `runner-id`, и используйте тот же `start-at`. Для proof test не требуется `VALID_RUN`, если оператор вручную остановил run до окончания HOLD: в этом случае summary должен показать `partial_reason=manual_or_context_cancelled`, а не server degradation. Главные критерии proof test: нет unexplained workers; `backend_shortfall=0` для Gate A; `livekit_shortfall=0` для Gate B; selected-channel audio/RTP работает на малом Gate C.

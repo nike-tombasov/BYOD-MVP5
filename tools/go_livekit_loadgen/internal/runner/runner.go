@@ -31,6 +31,8 @@ type Runner struct {
 	errs                  map[string]int
 	workersWithAudioTrack map[string]bool
 	workersWithRTP        map[string]bool
+	audioTracksByWorker   map[string]int
+	finishedWorkers       map[string]bool
 }
 
 func New(c config.Config) (*Runner, error) {
@@ -38,7 +40,7 @@ func New(c config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{C: c, target: t, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}}, nil
+	return &Runner{C: c, target: t, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, audioTracksByWorker: map[string]int{}, finishedWorkers: map[string]bool{}}, nil
 }
 func (r *Runner) Run(ctx context.Context) error {
 	if err := os.MkdirAll(r.C.OutDir, 0755); err != nil {
@@ -60,13 +62,52 @@ func (r *Runner) Run(ctx context.Context) error {
 	var rampDone atomic.Bool
 	go func() {
 		defer rampDone.Store(true)
+		launch := func(i int) {
+			go backendws.RunWorker(ctx, r.target, r.C.RunnerID, r.C.LoadgenKey, i, r.C.Mode, r.C.SubscribeMode, livekitconn.SDKConnector{}, events)
+		}
+		if r.C.StartMode == "start-at" {
+			startAt, _ := time.Parse(time.RFC3339, r.C.StartAt)
+			if wait := time.Until(startAt); wait > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(wait):
+				}
+			}
+			for i := 1; i <= r.C.Listeners; i++ {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					launch(i)
+				}
+			}
+			return
+		}
+		if r.C.StartMode == "burst" {
+			for i := 1; i <= r.C.Listeners; {
+				for n := 0; n < r.C.BurstSize && i <= r.C.Listeners; n++ {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						launch(i)
+						i++
+					}
+				}
+				if i <= r.C.Listeners && r.C.BurstIntervalMS > 0 {
+					time.Sleep(time.Duration(r.C.BurstIntervalMS) * time.Millisecond)
+				}
+			}
+			return
+		}
 		delay := time.Second / time.Duration(r.C.RampPerSec)
 		for i := 1; i <= r.C.Listeners; i++ {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				go backendws.RunWorker(ctx, r.target, r.C.RunnerID, r.C.LoadgenKey, i, r.C.Mode, livekitconn.SDKConnector{}, events)
+				launch(i)
 				time.Sleep(delay)
 			}
 		}
@@ -131,8 +172,10 @@ END:
 	}
 	r.counts.RampDone = rampDone.Load()
 	r.counts.HoldCompleted = holdCompleted
+	r.counts.WorkersWithoutTerminalEvent = r.workersWithoutTerminalEvent()
+	r.counts.WorkersStartedOnly = r.workersStartedOnly()
 	class := summary.Classify(r.C.Listeners, r.counts)
-	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_with_rtp": r.counts.WorkersWithRTP, "rtp_target_reached": r.counts.RTPTargetReached, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
+	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "subscribe_mode": r.C.SubscribeMode, "start_mode": r.C.StartMode, "selected_channel": "per-worker", "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_rejected_connection_rate_limit": r.counts.BackendRejectedConnectionRateLimit, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "unexpected_extra_audio_tracks": r.counts.UnexpectedExtraAudioTracks, "track_channel_unmatched": r.counts.TrackChannelUnmatched, "audio_tracks_per_worker_min": r.audioTracksMin(), "audio_tracks_per_worker_max": r.audioTracksMax(), "audio_tracks_per_worker_avg": r.audioTracksAvg(), "workers_finished": r.counts.WorkersFinished, "workers_without_terminal_event": r.workersWithoutTerminalEvent(), "workers_started_only": r.workersStartedOnly(), "workers_terminal_error_top": r.topErrors(), "partial_reason": r.partialReason(holdCompleted), "first_target_shortfall_stage": r.firstShortfallStage(), "backend_shortfall": maxInt(0, r.C.Listeners-r.counts.BackendConnected), "livekit_shortfall": maxInt(0, r.C.Listeners-r.counts.LiveKitConnected), "audio_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithAudioTrack), "rtp_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithRTP), "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_with_rtp": r.counts.WorkersWithRTP, "rtp_target_reached": r.counts.RTPTargetReached, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
 	lg.Event(out)
 	b, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(sumpath, b, 0644); err != nil {
@@ -150,6 +193,9 @@ func (r *Runner) apply(e backendws.Event, holdStarted bool) {
 		r.counts.BackendActive++
 	case "rejected":
 		r.counts.BackendRejected++
+		if strings.Contains(e.Error, "CONNECTION_RATE_LIMIT") {
+			r.counts.BackendRejectedConnectionRateLimit++
+		}
 		r.fail(e.Error)
 	case "closed", "worker_closed":
 		r.counts.BackendClosed++
@@ -185,9 +231,27 @@ func (r *Runner) apply(e backendws.Event, holdStarted bool) {
 		r.fail(e.Error)
 	case "worker_audio_track_subscribed":
 		r.counts.AudioTracksSubscribed++
+		if r.audioTracksByWorker == nil {
+			r.audioTracksByWorker = map[string]int{}
+		}
+		r.audioTracksByWorker[e.WorkerID]++
+		if r.audioTracksByWorker[e.WorkerID] > 1 {
+			r.counts.UnexpectedExtraAudioTracks++
+		}
 		if !r.workersWithAudioTrack[e.WorkerID] {
 			r.workersWithAudioTrack[e.WorkerID] = true
 			r.counts.WorkersWithAudioTrack++
+		}
+	case "worker_track_channel_unmatched":
+		r.counts.TrackChannelUnmatched++
+	case "worker_finished":
+		r.counts.WorkersFinished++
+		if r.finishedWorkers == nil {
+			r.finishedWorkers = map[string]bool{}
+		}
+		r.finishedWorkers[e.WorkerID] = true
+		if e.TerminalStatus != "completed" && e.TerminalStatus != "normal_shutdown" {
+			r.fail(e.TerminalStatus)
 		}
 	case "worker_rtp_packet":
 		r.counts.RTPPackets += e.RTPPackets
@@ -280,7 +344,7 @@ func (r *Runner) liveLine(holdStart time.Time, holdStarted bool) string {
 }
 
 func (r *Runner) eventPayload(e backendws.Event) map[string]any {
-	return map[string]any{"ts_iso": TS(), "event": e.Kind, "runner_id": r.C.RunnerID, "worker_id": e.WorkerID, "worker_index": e.WorkerIndex, "mode": r.C.Mode, "profile": r.C.Profile, "listener_id": e.ListenerID, "livekit_url": e.LiveKitURL, "transport": e.Transport, "error": e.Error, "close_code": e.CloseCode, "rtp_packets": e.RTPPackets, "rtp_bytes": e.RTPBytes}
+	return map[string]any{"ts_iso": TS(), "event": e.Kind, "runner_id": r.C.RunnerID, "worker_id": e.WorkerID, "worker_index": e.WorkerIndex, "mode": r.C.Mode, "profile": r.C.Profile, "listener_id": e.ListenerID, "livekit_url": e.LiveKitURL, "transport": e.Transport, "error": e.Error, "close_code": e.CloseCode, "rtp_packets": e.RTPPackets, "rtp_bytes": e.RTPBytes, "selected_channel": e.SelectedChannel, "terminal_status": e.TerminalStatus, "terminal_stage": e.TerminalStage, "error_category": e.ErrorCategory, "error_message": e.ErrorMessage, "elapsed_ms": e.ElapsedMS, "backend_connected": e.BackendConnected, "livekit_connected": e.LiveKitConnected, "audio_track_subscribed": e.AudioTrackSubscribed, "rtp_received": e.RTPReceived, "context_cancelled": e.ContextCancelled, "normal_shutdown": e.NormalShutdown, "participant_identity": e.ParticipantIdentity, "participant_name": e.ParticipantName, "participant_metadata": e.ParticipantMetadata, "track_sid": e.TrackSID, "track_name": e.TrackName, "track_source": e.TrackSource, "track_kind": e.TrackKind}
 }
 
 func (r *Runner) udpTCPRatio() string {
@@ -302,4 +366,70 @@ func (r *Runner) workersWithoutAudioTrack() int {
 		return 0
 	}
 	return missing
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+func (r *Runner) workersWithoutTerminalEvent() int {
+	return maxInt(0, r.counts.Started-r.counts.WorkersFinished)
+}
+func (r *Runner) workersStartedOnly() int { return r.workersWithoutTerminalEvent() }
+func (r *Runner) audioTracksMin() int {
+	if len(r.audioTracksByWorker) == 0 {
+		return 0
+	}
+	m := 1 << 30
+	for _, v := range r.audioTracksByWorker {
+		if v < m {
+			m = v
+		}
+	}
+	return m
+}
+func (r *Runner) audioTracksMax() int {
+	m := 0
+	for _, v := range r.audioTracksByWorker {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+func (r *Runner) audioTracksAvg() float64 {
+	if len(r.audioTracksByWorker) == 0 {
+		return 0
+	}
+	total := 0
+	for _, v := range r.audioTracksByWorker {
+		total += v
+	}
+	return float64(total) / float64(len(r.audioTracksByWorker))
+}
+func (r *Runner) partialReason(holdCompleted bool) string {
+	if !holdCompleted {
+		return "manual_or_context_cancelled"
+	}
+	if r.firstShortfallStage() != "" {
+		return "target_shortfall"
+	}
+	return ""
+}
+func (r *Runner) firstShortfallStage() string {
+	if r.counts.BackendConnected < r.C.Listeners {
+		return "backend"
+	}
+	if (r.C.Mode == config.ModeLiveKitConnectOnly || r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP) && r.counts.LiveKitConnected < r.C.Listeners {
+		return "livekit"
+	}
+	if r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP && r.counts.WorkersWithAudioTrack < r.C.Listeners {
+		return "audio"
+	}
+	if r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP && r.counts.WorkersWithRTP < r.C.Listeners {
+		return "rtp"
+	}
+	return ""
 }

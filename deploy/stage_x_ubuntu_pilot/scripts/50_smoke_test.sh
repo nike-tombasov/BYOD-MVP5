@@ -100,14 +100,30 @@ else
 fi
 
 metrics='unknown'
-if curl -sf http://127.0.0.1:8000/admin/metrics_snapshot >/dev/null 2>&1; then
+max_active_listeners='unknown'
+max_new_connections_per_sec='unknown'
+loadgen_reconnect_bypass_enabled='unknown'
+listener_min_reconnect_interval_per_ip_seconds='unknown'
+if curl -sf http://127.0.0.1:8000/admin/metrics_snapshot >/tmp/byod_smoke_metrics.json 2>/dev/null; then
   metrics='local-only-ok'
+  eval "$(python3 - <<'PYMETRICS'
+import json
+try:
+    p=json.load(open('/tmp/byod_smoke_metrics.json'))
+except Exception:
+    p={}
+for k in ('max_active_listeners','max_new_connections_per_sec','loadgen_reconnect_bypass_enabled','listener_min_reconnect_interval_per_ip_seconds'):
+    print(f'{k}={repr(str(p.get(k, "unknown")))}')
+PYMETRICS
+)"
 elif [[ "$backend_active" == "active" ]]; then
   metrics='unavailable'
 fi
 printf 'metrics: %s\n' "$metrics"
+printf 'backend-limits: max_active_listeners=%s max_new_connections_per_sec=%s loadgen_reconnect_bypass_enabled=%s listener_min_reconnect_interval_per_ip_seconds=%s\n' "$max_active_listeners" "$max_new_connections_per_sec" "$loadgen_reconnect_bypass_enabled" "$listener_min_reconnect_interval_per_ip_seconds"
+printf 'livekit-config: udp_range=50000-59999, fallback_udp_mux=7882\n'
 
-printf "%b\n" "${YELLOW}Provider firewall reminder: allow inbound 80/tcp, 7880/tcp, 7881/tcp, and 50000-54000/udp. Do not expose backend port 8000 publicly.${NC}"
+printf "%b\n" "${YELLOW}Provider firewall reminder: allow inbound 80/tcp, 7880/tcp, 7881/tcp, and 50000-59999/udp. Do not expose backend port 8000 publicly.${NC}"
 
 if [[ "$critical_failed" -ne 0 ]]; then
   overall=1

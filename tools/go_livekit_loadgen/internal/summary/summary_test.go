@@ -69,3 +69,10 @@ func TestClassifyGateCRejectsSubscriptionWithoutRTP(t *testing.T) {
 		t.Fatal("Gate C produced VALID_RUN with subscription but no RTP")
 	}
 }
+
+func TestClassifyRejectsMissingTerminalEvents(t *testing.T) {
+	got := Classify(1, Counts{Started: 1, BackendConnected: 1, BackendActive: 1, BackendTargetReached: true, HoldCompleted: true, WorkersWithoutTerminalEvent: 1})
+	if got == "VALID_RUN" {
+		t.Fatal("missing terminal event produced VALID_RUN")
+	}
+}

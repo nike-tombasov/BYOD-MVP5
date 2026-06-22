@@ -60,7 +60,7 @@ DEFAULT_TARGET_CAPACITY = 200
 MAX_ACTIVE_LISTENER_HEADROOM_RATIO = 1.05
 
 # Если None — считать от target_capacity. Если нужно быстро задать жёсткий максимум, поставить число, например 2500.
-MAX_ACTIVE_LISTENERS_OVERRIDE = None
+MAX_ACTIVE_LISTENERS_OVERRIDE = _env_int("BYOD_MAX_ACTIVE_LISTENERS_OVERRIDE", 0, 1) or None
 
 # Делитель для расчёта глобального лимита новых Listener-подключений в секунду. Меньше число = быстрее разрешённый массовый вход.
 MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR = 15.0
@@ -69,14 +69,21 @@ MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR = 15.0
 MAX_NEW_CONNECTIONS_PER_SEC_MIN = 1
 
 # Если None — считать от target_capacity. Если нужно быстро задать скорость входа, поставить число, например 200.
-MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE = None
+MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE = _env_int("BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE", 0, 1) or None
 
 # Минимальный интервал между Listener connect/reconnect с одного client IP. Важно: это per IP. При NAT/общественном Wi-Fi много реальных пользователей могут выглядеть как один IP.
-LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS = 2
+LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS = _env_int("BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS", 2, 0)
 
 # Temporary loadgen-only bypass for per-IP reconnect throttle. Safe by default.
-LOADGEN_RECONNECT_BYPASS_ENABLED = _env_bool("BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED", False)
-LOADGEN_RECONNECT_BYPASS_KEY = _env_str("BYOD_LOADGEN_RECONNECT_BYPASS_KEY", "") or None
+LOADGEN_RECONNECT_BYPASS_ENABLED = _env_bool(
+    "BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED",
+    _env_bool("LOADGEN_RECONNECT_BYPASS_ENABLED", False),
+)
+LOADGEN_RECONNECT_BYPASS_KEY = (
+    _env_str("BYOD_LOADGEN_RECONNECT_BYPASS_KEY", "")
+    or _env_str("LOADGEN_RECONNECT_BYPASS_KEY", "")
+    or None
+)
 
 
 # Обычная deploy/config секция. Эти значения обычно задаются через env/deploy,

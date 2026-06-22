@@ -20,10 +20,17 @@ const (
 )
 
 type Event struct {
-	Kind    string
-	Packets int64
-	Bytes   int64
-	Error   string
+	Kind                string
+	Packets             int64
+	Bytes               int64
+	Error               string
+	ParticipantIdentity string
+	ParticipantName     string
+	ParticipantMetadata string
+	TrackSID            string
+	TrackName           string
+	TrackSource         string
+	TrackKind           string
 }
 
 type Room interface {
@@ -34,12 +41,12 @@ type Room interface {
 }
 
 type Connector interface {
-	Connect(ctx context.Context, livekitURL, token string, mode Mode) (Room, error)
+	Connect(ctx context.Context, livekitURL, token string, mode Mode, subscribeMode, selectedChannel string) (Room, error)
 }
 
 type ConnectorFunc func(ctx context.Context, livekitURL, token string, mode Mode) (Room, error)
 
-func (f ConnectorFunc) Connect(ctx context.Context, livekitURL, token string, mode Mode) (Room, error) {
+func (f ConnectorFunc) Connect(ctx context.Context, livekitURL, token string, mode Mode, subscribeMode, selectedChannel string) (Room, error) {
 	return f(ctx, livekitURL, token, mode)
 }
 
@@ -79,7 +86,7 @@ func (r *sdkRoom) close(err error) {
 	})
 }
 
-func (SDKConnector) Connect(ctx context.Context, livekitURL, token string, mode Mode) (Room, error) {
+func (SDKConnector) Connect(ctx context.Context, livekitURL, token string, mode Mode, subscribeMode, selectedChannel string) (Room, error) {
 	wrapped := &sdkRoom{done: make(chan struct{}), events: make(chan Event, 64)}
 	cb := lksdk.NewRoomCallback()
 	cb.OnDisconnected = func() {
@@ -97,19 +104,32 @@ func (SDKConnector) Connect(ctx context.Context, livekitURL, token string, mode 
 		wrapped.close(fmt.Errorf("livekit_disconnected:%v", reason))
 	}
 	if mode == ModeSubscribeDiscardRTP {
-		cb.ParticipantCallback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+		cb.ParticipantCallback.OnTrackPublished = func(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+			if subscribeMode != "selected" || pub.Kind() != lksdk.TrackKindAudio {
+				return
+			}
+			if MatchTrackToSelectedChannel(PublicationInfoFromSDK(pub, rp), selectedChannel) {
+				_ = pub.SetSubscribed(true)
+				return
+			}
+			select {
+			case wrapped.events <- Event{Kind: "track_channel_unmatched", ParticipantIdentity: rp.Identity(), ParticipantName: rp.Name(), ParticipantMetadata: rp.Metadata(), TrackSID: pub.SID(), TrackName: pub.Name(), TrackSource: pub.Source().String(), TrackKind: string(pub.Kind())}:
+			default:
+			}
+		}
+		cb.ParticipantCallback.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 			if track.Kind() != webrtc.RTPCodecTypeAudio {
 				return
 			}
 			select {
-			case wrapped.events <- Event{Kind: "audio_track_subscribed"}:
+			case wrapped.events <- Event{Kind: "audio_track_subscribed", ParticipantIdentity: rp.Identity(), ParticipantName: rp.Name(), ParticipantMetadata: rp.Metadata(), TrackSID: pub.SID(), TrackName: pub.Name(), TrackSource: pub.Source().String(), TrackKind: string(pub.Kind())}:
 			default:
 			}
 			go discardRTP(wrapped, track)
 		}
 	}
 	opts := []lksdk.ConnectOption{lksdk.WithConnectTimeout(30 * time.Second)}
-	if mode == ModeConnectOnly {
+	if mode == ModeConnectOnly || (mode == ModeSubscribeDiscardRTP && subscribeMode == "selected") {
 		opts = append(opts, lksdk.WithAutoSubscribe(false))
 	}
 	room, err := lksdk.ConnectToRoomWithToken(livekitURL, token, cb, opts...)

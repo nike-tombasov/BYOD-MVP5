@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -18,6 +19,9 @@ type Config struct {
 	Profile, Mode, Server          string
 	Listeners, RampPerSec, HoldSec int
 	RunnerID, LoadgenKey, OutDir   string
+	SubscribeMode, StartMode       string
+	StartAt                        string
+	BurstSize, BurstIntervalMS     int
 }
 
 func Parse(args []string) (Config, error) {
@@ -32,6 +36,11 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&c.RunnerID, "runner-id", "", "runner id")
 	fs.StringVar(&c.LoadgenKey, "loadgen-key", "", "loadgen key")
 	fs.StringVar(&c.OutDir, "out-dir", "./out", "output dir")
+	fs.StringVar(&c.SubscribeMode, "subscribe-mode", "selected", "selected|all")
+	fs.StringVar(&c.StartMode, "start-mode", "ramp", "ramp|burst|start-at")
+	fs.StringVar(&c.StartAt, "start-at", "", "RFC3339 timestamp for synchronized start")
+	fs.IntVar(&c.BurstSize, "burst-size", 0, "workers per burst")
+	fs.IntVar(&c.BurstIntervalMS, "burst-interval-ms", 1000, "milliseconds between bursts")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -55,7 +64,32 @@ func (c Config) Validate() error {
 		return errors.New("listeners must be >= 1")
 	}
 	if c.RampPerSec < 1 {
-		return errors.New("ramp-per-sec must be >= 1")
+		if c.StartMode == "ramp" {
+			return errors.New("ramp-per-sec must be >= 1")
+		}
+		c.RampPerSec = 1
+	}
+	if c.SubscribeMode != "selected" && c.SubscribeMode != "all" {
+		return fmt.Errorf("unsupported subscribe-mode %q", c.SubscribeMode)
+	}
+	if c.Mode != ModeLiveKitSubscribeDiscardRTP && c.SubscribeMode != "selected" {
+		return errors.New("subscribe-mode is only valid for Gate C")
+	}
+	switch c.StartMode {
+	case "ramp":
+	case "burst":
+		if c.BurstSize < 1 {
+			return errors.New("burst-size must be >= 1")
+		}
+		if c.BurstIntervalMS < 0 {
+			return errors.New("burst-interval-ms must be >= 0")
+		}
+	case "start-at":
+		if _, err := time.Parse(time.RFC3339, c.StartAt); err != nil {
+			return fmt.Errorf("invalid start-at: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported start-mode %q", c.StartMode)
 	}
 	if c.HoldSec < 1 {
 		return errors.New("hold-sec must be >= 1")

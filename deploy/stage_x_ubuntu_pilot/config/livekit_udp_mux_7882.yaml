@@ -1,5 +1,5 @@
 # Fallback profile: use only if the wide UDP range profile causes provider/VPS problems.
-# Primary Stage XI stress profile remains livekit.yaml with 50000-54000/udp.
+# Primary Stage XI stress profile remains livekit.yaml with 50000-59999/udp.
 port: 7880
 bind_addresses:
   - "0.0.0.0"

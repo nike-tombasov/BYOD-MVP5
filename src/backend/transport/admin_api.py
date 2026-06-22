@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
+from backend.config import LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS, LOADGEN_RECONNECT_BYPASS_ENABLED
 from backend.importers.room_config_json import parse_room_config_json_bytes
 from backend.services.room_service import RoomService
 from backend.services.state_service import StateService
@@ -121,6 +122,8 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
                 "target_capacity": state_service.runtime.target_capacity,
                 "max_active_listeners": state_service.runtime.max_active_listeners,
                 "max_new_connections_per_sec": state_service.runtime.max_new_connections_per_sec,
+                "loadgen_reconnect_bypass_enabled": LOADGEN_RECONNECT_BYPASS_ENABLED,
+                "listener_min_reconnect_interval_per_ip_seconds": LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS,
                 "backend_publishers_count": len(publishers),
                 "backend_listeners_count": len(listeners),
                 "backend_active_play_count": active_play_count,

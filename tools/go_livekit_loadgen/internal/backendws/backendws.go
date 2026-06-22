@@ -21,11 +21,17 @@ import (
 )
 
 type Event struct {
-	Kind, RunnerID, WorkerID, ListenerID, Error string
-	Mode, Profile, LiveKitURL, Transport        string
-	WorkerIndex, CloseCode                      int
-	RTPPackets, RTPBytes                        int64
-	WasConnected, WasLiveKitConnected           bool
+	Kind, RunnerID, WorkerID, ListenerID, Error                                 string
+	Mode, Profile, LiveKitURL, Transport                                        string
+	SelectedChannel, TerminalStatus, TerminalStage, ErrorCategory, ErrorMessage string
+	ParticipantIdentity, ParticipantName, ParticipantMetadata                   string
+	TrackSID, TrackName, TrackSource, TrackKind                                 string
+	WorkerIndex, CloseCode                                                      int
+	RTPPackets, RTPBytes                                                        int64
+	WasConnected, WasLiveKitConnected                                           bool
+	BackendConnected, LiveKitConnected, AudioTrackSubscribed, RTPReceived       bool
+	ContextCancelled, NormalShutdown                                            bool
+	ElapsedMS                                                                   int64
 }
 type Conn struct {
 	c net.Conn
@@ -230,15 +236,31 @@ func FirstListenableChannelID(message map[string]any) (string, error) {
 	return "", errors.New("no_listenable_channel")
 }
 
-func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode string, connector livekitconn.Connector, events chan<- Event) {
+func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode string, subscribeMode string, connector livekitconn.Connector, events chan<- Event) {
+	start := time.Now()
 	wid := fmt.Sprintf("%s-L%04d", runnerID, idx)
 	eventBase := Event{RunnerID: runnerID, WorkerID: wid, WorkerIndex: idx, Mode: mode}
 	events <- withKind(eventBase, "started")
+	terminal := withKind(eventBase, "worker_finished")
+	terminal.TerminalStatus = "internal_error"
+	terminal.TerminalStage = "start"
+	defer func() {
+		terminal.ElapsedMS = time.Since(start).Milliseconds()
+		terminal.ContextCancelled = ctx.Err() != nil
+		if terminal.ErrorMessage == "" {
+			terminal.ErrorMessage = terminal.Error
+		}
+		events <- terminal
+	}()
 	c, err := dial(ctx, target)
 	if err != nil {
 		e := withKind(eventBase, "error")
 		e.Error = err.Error()
 		events <- e
+		terminal.TerminalStatus = "backend_connect_failed"
+		terminal.TerminalStage = "backend_connect"
+		terminal.Error = e.Error
+		terminal.ErrorMessage = e.Error
 		return
 	}
 	defer c.Close()
@@ -247,6 +269,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 		e := withKind(eventBase, "error")
 		e.Error = err.Error()
 		events <- e
+		terminal.TerminalStatus = "backend_connect_failed"
+		terminal.TerminalStage = "backend_connect"
+		terminal.Error = e.Error
+		terminal.ErrorMessage = e.Error
 		return
 	}
 	done := make(chan struct{})
@@ -280,6 +306,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 						e.ListenerID = listenerID
 						e.Error = "missing_listener_state"
 						events <- e
+						terminal.TerminalStatus = "backend_read_failed"
+						terminal.TerminalStage = "backend_read"
+						terminal.Error = e.Error
+						terminal.ErrorMessage = e.Error
 						return
 					}
 					e := withKind(eventBase, "worker_closed")
@@ -288,6 +318,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 					e.WasConnected = backendConnected
 					e.WasLiveKitConnected = liveKitConnected
 					events <- e
+					terminal.TerminalStatus = "backend_read_failed"
+					terminal.TerminalStage = "backend_read"
+					terminal.Error = e.Error
+					terminal.ErrorMessage = e.Error
 				}
 				return
 			}
@@ -296,6 +330,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				e.ListenerID = listenerID
 				e.Error = fmt.Sprint(msg["payload"])
 				events <- e
+				terminal.TerminalStatus = "backend_rejected"
+				terminal.TerminalStage = "backend_admission"
+				terminal.Error = e.Error
+				terminal.ErrorMessage = e.Error
 				return
 			}
 			if msg["type"] == "connecting" {
@@ -333,6 +371,8 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				}
 				if !backendConnected {
 					backendConnected = true
+					terminal.BackendConnected = true
+					terminal.SelectedChannel = channelID
 					e := withKind(eventBase, "worker_backend_connected")
 					e.ListenerID = listenerID
 					events <- e
@@ -357,7 +397,7 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 					e.ListenerID = listenerID
 					e.LiveKitURL = info.URL
 					events <- e
-					room, err := connector.Connect(ctx, info.URL, info.Token, livekitconn.Mode(mode))
+					room, err := connector.Connect(ctx, info.URL, info.Token, livekitconn.Mode(mode), subscribeMode, channelID)
 					if err != nil {
 						e := withKind(eventBase, "worker_livekit_failed")
 						e.ListenerID = listenerID
@@ -367,6 +407,7 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 						return
 					}
 					liveKitConnected = true
+					terminal.LiveKitConnected = true
 					e = withKind(eventBase, "worker_livekit_connected")
 					e.ListenerID = listenerID
 					e.LiveKitURL = info.URL
@@ -392,12 +433,19 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 	for {
 		select {
 		case <-ctx.Done():
+			terminal.TerminalStatus = "normal_shutdown"
+			terminal.TerminalStage = "hold"
+			terminal.NormalShutdown = true
 			c.CloseNormal()
 			if livekitRoom != nil {
 				livekitRoom.Disconnect()
 			}
 			return
 		case <-done:
+			if terminal.TerminalStatus == "internal_error" {
+				terminal.TerminalStatus = "completed"
+				terminal.TerminalStage = "backend"
+			}
 			return
 		case heartbeatChannel = <-selectedChannel:
 		case ready := <-roomReady:
@@ -417,6 +465,28 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				e := withKind(eventBase, "worker_audio_track_subscribed")
 				e.ListenerID = livekitListenerID
 				e.LiveKitURL = livekitURL
+				e.SelectedChannel = heartbeatChannel
+				e.ParticipantIdentity = le.ParticipantIdentity
+				e.ParticipantName = le.ParticipantName
+				e.ParticipantMetadata = le.ParticipantMetadata
+				e.TrackSID = le.TrackSID
+				e.TrackName = le.TrackName
+				e.TrackSource = le.TrackSource
+				e.TrackKind = le.TrackKind
+				events <- e
+				terminal.AudioTrackSubscribed = true
+			case "track_channel_unmatched":
+				e := withKind(eventBase, "worker_track_channel_unmatched")
+				e.ListenerID = livekitListenerID
+				e.LiveKitURL = livekitURL
+				e.SelectedChannel = heartbeatChannel
+				e.ParticipantIdentity = le.ParticipantIdentity
+				e.ParticipantName = le.ParticipantName
+				e.ParticipantMetadata = le.ParticipantMetadata
+				e.TrackSID = le.TrackSID
+				e.TrackName = le.TrackName
+				e.TrackSource = le.TrackSource
+				e.TrackKind = le.TrackKind
 				events <- e
 			case "rtp_packet":
 				e := withKind(eventBase, "worker_rtp_packet")
@@ -425,6 +495,7 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				e.RTPPackets = le.Packets
 				e.RTPBytes = le.Bytes
 				events <- e
+				terminal.RTPReceived = true
 			case "rtp_read_error":
 				e := withKind(eventBase, "worker_rtp_read_error")
 				e.ListenerID = livekitListenerID
@@ -439,6 +510,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				e.LiveKitURL = livekitURL
 				e.Error = "no_audio_track"
 				events <- e
+				terminal.TerminalStatus = "no_audio_track_timeout"
+				terminal.TerminalStage = "audio"
+				terminal.Error = e.Error
+				terminal.ErrorMessage = e.Error
 			}
 			return
 		case <-livekitDone:
@@ -451,6 +526,10 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 					e.Error = livekitRoom.Err().Error()
 				}
 				events <- e
+				terminal.TerminalStatus = "livekit_disconnected"
+				terminal.TerminalStage = "livekit"
+				terminal.Error = e.Error
+				terminal.ErrorMessage = e.Error
 			}
 			return
 		case <-ticker.C:
