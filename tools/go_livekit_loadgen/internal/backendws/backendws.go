@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,6 +60,9 @@ func dial(ctx context.Context, raw string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = nc.SetDeadline(deadline)
+	}
 	if u.Scheme == "wss" {
 		nc = tls.Client(nc, &tls.Config{ServerName: u.Hostname()})
 		if err := nc.(*tls.Conn).HandshakeContext(ctx); err != nil {
@@ -91,6 +95,7 @@ func dial(ctx context.Context, raw string) (*Conn, error) {
 		nc.Close()
 		return nil, fmt.Errorf("websocket handshake failed: %s", resp.Status)
 	}
+	_ = nc.SetDeadline(time.Time{})
 	return &Conn{c: nc, r: br}, nil
 }
 func (c *Conn) Close() { _ = c.c.Close() }
@@ -236,11 +241,12 @@ func FirstListenableChannelID(message map[string]any) (string, error) {
 	return "", errors.New("no_listenable_channel")
 }
 
-func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode string, subscribeMode string, connector livekitconn.Connector, events chan<- Event) {
+func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode string, subscribeMode string, backendConnectTimeoutSec int, connector livekitconn.Connector, events chan<- Event) {
 	start := time.Now()
 	wid := fmt.Sprintf("%s-L%04d", runnerID, idx)
 	eventBase := Event{RunnerID: runnerID, WorkerID: wid, WorkerIndex: idx, Mode: mode}
 	events <- withKind(eventBase, "started")
+	events <- withKind(eventBase, "worker_backend_connect_start")
 	terminal := withKind(eventBase, "worker_finished")
 	terminal.TerminalStatus = "internal_error"
 	terminal.TerminalStage = "start"
@@ -252,26 +258,37 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 		}
 		events <- terminal
 	}()
-	c, err := dial(ctx, target)
+	connectCtx, connectCancel := context.WithTimeout(ctx, time.Duration(backendConnectTimeoutSec)*time.Second)
+	defer connectCancel()
+	var backendConnectedFlag atomic.Bool
+	c, err := dial(connectCtx, target)
 	if err != nil {
-		e := withKind(eventBase, "error")
+		kind := "worker_backend_tcp_or_ws_dial_failed"
+		status := "backend_ws_dial_failed"
+		if connectCtx.Err() == context.DeadlineExceeded {
+			kind = "worker_backend_first_message_timeout"
+			status = "backend_connect_timeout"
+		}
+		e := withKind(eventBase, kind)
 		e.Error = err.Error()
 		events <- e
-		terminal.TerminalStatus = "backend_connect_failed"
+		terminal.TerminalStatus = status
 		terminal.TerminalStage = "backend_connect"
 		terminal.Error = e.Error
+		terminal.ErrorCategory = terminal.TerminalStatus
 		terminal.ErrorMessage = e.Error
 		return
 	}
 	defer c.Close()
 	payload := map[string]any{"client_role": "listener", "client_type": "load_runner", "runner_id": runnerID, "worker_id": wid, "worker_index": idx, "loadgen_key": key, "loadgen_mode": mode}
 	if err := c.WriteJSON(envelope("connecting", "connect-"+wid, payload)); err != nil {
-		e := withKind(eventBase, "error")
+		e := withKind(eventBase, "worker_backend_tcp_or_ws_dial_failed")
 		e.Error = err.Error()
 		events <- e
-		terminal.TerminalStatus = "backend_connect_failed"
+		terminal.TerminalStatus = "backend_ws_dial_failed"
 		terminal.TerminalStage = "backend_connect"
 		terminal.Error = e.Error
+		terminal.ErrorCategory = terminal.TerminalStatus
 		terminal.ErrorMessage = e.Error
 		return
 	}
@@ -300,26 +317,32 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 		for {
 			var msg map[string]any
 			if err := c.ReadJSON(&msg); err != nil {
-				if ctx.Err() == nil {
+				if ctx.Err() == nil && (backendConnected || connectCtx.Err() == nil) {
 					if mode != "backend-ws-only" && !gotListenerState {
-						e := withKind(eventBase, "error")
+						e := withKind(eventBase, "worker_backend_first_message_failed")
 						e.ListenerID = listenerID
 						e.Error = "missing_listener_state"
 						events <- e
-						terminal.TerminalStatus = "backend_read_failed"
-						terminal.TerminalStage = "backend_read"
+						terminal.TerminalStatus = "backend_ws_read_first_message_failed"
+						terminal.TerminalStage = "backend_connect"
+						terminal.ErrorCategory = terminal.TerminalStatus
 						terminal.Error = e.Error
 						terminal.ErrorMessage = e.Error
 						return
 					}
-					e := withKind(eventBase, "worker_closed")
+					kind := "worker_closed"
+					if !backendConnected {
+						kind = "worker_backend_first_message_failed"
+					}
+					e := withKind(eventBase, kind)
 					e.ListenerID = listenerID
 					e.Error = err.Error()
 					e.WasConnected = backendConnected
 					e.WasLiveKitConnected = liveKitConnected
 					events <- e
-					terminal.TerminalStatus = "backend_read_failed"
-					terminal.TerminalStage = "backend_read"
+					terminal.TerminalStatus = "backend_ws_read_first_message_failed"
+					terminal.TerminalStage = "backend_connect"
+					terminal.ErrorCategory = terminal.TerminalStatus
 					terminal.Error = e.Error
 					terminal.ErrorMessage = e.Error
 				}
@@ -371,6 +394,8 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 				}
 				if !backendConnected {
 					backendConnected = true
+					backendConnectedFlag.Store(true)
+					connectCancel()
 					terminal.BackendConnected = true
 					terminal.SelectedChannel = channelID
 					e := withKind(eventBase, "worker_backend_connected")
@@ -423,6 +448,7 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 		}
 	}()
 	var heartbeatChannel string
+	backendConnectDone := connectCtx.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	defer func() {
@@ -432,6 +458,20 @@ func RunWorker(ctx context.Context, target, runnerID, key string, idx int, mode 
 	}()
 	for {
 		select {
+		case <-backendConnectDone:
+			if ctx.Err() == nil && !backendConnectedFlag.Load() {
+				e := withKind(eventBase, "worker_backend_first_message_timeout")
+				e.Error = "backend_connect_timeout"
+				events <- e
+				terminal.TerminalStatus = "backend_connect_timeout"
+				terminal.TerminalStage = "backend_connect"
+				terminal.ErrorCategory = "backend_connect_timeout"
+				terminal.Error = e.Error
+				terminal.ErrorMessage = e.Error
+				c.Close()
+				return
+			}
+			backendConnectDone = nil
 		case <-ctx.Done():
 			terminal.TerminalStatus = "normal_shutdown"
 			terminal.TerminalStage = "hold"

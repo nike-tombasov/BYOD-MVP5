@@ -16,12 +16,14 @@ const (
 )
 
 type Config struct {
-	Profile, Mode, Server          string
-	Listeners, RampPerSec, HoldSec int
-	RunnerID, LoadgenKey, OutDir   string
-	SubscribeMode, StartMode       string
-	StartAt                        string
-	BurstSize, BurstIntervalMS     int
+	Profile, Mode, Server                                      string
+	Listeners, RampPerSec, HoldSec                             int
+	RequiredListeners, BackendConnectTimeoutSec, TargetWaitSec int
+	ExactTarget                                                bool
+	RunnerID, LoadgenKey, OutDir                               string
+	SubscribeMode, StartMode                                   string
+	StartAt                                                    string
+	BurstSize, BurstIntervalMS                                 int
 }
 
 func Parse(args []string) (Config, error) {
@@ -33,6 +35,10 @@ func Parse(args []string) (Config, error) {
 	fs.IntVar(&c.Listeners, "listeners", 0, "target listeners")
 	fs.IntVar(&c.RampPerSec, "ramp-per-sec", 0, "listeners per second")
 	fs.IntVar(&c.HoldSec, "hold-sec", 0, "hold seconds")
+	fs.IntVar(&c.BackendConnectTimeoutSec, "backend-connect-timeout-sec", 10, "backend connect/first-message timeout seconds")
+	fs.IntVar(&c.TargetWaitSec, "target-wait-sec", 15, "seconds to wait for target after all workers launch")
+	fs.IntVar(&c.RequiredListeners, "required-listeners", 0, "required listeners for HOLD; defaults to listeners")
+	fs.BoolVar(&c.ExactTarget, "exact-target", true, "require full listeners target for official proof")
 	fs.StringVar(&c.RunnerID, "runner-id", "", "runner id")
 	fs.StringVar(&c.LoadgenKey, "loadgen-key", "", "loadgen key")
 	fs.StringVar(&c.OutDir, "out-dir", "./out", "output dir")
@@ -93,6 +99,21 @@ func (c Config) Validate() error {
 	}
 	if c.HoldSec < 1 {
 		return errors.New("hold-sec must be >= 1")
+	}
+	if c.BackendConnectTimeoutSec < 1 {
+		return errors.New("backend-connect-timeout-sec must be >= 1")
+	}
+	if c.TargetWaitSec < 1 {
+		return errors.New("target-wait-sec must be >= 1")
+	}
+	if c.RequiredListeners == 0 {
+		c.RequiredListeners = c.Listeners
+	}
+	if c.RequiredListeners < 1 || c.RequiredListeners > c.Listeners {
+		return errors.New("required-listeners must be between 1 and listeners")
+	}
+	if c.ExactTarget && c.RequiredListeners != c.Listeners {
+		return errors.New("required-listeners below listeners requires -exact-target=false")
 	}
 	if strings.TrimSpace(c.RunnerID) == "" {
 		return errors.New("runner-id is required")

@@ -24,15 +24,19 @@ func TS() string {
 }
 
 type Runner struct {
-	C                     config.Config
-	target                string
-	counts                summary.Counts
-	firstFailure          string
-	errs                  map[string]int
-	workersWithAudioTrack map[string]bool
-	workersWithRTP        map[string]bool
-	audioTracksByWorker   map[string]int
-	finishedWorkers       map[string]bool
+	C                      config.Config
+	target                 string
+	counts                 summary.Counts
+	firstFailure           string
+	errs                   map[string]int
+	workersWithAudioTrack  map[string]bool
+	workersWithRTP         map[string]bool
+	audioTracksByWorker    map[string]int
+	finishedWorkers        map[string]bool
+	failedTerminalWorkers  map[string]bool
+	partialReasonOverride  string
+	targetImpossibleAt     string
+	targetImpossibleReason string
 }
 
 func New(c config.Config) (*Runner, error) {
@@ -40,7 +44,7 @@ func New(c config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{C: c, target: t, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, audioTracksByWorker: map[string]int{}, finishedWorkers: map[string]bool{}}, nil
+	return &Runner{C: c, target: t, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, audioTracksByWorker: map[string]int{}, finishedWorkers: map[string]bool{}, failedTerminalWorkers: map[string]bool{}}, nil
 }
 func (r *Runner) Run(ctx context.Context) error {
 	if err := os.MkdirAll(r.C.OutDir, 0755); err != nil {
@@ -63,7 +67,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	go func() {
 		defer rampDone.Store(true)
 		launch := func(i int) {
-			go backendws.RunWorker(ctx, r.target, r.C.RunnerID, r.C.LoadgenKey, i, r.C.Mode, r.C.SubscribeMode, livekitconn.SDKConnector{}, events)
+			go backendws.RunWorker(ctx, r.target, r.C.RunnerID, r.C.LoadgenKey, i, r.C.Mode, r.C.SubscribeMode, r.C.BackendConnectTimeoutSec, livekitconn.SDKConnector{}, events)
 		}
 		if r.C.StartMode == "start-at" {
 			startAt, _ := time.Parse(time.RFC3339, r.C.StartAt)
@@ -118,6 +122,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	holdStarted := false
 	var holdStart time.Time
 	var holdTimer <-chan time.Time
+	var targetWaitStart time.Time
 	for !holdCompleted {
 		select {
 		case <-ctx.Done():
@@ -139,10 +144,14 @@ func (r *Runner) Run(ctx context.Context) error {
 				holdTimer = time.After(time.Duration(r.C.HoldSec) * time.Second)
 			}
 			if !holdStarted && r.targetCannotBeReached() {
+				r.markTargetImpossible()
 				cancel()
 			}
 		case <-live.C:
 			r.counts.RampDone = rampDone.Load()
+			if r.counts.RampDone && targetWaitStart.IsZero() {
+				targetWaitStart = time.Now()
+			}
 			if !holdStarted && r.shouldStartHold() {
 				holdStarted = true
 				r.counts.BackendTargetReached = true
@@ -153,6 +162,11 @@ func (r *Runner) Run(ctx context.Context) error {
 				holdTimer = time.After(time.Duration(r.C.HoldSec) * time.Second)
 			}
 			if !holdStarted && r.targetCannotBeReached() {
+				r.markTargetImpossible()
+				cancel()
+			}
+			if !holdStarted && !targetWaitStart.IsZero() && time.Since(targetWaitStart) >= time.Duration(r.C.TargetWaitSec)*time.Second {
+				r.partialReasonOverride = "target_wait_timeout"
 				cancel()
 			}
 			fmt.Println(r.liveLine(holdStart, holdStarted))
@@ -174,8 +188,8 @@ END:
 	r.counts.HoldCompleted = holdCompleted
 	r.counts.WorkersWithoutTerminalEvent = r.workersWithoutTerminalEvent()
 	r.counts.WorkersStartedOnly = r.workersStartedOnly()
-	class := summary.Classify(r.C.Listeners, r.counts)
-	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "subscribe_mode": r.C.SubscribeMode, "start_mode": r.C.StartMode, "selected_channel": "per-worker", "target_listeners": r.C.Listeners, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_rejected_connection_rate_limit": r.counts.BackendRejectedConnectionRateLimit, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "unexpected_extra_audio_tracks": r.counts.UnexpectedExtraAudioTracks, "track_channel_unmatched": r.counts.TrackChannelUnmatched, "audio_tracks_per_worker_min": r.audioTracksMin(), "audio_tracks_per_worker_max": r.audioTracksMax(), "audio_tracks_per_worker_avg": r.audioTracksAvg(), "workers_finished": r.counts.WorkersFinished, "workers_without_terminal_event": r.workersWithoutTerminalEvent(), "workers_started_only": r.workersStartedOnly(), "workers_terminal_error_top": r.topErrors(), "partial_reason": r.partialReason(holdCompleted), "first_target_shortfall_stage": r.firstShortfallStage(), "backend_shortfall": maxInt(0, r.C.Listeners-r.counts.BackendConnected), "livekit_shortfall": maxInt(0, r.C.Listeners-r.counts.LiveKitConnected), "audio_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithAudioTrack), "rtp_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithRTP), "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_with_rtp": r.counts.WorkersWithRTP, "rtp_target_reached": r.counts.RTPTargetReached, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
+	class := summary.Classify(r.requiredListeners(), r.counts)
+	out := map[string]any{"ts_iso": TS(), "event": "summary", "mode": r.C.Mode, "profile": r.C.Profile, "server": r.C.Server, "subscribe_mode": r.C.SubscribeMode, "start_mode": r.C.StartMode, "selected_channel": "per-worker", "target_listeners": r.C.Listeners, "required_listeners": r.C.RequiredListeners, "exact_target": r.C.ExactTarget, "ramp_per_second": r.C.RampPerSec, "hold_requested": r.C.HoldSec, "hold_actual": holdElapsedSeconds(holdStart, holdStarted), "workers_started": r.counts.Started, "backend_connected": r.counts.BackendConnected, "backend_active": r.counts.BackendActive, "backend_rejected": r.counts.BackendRejected, "backend_rejected_connection_rate_limit": r.counts.BackendRejectedConnectionRateLimit, "backend_closed": r.counts.BackendClosed, "livekit_connected": r.counts.LiveKitConnected, "livekit_active": r.counts.LiveKitActive, "livekit_failed": r.counts.LiveKitFailed, "livekit_disconnected": r.counts.LiveKitDisconnected, "audio_tracks_subscribed": r.counts.AudioTracksSubscribed, "unexpected_extra_audio_tracks": r.counts.UnexpectedExtraAudioTracks, "track_channel_unmatched": r.counts.TrackChannelUnmatched, "audio_tracks_per_worker_min": r.audioTracksMin(), "audio_tracks_per_worker_max": r.audioTracksMax(), "audio_tracks_per_worker_avg": r.audioTracksAvg(), "workers_finished": r.counts.WorkersFinished, "workers_failed_terminal": r.counts.WorkersFailedTerminal, "workers_backend_connect_timeout": r.counts.WorkersBackendConnectTimeout, "workers_backend_ws_dial_failed": r.counts.WorkersBackendWSDialFailed, "workers_backend_first_message_failed": r.counts.WorkersBackendFirstMessageFailed, "workers_without_terminal_event": r.workersWithoutTerminalEvent(), "workers_started_only": r.workersStartedOnly(), "workers_terminal_error_top": r.topErrors(), "partial_reason": r.partialReason(holdCompleted), "target_impossible_at": r.targetImpossibleAt, "target_impossible_reason": r.targetImpossibleReason, "backend_pending": r.backendPending(), "livekit_pending": r.livekitPending(), "audio_pending": r.audioPending(), "rtp_pending": r.rtpPending(), "first_target_shortfall_stage": r.firstShortfallStage(), "backend_shortfall": maxInt(0, r.C.Listeners-r.counts.BackendConnected), "livekit_shortfall": maxInt(0, r.C.Listeners-r.counts.LiveKitConnected), "audio_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithAudioTrack), "rtp_shortfall": maxInt(0, r.C.Listeners-r.counts.WorkersWithRTP), "workers_with_audio_track": r.counts.WorkersWithAudioTrack, "workers_with_rtp": r.counts.WorkersWithRTP, "rtp_target_reached": r.counts.RTPTargetReached, "workers_without_audio_track": r.workersWithoutAudioTrack(), "rtp_packets": r.counts.RTPPackets, "rtp_bytes": r.counts.RTPBytes, "rtp_read_errors": r.counts.RTPReadErrors, "transport_udp": r.counts.TransportUDP, "transport_tcp": r.counts.TransportTCP, "transport_unknown": r.counts.TransportUnknown, "udp_tcp_ratio": r.udpTCPRatio(), "heartbeat_ok_count": r.counts.HeartbeatOK, "heartbeat_failed_count": r.counts.HeartbeatFailed, "first_failure_timestamp": r.firstFailure, "top_error_categories": r.topErrors(), "pass_classification": class, "events_path": evpath, "summary_path": sumpath}
 	lg.Event(out)
 	b, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(sumpath, b, 0644); err != nil {
@@ -251,6 +265,19 @@ func (r *Runner) apply(e backendws.Event, holdStarted bool) {
 		}
 		r.finishedWorkers[e.WorkerID] = true
 		if e.TerminalStatus != "completed" && e.TerminalStatus != "normal_shutdown" {
+			r.counts.WorkersFailedTerminal++
+			if r.failedTerminalWorkers == nil {
+				r.failedTerminalWorkers = map[string]bool{}
+			}
+			r.failedTerminalWorkers[e.WorkerID] = true
+			switch e.TerminalStatus {
+			case "backend_connect_timeout":
+				r.counts.WorkersBackendConnectTimeout++
+			case "backend_ws_dial_failed":
+				r.counts.WorkersBackendWSDialFailed++
+			case "backend_ws_read_first_message_failed":
+				r.counts.WorkersBackendFirstMessageFailed++
+			}
 			r.fail(e.TerminalStatus)
 		}
 	case "worker_rtp_packet":
@@ -311,10 +338,11 @@ func (r *Runner) topErrors() []string {
 	return xs
 }
 func (r *Runner) shouldStartHold() bool {
-	backendReady := r.counts.RampDone && r.counts.BackendActive >= r.C.Listeners
-	livekitReady := (r.C.Mode != config.ModeLiveKitConnectOnly && r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP) || r.counts.LiveKitActive >= r.C.Listeners
-	audioReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithAudioTrack >= r.C.Listeners
-	rtpReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithRTP >= r.C.Listeners
+	required := r.requiredListeners()
+	backendReady := r.counts.RampDone && r.counts.BackendActive >= required
+	livekitReady := (r.C.Mode != config.ModeLiveKitConnectOnly && r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP) || r.counts.LiveKitActive >= required
+	audioReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithAudioTrack >= required
+	rtpReady := r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP || r.counts.WorkersWithRTP >= required
 	if audioReady {
 		r.counts.AudioTargetReached = true
 	}
@@ -329,7 +357,8 @@ func (r *Runner) targetCannotBeReached() bool {
 	if r.C.Mode == config.ModeLiveKitConnectOnly || r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP {
 		baseFailure = baseFailure || r.counts.LiveKitFailed > 0 || r.counts.LiveKitDisconnected > 0
 	}
-	return r.counts.RampDone && baseFailure && (r.counts.BackendActive < r.C.Listeners || ((r.C.Mode == config.ModeLiveKitConnectOnly || r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP) && r.counts.LiveKitActive < r.C.Listeners))
+	required := r.requiredListeners()
+	return r.counts.RampDone && (baseFailure || r.counts.WorkersFailedTerminal > 0) && (r.counts.BackendConnected+r.backendPending() < required || ((r.C.Mode == config.ModeLiveKitConnectOnly || r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP) && r.counts.LiveKitConnected+r.livekitPending() < required) || (r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP && r.counts.WorkersWithAudioTrack+r.audioPending() < required) || (r.C.Mode == config.ModeLiveKitSubscribeDiscardRTP && r.counts.WorkersWithRTP+r.rtpPending() < required))
 }
 
 func holdElapsedSeconds(start time.Time, started bool) float64 {
@@ -410,6 +439,9 @@ func (r *Runner) audioTracksAvg() float64 {
 	return float64(total) / float64(len(r.audioTracksByWorker))
 }
 func (r *Runner) partialReason(holdCompleted bool) string {
+	if r.partialReasonOverride != "" {
+		return r.partialReasonOverride
+	}
 	if !holdCompleted {
 		return "manual_or_context_cancelled"
 	}
@@ -432,4 +464,43 @@ func (r *Runner) firstShortfallStage() string {
 		return "rtp"
 	}
 	return ""
+}
+
+func (r *Runner) requiredListeners() int {
+	if r.C.RequiredListeners > 0 {
+		return r.C.RequiredListeners
+	}
+	return r.C.Listeners
+}
+func (r *Runner) backendPending() int {
+	return maxInt(0, r.counts.Started-r.counts.BackendConnected-r.counts.WorkersFailedTerminal)
+}
+func (r *Runner) livekitPending() int {
+	if r.C.Mode == config.ModeBackendWSOnly {
+		return 0
+	}
+	return maxInt(0, r.counts.BackendConnected-r.counts.LiveKitConnected-r.counts.LiveKitFailed-r.counts.LiveKitDisconnected)
+}
+func (r *Runner) audioPending() int {
+	if r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP {
+		return 0
+	}
+	return maxInt(0, r.counts.LiveKitConnected-r.counts.WorkersWithAudioTrack-r.counts.WorkersWithoutAudioTrack)
+}
+func (r *Runner) rtpPending() int {
+	if r.C.Mode != config.ModeLiveKitSubscribeDiscardRTP {
+		return 0
+	}
+	return maxInt(0, r.counts.WorkersWithAudioTrack-r.counts.WorkersWithRTP-int(r.counts.RTPReadErrors))
+}
+func (r *Runner) markTargetImpossible() {
+	if r.partialReasonOverride == "" {
+		r.partialReasonOverride = "target_impossible_after_terminal_failure"
+	}
+	if r.targetImpossibleAt == "" {
+		r.targetImpossibleAt = TS()
+	}
+	if r.targetImpossibleReason == "" {
+		r.targetImpossibleReason = r.firstShortfallStage()
+	}
 }

@@ -102,3 +102,72 @@ func TestConnectionRateLimitRejectIncrementsDedicatedCounter(t *testing.T) {
 		t.Fatalf("generic reject changed rate-limit rejects to %d", r.counts.BackendRejectedConnectionRateLimit)
 	}
 }
+
+func TestTargetImpossibleAfterBackendFailureGateA(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 50, Mode: config.ModeBackendWSOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, failedTerminalWorkers: map[string]bool{}}
+	r.counts.RampDone = true
+	r.counts.Started = 50
+	r.counts.BackendConnected = 49
+	r.apply(backendws.Event{Kind: "worker_finished", WorkerID: "w50", TerminalStatus: "backend_ws_dial_failed"}, false)
+	if !r.targetCannotBeReached() {
+		t.Fatal("Gate A target remained reachable after one terminal backend failure")
+	}
+	r.markTargetImpossible()
+	if r.partialReason(false) != "target_impossible_after_terminal_failure" {
+		t.Fatalf("partial reason = %q", r.partialReason(false))
+	}
+	if r.firstShortfallStage() != "backend" {
+		t.Fatalf("shortfall stage = %q", r.firstShortfallStage())
+	}
+}
+
+func TestTargetImpossibleAfterLiveKitFailureGateB(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 50, Mode: config.ModeLiveKitConnectOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, failedTerminalWorkers: map[string]bool{}}
+	r.counts.RampDone = true
+	r.counts.Started = 50
+	r.counts.BackendConnected = 50
+	r.counts.LiveKitConnected = 49
+	r.counts.LiveKitFailed = 1
+	r.apply(backendws.Event{Kind: "worker_finished", WorkerID: "w50", TerminalStatus: "livekit_connect_failed"}, false)
+	if !r.targetCannotBeReached() {
+		t.Fatal("Gate B target remained reachable after terminal LiveKit failure")
+	}
+	if r.firstShortfallStage() != "livekit" {
+		t.Fatalf("shortfall stage = %q", r.firstShortfallStage())
+	}
+}
+
+func TestRequiredListenersAllowsThresholdWhileReportingShortfall(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 50, RequiredListeners: 48, ExactTarget: false, Mode: config.ModeBackendWSOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}}
+	r.counts.RampDone = true
+	r.counts.Started = 50
+	r.counts.BackendActive = 48
+	r.counts.BackendConnected = 48
+	if !r.shouldStartHold() {
+		t.Fatal("required listener threshold did not allow hold")
+	}
+	if r.C.Listeners-r.counts.BackendConnected != 2 {
+		t.Fatal("full target shortfall was not preserved")
+	}
+}
+
+func TestDefaultExactTargetRemainsStrict(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 50, Mode: config.ModeBackendWSOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}}
+	r.counts.RampDone = true
+	r.counts.Started = 50
+	r.counts.BackendActive = 48
+	r.counts.BackendConnected = 48
+	if r.shouldStartHold() {
+		t.Fatal("default exact target allowed hold below listeners")
+	}
+}
+
+func TestTerminalFailureCountersRemainExplained(t *testing.T) {
+	r := &Runner{C: config.Config{Listeners: 1, Mode: config.ModeBackendWSOnly}, errs: map[string]int{}, workersWithAudioTrack: map[string]bool{}, workersWithRTP: map[string]bool{}, failedTerminalWorkers: map[string]bool{}}
+	r.counts.Started = 1
+	r.apply(backendws.Event{Kind: "worker_finished", WorkerID: "w1", TerminalStatus: "backend_connect_timeout"}, false)
+	r.counts.WorkersWithoutTerminalEvent = r.workersWithoutTerminalEvent()
+	if r.counts.WorkersWithoutTerminalEvent != 0 || r.counts.WorkersBackendConnectTimeout != 1 || r.counts.WorkersFailedTerminal != 1 {
+		t.Fatalf("terminal counters: %+v", r.counts)
+	}
+}

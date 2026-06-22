@@ -1,22 +1,23 @@
 package summary
 
 type Counts struct {
-	Started, BackendConnected, BackendActive, BackendRejected, BackendClosed               int
-	BackendRejectedConnectionRateLimit                                                     int `json:"backend_rejected_connection_rate_limit"`
-	HeartbeatOK, HeartbeatFailed, Errors                                                   int
-	LiveKitConnected, LiveKitActive, LiveKitFailed, LiveKitDisconnected                    int
-	AudioTracksSubscribed, WorkersWithAudioTrack, WorkersWithoutAudioTrack                 int
-	UnexpectedExtraAudioTracks, TrackChannelUnmatched                                      int
-	WorkersFinished, WorkersWithoutTerminalEvent                                           int
-	WorkersStartedOnly, WorkersBackendPendingOrCancelled, WorkersLiveKitPendingOrCancelled int
-	WorkersWithRTP                                                                         int
-	RTPPackets, RTPBytes, RTPReadErrors                                                    int64
-	TransportUDP, TransportTCP, TransportUnknown                                           int
-	RampDone, BackendTargetReached, LiveKitTargetReached, HoldCompleted                    bool
-	BackendClosedDuringHold, HeartbeatFailedDuringHold                                     int
-	LiveKitDisconnectedDuringHold                                                          int
-	FatalSetupError                                                                        bool
-	LiveKitRequired, MediaRequired, AudioTargetReached, RTPTargetReached                   bool
+	Started, BackendConnected, BackendActive, BackendRejected, BackendClosed                   int
+	BackendRejectedConnectionRateLimit                                                         int `json:"backend_rejected_connection_rate_limit"`
+	HeartbeatOK, HeartbeatFailed, Errors                                                       int
+	LiveKitConnected, LiveKitActive, LiveKitFailed, LiveKitDisconnected                        int
+	AudioTracksSubscribed, WorkersWithAudioTrack, WorkersWithoutAudioTrack                     int
+	UnexpectedExtraAudioTracks, TrackChannelUnmatched                                          int
+	WorkersFinished, WorkersWithoutTerminalEvent, WorkersFailedTerminal                        int
+	WorkersBackendConnectTimeout, WorkersBackendWSDialFailed, WorkersBackendFirstMessageFailed int
+	WorkersStartedOnly, WorkersBackendPendingOrCancelled, WorkersLiveKitPendingOrCancelled     int
+	WorkersWithRTP                                                                             int
+	RTPPackets, RTPBytes, RTPReadErrors                                                        int64
+	TransportUDP, TransportTCP, TransportUnknown                                               int
+	RampDone, BackendTargetReached, LiveKitTargetReached, HoldCompleted                        bool
+	BackendClosedDuringHold, HeartbeatFailedDuringHold                                         int
+	LiveKitDisconnectedDuringHold                                                              int
+	FatalSetupError                                                                            bool
+	LiveKitRequired, MediaRequired, AudioTargetReached, RTPTargetReached                       bool
 }
 
 func Classify(target int, c Counts) string {

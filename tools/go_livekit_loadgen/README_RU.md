@@ -355,3 +355,23 @@ go run ./cmd/byod-loadgen `
 ```
 
 Запустите такую же команду с другой машины/IP, но с другим `runner-id`, и используйте тот же `start-at`. Для proof test не требуется `VALID_RUN`, если оператор вручную остановил run до окончания HOLD: в этом случае summary должен показать `partial_reason=manual_or_context_cancelled`, а не server degradation. Главные критерии proof test: нет unexplained workers; `backend_shortfall=0` для Gate A; `livekit_shortfall=0` для Gate B; selected-channel audio/RTP работает на малом Gate C.
+
+## Если A50/B50 не достигает target
+
+Если `backend_connect_timeout` или `backend_ws_dial_failed` появляется в `workers_terminal_error_top`, сбой произошёл до того, как backend принял Listener как подключённый. Это диагностика nginx/TCP/WebSocket upgrade/первого backend сообщения, а не LiveKit media bottleneck.
+
+Если summary показывает `backend_rejected_connection_rate_limit > 0`, это уже backend admission limit (`CONNECTION_RATE_LIMIT`). Для контролируемого stress run включите backend stress profile и проверьте smoke output с runtime limits.
+
+Для Gate B сравните `backend_connected` и `livekit_connected`: если они равны, LiveKit не является текущим bottleneck, а shortfall находится до LiveKit — на backend connect/admission этапе.
+
+Используйте `-target-wait-sec 15`, чтобы loadgen не ждал минуты, когда HOLD уже невозможен после terminal failures. Summary должен показать `partial_reason=target_impossible_after_terminal_failure` или `partial_reason=target_wait_timeout`, `first_target_shortfall_stage`, pending counters и terminal error top.
+
+`-required-listeners <N> -exact-target=false` используйте только для diagnostic proof формата «VPS держит минимум N listeners», например `-listeners 50 -required-listeners 48 -exact-target=false`. Для официального exact proof оставляйте default: `required-listeners=listeners` и `exact-target=true`.
+
+Для сбора логов после proof test используйте:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh --since "10 minutes ago"
+```
+
+Скрипт создаёт `backend_tail.txt`, `livekit_tail.txt`, `nginx_access_tail.txt`, `nginx_error_tail.txt` и `system_limits_snapshot.txt`; если journal window пустой, он повторяет сбор за 30 минут.

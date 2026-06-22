@@ -52,3 +52,14 @@ func TestParseStartModesAndSubscribeMode(t *testing.T) {
 		t.Fatalf("subscribe-mode all parse err %v", err)
 	}
 }
+
+func TestParseProofTargetAndTimeoutFlags(t *testing.T) {
+	args := append(baseArgs(ModeBackendWSOnly), "-backend-connect-timeout-sec", "3", "-target-wait-sec", "7", "-required-listeners", "1", "-exact-target=false")
+	c, err := Parse(args)
+	if err != nil {
+		t.Fatalf("parse err %v", err)
+	}
+	if c.BackendConnectTimeoutSec != 3 || c.TargetWaitSec != 7 || c.RequiredListeners != 1 || c.ExactTarget {
+		t.Fatalf("unexpected config: %+v", c)
+	}
+}
