@@ -24,6 +24,7 @@ type Event struct {
 	Kind, RunnerID, WorkerID, ListenerID, Error string
 	Mode, Profile, LiveKitURL, Transport        string
 	WorkerIndex, CloseCode                      int
+	RTPPackets, RTPBytes                        int64
 	WasConnected, WasLiveKitConnected           bool
 }
 type Conn struct {
