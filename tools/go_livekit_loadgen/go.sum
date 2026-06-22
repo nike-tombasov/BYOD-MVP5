@@ -1,0 +1,4 @@
+github.com/livekit/server-sdk-go/v2 v2.16.2 h1:eQe24cka3X+5zUivezyL72nwtAJTWFXgibeiyJ/Jm+Y=
+github.com/livekit/server-sdk-go/v2 v2.16.2/go.mod h1:/HOUG9AXJeCbMCdtw0dr37AB+3xXUlj/OLeXS/0p7rA=
+github.com/pion/webrtc/v4 v4.2.6 h1:e9H/du7PbYA2qMJkqKp9Ou2z5Igb/6qbKSeEeUCVv0M=
+github.com/pion/webrtc/v4 v4.2.6/go.mod h1:+GAy0jwidoZAHsgjsx77sH09spnV0YWjpB3ROAXmz5A=
