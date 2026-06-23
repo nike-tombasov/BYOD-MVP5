@@ -179,3 +179,19 @@ sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
 Скрипт проверяет, что source file существует и не пустой, копирует его атомарно в runtime path `/opt/byod/listener/vendor/`, ставит owner `www-data:www-data` и mode `0644`. Это локальный VPS operator tool; он не открывает backend admin endpoints наружу.
 
 Отсутствие local vendor больше не блокирует установку Listener: `30_install_listener.sh` продолжит deploy, а браузер должен использовать CDN fallback. `66_install_livekit_vendor_from_tmp.sh` — post-install runtime tool. Если позже повторно запустить `30_install_listener.sh`, он снова синхронизирует `/opt/byod/listener` из `src/listener` и очищает runtime directory, поэтому local runtime vendor может потребоваться поставить заново.
+
+## Stress/emergency helpers
+
+Для нагрузочных тестов используйте общий каталог `/opt/byod/diagnostics` и точные команды из `docs/smoke_test_guide.md` раздела “Stress/emergency helper scripts”. Быстрый набор:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/72_metrics_snapshot.sh --label before_c500
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh --since "15 minutes ago" --label c500_partial
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/73_live_stress_watch.sh --interval-sec 10 --label c1000
+```
+
+`90_collect_diagnostics.sh` остаётся общим deploy bundle helper и пишет bundle в `/tmp/byod-diagnostics-<timestamp>/`; для stress-tail анализа предпочтителен `71_collect_test_tails.sh`.

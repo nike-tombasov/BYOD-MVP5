@@ -264,3 +264,46 @@ sudo poweroff
 
 Перед destructive action зафиксируйте причину, сделайте backup и убедитесь, что
 у вас есть доступ к provider console и проверенная процедура восстановления.
+
+## Q. Stress/emergency helper scripts
+
+Все stress/emergency helpers запускаются на VPS. Они не открывают backend `8000` наружу и не делают `/admin/metrics_snapshot` публичным: snapshot читается только через `http://127.0.0.1:8000/admin/metrics_snapshot`.
+
+Общая папка диагностических файлов:
+
+```text
+/opt/byod/diagnostics
+```
+
+Файлы пишутся прямо в эту папку, без per-run subdirectories, с timestamp в имени. Метрики analyzer пишутся отдельно в:
+
+```text
+/opt/byod/metrics
+```
+
+| Script | Когда запускать | Команда | Output | Safe during active stress test |
+|---|---|---|---|---|
+| `50_smoke_test.sh` | После deploy/restart или перед stress run, чтобы проверить сервисы и limits. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh` | Console + `/opt/byod/diagnostics/smoke_test_<timestamp>.txt` | Да, лёгкая проверка. |
+| `68_apply_backend_stress_profile.sh` | Перед согласованным stress run, чтобы включить backend stress limits. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/68_apply_backend_stress_profile.sh` | Console/systemd config changes | Нет: меняет runtime-профиль backend, запускать только до теста. |
+| `69_remove_backend_stress_profile.sh` | После stress run, чтобы вернуть обычный backend profile. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/69_remove_backend_stress_profile.sh` | Console/systemd config changes | Нет: меняет runtime-профиль backend, запускать после теста. |
+| `71_collect_test_tails.sh` | Сразу после partial/fail/degradation или во время активного расследования. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh --since "15 minutes ago" --label c500_partial` | `/opt/byod/diagnostics/*_<timestamp>_c500_partial.*` | Да, только читает journals/logs/sockets. |
+| `72_metrics_snapshot.sh` | Перед/после run или в момент деградации для readable snapshot. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/72_metrics_snapshot.sh --label before_c500` | `/opt/byod/diagnostics/metrics_snapshot_<timestamp>_before_c500.json` and `.txt` | Да, локальный lightweight HTTP call. |
+| `73_live_stress_watch.sh` | Во время stress run для одной compact строки каждые 10 секунд. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/73_live_stress_watch.sh --interval-sec 10 --label c1000` | Console + `/opt/byod/diagnostics/live_stress_watch_<timestamp>_c1000.txt` | Да, lightweight observer; остановить `Ctrl+C`. |
+| `90_collect_diagnostics.sh` | Для общего deploy incident bundle, не как основной stress-tail helper. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/90_collect_diagnostics.sh` | `/tmp/byod-diagnostics-<timestamp>/` | Осторожно: читает много deploy diagnostics; для stress prefer `71_collect_test_tails.sh`. |
+| `95_metrics_analyzer.sh` | Перед длительным load test, чтобы собрать CSV/JSONL/readable resource metrics. | `sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start` | `/opt/byod/metrics/byod_metrics_<timestamp>.csv`, `.jsonl`, `.log` | Да, designed for active tests. |
+
+Обязательные команды analyzer:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
+```
+
+Дополнительные примеры:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/72_metrics_snapshot.sh --label before_c500
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh --since "15 minutes ago" --label c500_partial
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/73_live_stress_watch.sh --interval-sec 10 --label c1000
+```

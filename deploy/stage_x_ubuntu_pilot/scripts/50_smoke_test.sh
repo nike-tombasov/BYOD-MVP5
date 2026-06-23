@@ -2,10 +2,42 @@
 set -uo pipefail
 CYAN='\033[1;36m'; RED='\033[1;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
+
+DIAG_DIR="/opt/byod/diagnostics"
+LABEL=""
+OUT_DIR="$DIAG_DIR"
+ORIG_ARGS=("$@")
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --label) LABEL="${2:-}"; shift 2 ;;
+    --out-dir) OUT_DIR="${2:-}"; shift 2 ;;
+    -h|--help) echo "Usage: sudo bash $0 [--label LABEL] [--out-dir DIR]"; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
 if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
   exit 1
 fi
+
+safe_label() { local value="$1"; value="${value//[^A-Za-z0-9_.-]/_}"; printf '%s' "$value"; }
+mkdir -p "$OUT_DIR"
+chmod 750 "$OUT_DIR" 2>/dev/null || true
+STAMP="$(date +%Y%m%d_%H%M%S)"
+LABEL_PART=""
+[[ -n "$LABEL" ]] && LABEL_PART="_$(safe_label "$LABEL")"
+SMOKE_OUT="${OUT_DIR}/smoke_test_${STAMP}${LABEL_PART}.txt"
+if [[ -e "$SMOKE_OUT" ]]; then
+  SMOKE_OUT="${OUT_DIR}/smoke_test_${STAMP}${LABEL_PART}_$RANDOM.txt"
+fi
+exec > >(tee "$SMOKE_OUT") 2>&1
+printf 'timestamp_local=%s\n' "$(date -Is)"
+printf 'timestamp_utc=%s\n' "$(date -u -Is)"
+printf 'command_line=%q' "$0"
+printf ' %q' "${ORIG_ARGS[@]}"
+printf '\n'
+printf 'output_file=%s\n\n' "$SMOKE_OUT"
 
 overall=0
 critical_failed=0
@@ -124,6 +156,7 @@ printf 'backend-limits: max_active_listeners=%s max_new_connections_per_sec=%s l
 printf 'livekit-config: udp_range=50000-59999, fallback_udp_mux=7882\n'
 
 printf "%b\n" "${YELLOW}Provider firewall reminder: allow inbound 80/tcp, 7880/tcp, 7881/tcp, and 50000-59999/udp. Do not expose backend port 8000 publicly.${NC}"
+printf "smoke_test_output_file=%s\n" "$SMOKE_OUT"
 
 if [[ "$critical_failed" -ne 0 ]]; then
   overall=1

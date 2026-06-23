@@ -347,8 +347,10 @@ go run ./cmd/byod-loadgen `
   -mode livekit-connect-only `
   -server http://<VPS_PUBLIC_IP> `
   -listeners 30 `
-  -start-mode start-at `
   -start-at 2026-06-22T20:15:00+03:00 `
+  -start-mode burst `
+  -burst-size 30 `
+  -burst-interval-ms 1000 `
   -hold-sec 60 `
   -runner-id win1 `
   -loadgen-key byod_loadgen_key_01
