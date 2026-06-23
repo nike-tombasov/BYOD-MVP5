@@ -43,8 +43,8 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&c.LoadgenKey, "loadgen-key", "", "loadgen key")
 	fs.StringVar(&c.OutDir, "out-dir", "./out", "output dir")
 	fs.StringVar(&c.SubscribeMode, "subscribe-mode", "selected", "selected|all")
-	fs.StringVar(&c.StartMode, "start-mode", "ramp", "ramp|burst|start-at")
-	fs.StringVar(&c.StartAt, "start-at", "", "RFC3339 timestamp for synchronized start")
+	fs.StringVar(&c.StartAt, "start-at", "now", "when to start launching workers: now or RFC3339 timestamp")
+	fs.StringVar(&c.StartMode, "start-mode", "ramp", "worker launch shape after start-at: ramp or burst")
 	fs.IntVar(&c.BurstSize, "burst-size", 0, "workers per burst")
 	fs.IntVar(&c.BurstIntervalMS, "burst-interval-ms", 1000, "milliseconds between bursts")
 	if err := fs.Parse(args); err != nil {
@@ -52,7 +52,7 @@ func Parse(args []string) (Config, error) {
 	}
 	return c, c.Validate()
 }
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	switch c.Profile {
 	case "local-direct", "vps-nginx":
 	default:
@@ -81,6 +81,9 @@ func (c Config) Validate() error {
 	if c.Mode != ModeLiveKitSubscribeDiscardRTP && c.SubscribeMode != "selected" {
 		return errors.New("subscribe-mode is only valid for Gate C")
 	}
+	if _, err := c.StartAtTime(time.Now()); err != nil {
+		return err
+	}
 	switch c.StartMode {
 	case "ramp":
 	case "burst":
@@ -89,10 +92,6 @@ func (c Config) Validate() error {
 		}
 		if c.BurstIntervalMS < 0 {
 			return errors.New("burst-interval-ms must be >= 0")
-		}
-	case "start-at":
-		if _, err := time.Parse(time.RFC3339, c.StartAt); err != nil {
-			return fmt.Errorf("invalid start-at: %w", err)
 		}
 	default:
 		return fmt.Errorf("unsupported start-mode %q", c.StartMode)
@@ -122,6 +121,20 @@ func (c Config) Validate() error {
 		return errors.New("loadgen-key is required")
 	}
 	return nil
+}
+
+func (c Config) StartAtTime(now time.Time) (time.Time, error) {
+	if strings.EqualFold(strings.TrimSpace(c.StartAt), "now") {
+		return now, nil
+	}
+	startAt, err := time.Parse(time.RFC3339, c.StartAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid start-at: use now or RFC3339 timestamp: %w", err)
+	}
+	if !startAt.After(now) {
+		return time.Time{}, fmt.Errorf("start-at %s is in the past; choose a future RFC3339 timestamp or use now", c.StartAt)
+	}
+	return startAt, nil
 }
 func (c Config) ListenerWSURL() (string, error) {
 	u, err := url.Parse(c.Server)
