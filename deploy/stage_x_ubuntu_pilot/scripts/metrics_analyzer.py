@@ -242,7 +242,7 @@ def run(interval_sec: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="BYOD VPS metrics analyzer")
-    parser.add_argument("--interval-sec", type=int, default=120)
+    parser.add_argument("--interval-sec", type=int, default=10)
     return parser.parse_args()
 
 

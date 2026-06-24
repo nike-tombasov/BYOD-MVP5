@@ -69,8 +69,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		launch := func(i int) {
 			go backendws.RunWorker(ctx, r.target, r.C.RunnerID, r.C.LoadgenKey, i, r.C.Mode, r.C.SubscribeMode, r.C.BackendConnectTimeoutSec, livekitconn.SDKConnector{}, events)
 		}
-		if r.C.StartMode == "start-at" {
-			startAt, _ := time.Parse(time.RFC3339, r.C.StartAt)
+		if startAt, err := r.C.StartAtTime(time.Now()); err == nil {
 			if wait := time.Until(startAt); wait > 0 {
 				select {
 				case <-ctx.Done():
@@ -78,15 +77,6 @@ func (r *Runner) Run(ctx context.Context) error {
 				case <-time.After(wait):
 				}
 			}
-			for i := 1; i <= r.C.Listeners; i++ {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					launch(i)
-				}
-			}
-			return
 		}
 		if r.C.StartMode == "burst" {
 			for i := 1; i <= r.C.Listeners; {

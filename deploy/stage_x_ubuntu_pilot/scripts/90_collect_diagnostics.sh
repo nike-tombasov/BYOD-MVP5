@@ -60,6 +60,9 @@ sanitize_livekit_yaml() {
   ' /opt/byod/config/livekit.yaml
 }
 
+section "SCOPE"
+printf 'This is the general deploy diagnostic bundle. For stress-test emergency tails use deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh; for local metrics snapshots use 72_metrics_snapshot.sh.\n' | tee -a "$REPORT"
+
 capture "HOST" bash -c 'date -Is; hostname; uname -a'
 capture "SYSTEMD STATUS" systemctl --no-pager --full status nginx byod-backend byod-livekit
 capture "BACKEND JOURNAL (last 300)" journalctl --no-pager -u byod-backend -n 300

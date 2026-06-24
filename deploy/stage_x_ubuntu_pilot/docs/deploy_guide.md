@@ -240,3 +240,19 @@ Use `deploy/stage_x_ubuntu_pilot/manifest.yaml` as single source of truth for:
 - artifact paths
 - fallback URL
 - rollback reference
+
+## Stress/emergency diagnostics helpers
+
+For stress-test operations, use the helper list and exact commands in `docs/smoke_test_guide.md` section “Stress/emergency helper scripts”. Stress diagnostics write directly to `/opt/byod/diagnostics`; metrics analyzer output writes to `/opt/byod/metrics`.
+
+Most-used commands:
+
+```bash
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh start
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh status
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analyzer.sh stop
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/72_metrics_snapshot.sh --label before_c500
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/71_collect_test_tails.sh --since "15 minutes ago" --label c500_partial
+sudo bash deploy/stage_x_ubuntu_pilot/scripts/73_live_stress_watch.sh --interval-sec 10 --label c1000
+```
