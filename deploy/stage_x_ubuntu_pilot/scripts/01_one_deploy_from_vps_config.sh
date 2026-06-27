@@ -32,6 +32,20 @@ BYOD_ROOM_INPUT_PATH="${BYOD_ROOM_INPUT_PATH:-/tmp/room_input.json}"
 BYOD_LIVEKIT_TGZ_PATH="${BYOD_LIVEKIT_TGZ_PATH:-/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz}"
 BYOD_LIVEKIT_SHA256_PATH="${BYOD_LIVEKIT_SHA256_PATH:-/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256}"
 BYOD_LISTENER_VENDOR_PATH="${BYOD_LISTENER_VENDOR_PATH:-/tmp/livekit-client.umd.1.15.13.js}"
+BYOD_ENABLE_BACKEND_STRESS_TEST="${BYOD_ENABLE_BACKEND_STRESS_TEST:-false}"
+case "${BYOD_ENABLE_BACKEND_STRESS_TEST,,}" in
+  true|1|yes|on) BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED=true ;;
+  false|0|no|off) BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED=false ;;
+  *) fatal "BYOD_ENABLE_BACKEND_STRESS_TEST must be one of: true, false, 1, 0, yes, no, on, off" ;;
+esac
+BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS="${BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS:-2}"
+[[ "$BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS" =~ ^[0-9]+$ ]] || fatal "BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS must be an integer >= 0"
+BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE="${BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE:-}"
+if [[ -n "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" ]]; then
+  [[ "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" =~ ^[0-9]+$ ]] || fatal "BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE must be an integer >= 1 when set"
+  [[ "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" -ge 1 ]] || fatal "BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE must be >= 1 when set"
+fi
+export BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE
 redacted_secret="${BYOD_LIVEKIT_API_SECRET:0:4}…redacted…${BYOD_LIVEKIT_API_SECRET: -4}"
 ok "Loaded config: repo_branch=${BYOD_REPO_BRANCH}, origin=${BYOD_PUBLIC_ORIGIN}, livekit=${BYOD_LIVEKIT_URL}, api_key=${BYOD_LIVEKIT_API_KEY}, api_secret=${redacted_secret}"
 
@@ -78,6 +92,8 @@ values = {
     'BYOD_RUNTIME_STATE_PATH': '/opt/byod/backend_data/runtime_state_v1.json',
     'BYOD_RECORDING_STATE_PATH': '/opt/byod/backend_data/recording_state_v1.json',
     'BYOD_DEFAULT_PIN': os.environ.get('BYOD_DEFAULT_PIN', '123456'),
+    'BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS': os.environ.get('BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS', '2'),
+    'BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE': os.environ.get('BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE', ''),
 }
 for key, value in values.items():
     print(f'{key}={q(value)}')
@@ -127,6 +143,13 @@ PY
   ok "Room config imported through backend validation endpoint"
 else
   warn "Room input file not found: $BYOD_ROOM_INPUT_PATH; continuing with default persisted room config."
+fi
+
+if [[ "$BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED" == "true" ]]; then
+  warn "BACKEND STRESS TEST PROFILE ENABLED: applying temporary backend admission/capacity overrides before smoke test."
+  bash deploy/stage_x_ubuntu_pilot/scripts/68_apply_backend_stress_profile.sh
+else
+  ok "Backend stress test profile disabled; no stress drop-in applied."
 fi
 
 step "Run smoke test"

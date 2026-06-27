@@ -49,13 +49,16 @@ BYOD_LIVEKIT_API_SECRET="replace_with_long_livekit_secret"
 BYOD_BACKEND_HOST="127.0.0.1"
 BYOD_BACKEND_PORT="8000"
 BYOD_DEFAULT_PIN="123456"
+BYOD_ENABLE_BACKEND_STRESS_TEST=false
+BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS=2
+BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE=""
 BYOD_ROOM_INPUT_PATH="/tmp/room_input.json"
 BYOD_LIVEKIT_TGZ_PATH="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz"
 BYOD_LIVEKIT_SHA256_PATH="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256"
 BYOD_LISTENER_VENDOR_PATH="/tmp/livekit-client.umd.1.15.13.js"
 ```
 
-Full schema and generated config mappings are in `configuration_reference.md`.
+Full schema and generated config mappings are in `configuration_reference.md`. For normal deploy, keep `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` empty. After VPS sizing/stress testing, it can be set in `/opt/byod/config/backend.env` and applied with `sudo systemctl restart byod-backend`.
 
 ## One-command deploy
 
@@ -74,7 +77,7 @@ sudo BYOD_VPS_CONFIG=/tmp/vps_config.env bash -c 'set -euo pipefail; test -r "$B
 5. Prepares the host, copies LiveKit release files to `/opt/byod/releases`, and verifies SHA-256 before installation.
 6. Installs LiveKit, backend, Listener, and optional browser vendor file.
 7. Generates `/opt/byod/config/backend.env` and `/opt/byod/config/livekit.yaml` from `/tmp/vps_config.env`.
-8. Starts services, optionally imports `/tmp/room_input.json` through the backend validation endpoint, and runs smoke test.
+8. Starts services, optionally imports `/tmp/room_input.json` through the backend validation endpoint, optionally applies the backend stress profile when `BYOD_ENABLE_BACKEND_STRESS_TEST=true`, and runs smoke test. The default is `false`, so normal deploys do not create or apply a stress drop-in.
 9. Prints a colored summary with service health, URLs, smoke output path, and firewall reminder.
 
 ## Provider firewall
