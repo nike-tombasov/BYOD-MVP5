@@ -6,65 +6,39 @@ Rules for docs/14_open_issues.md:
 - Only unresolved items after discussion are written here.
 - This file is not a second architecture spec.
 
-### 15.1 Resolution log (short)
-
-Resolved and moved to canonical docs/checklists:
-- i18n transport behavior on connect/reconnect;
-- separated `publisher_state` / `listener_state` protocol behavior;
-- Stage VII-IX WS schema hardening and strict handshake cleanup;
-- Listener race-hardening baseline rules.
-- Stage X clean Ubuntu 22.04 LTS VPS deployment path;
-- required deployment and validation of the pinned Listener SDK file
-  `vendor/livekit-client.umd.1.15.13.js`;
-- backend and VPS connection diagnostics, including the diagnostics collector;
-- visible Publisher connection and exception logging in `logs.txt`;
-- Listener request-ID fallback when `crypto.randomUUID` is unavailable on an
-  HTTP/IP origin.
-- Stage XI uses Protocol/engine load only; browser/Web Listener UI load testing
-  is postponed to future Web Listener UI hardening.
-
-Canonical sources:
-- `docs/08_backend.md`
-- `docs/09_listener_ui.md`
-- `docs/15_ws_schema_v1.md`
-- `docs/18_stage_vii_ix_acceptance_checklist.md` (verification artifact)
-- `docs/21_backend_logging_contract_stage_x.md`
-- `deploy/stage_x_ubuntu_pilot/`
-- `legacy/stage_x_ubuntu_pilot/` (completed-stage snapshot)
-
 ### 15.2 Current unresolved items
 
-1) Observed stable range on the concrete Stage XI VPS
-- determine the observed stable range for the selected VPS size and network
-  conditions.
-
-2) Stage XI Analyzer metrics implementation
-- collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics throughout
-  each load step;
-- finalize the exact implementation used to sample and correlate client
-  failures with VPS and service behavior.
-
-3) LiveKit API versus backend metrics source
-- determine whether LiveKit API metrics are sufficient and reliable for the
-  required counts, or whether the planned local-only backend
-  `/admin/metrics_snapshot` endpoint is needed.
-
-4) Stage XI run-validity and degradation contract
-- define when a run is VALID RUN, PARTIAL RUN, or INVALID RUN for analysis;
-- define how observed degradation point and observed failure mode are recorded.
-
-5) JSON strict validation final freeze
+1) JSON strict validation final freeze
 - open decision: keep strict regex + reject-all policy or simplify for operator UX in first VPS cycle.
 
-6) Persistence schema versioning format
+2) Persistence schema versioning format
 - open decision: whether dedicated `meta_schema.json` is mandatory in MVP.
 
-7) Migration rules v1->v2
+3) Migration rules v1->v2
 - migration and rollback policy for persistence versions is not finalized.
 
-8) Post-pilot logging contract formalization
-- exact logging contract for backend and Publisher UI is not finalized (required events, severity, format, retention, mandatory diagnostics fields).
-
-9) Deploy rollback hardening for nginx config replacement
+4) Deploy rollback hardening for nginx config replacement
 - current deploy flow backs up `/etc/nginx/nginx.conf` before replacement and validates with `nginx -t`, but if validation fails after installing the BYOD site config, files on disk may remain in a non-working state even though the running nginx process was not restarted;
 - define and implement rollback behavior so failed validation restores the previous known-good nginx main/site config before exit.
+
+### 15.3 Stress-test and metrics limitations
+
+1) `71_collect_test_tails.sh` reliability verification
+- potentially useful, but has not yet been proven in a real stress incident to collect all expected files correctly;
+- requires repeat verification on the VPS before it is treated as a trusted incident bundle source.
+
+2) `73_live_stress_watch.sh` transport counters are approximate
+- current UDP/TCP detection may be rough if regex counts `udp`/`tcp` inside ICE candidates instead of only stable `connectionType` fields;
+- acceptable for live operator view, but not final forensic transport accounting.
+
+3) `72_metrics_snapshot.sh` unavailable-endpoint behavior
+- the helper may return non-zero when `/admin/metrics_snapshot` is unavailable;
+- acceptable for standalone diagnostics, but bundle behavior should remain tolerant and must be verified.
+
+4) Go loadgen selected-mode media accounting
+- historical stress data showed possible multiple selected audio tracks per worker;
+- keep this as a known measurement risk unless current code guarantees at most one selected track per worker and tests prove it.
+
+5) Compact per-worker final state artifact
+- current `VALID_RUN` summaries can be trusted at summary level, but when detailed events are deleted it is hard to re-check every worker;
+- future improvement: add compact `workers_final_state.csv` or equivalent.

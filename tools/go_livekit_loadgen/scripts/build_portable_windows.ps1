@@ -16,10 +16,7 @@ go mod tidy
 go test ./...
 go build -trimpath -ldflags="-s -w" -o (Join-Path $PackageDir "byod-loadgen.exe") .\cmd\byod-loadgen
 
-Copy-Item (Join-Path $Root "PORTABLE_RU.md") $PackageDir
-if (Test-Path (Join-Path $Root "README_RU.md")) {
-  Copy-Item (Join-Path $Root "README_RU.md") $PackageDir
-}
+Copy-Item (Join-Path $Root "README.md") $PackageDir
 
 $Wrappers = @{
   "run_a50_backend_now.bat" = @"
