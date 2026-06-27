@@ -1,53 +1,252 @@
-# BYOD Go LiveKit loadgen
+# BYOD Go LiveKit loadgen — русское руководство
 
-This directory is the active future loadgen path described by `docs/22_stress_tests.md`. The legacy Python loader under `legacy/stage_xi_failed_python_loader/` is forensic reference only and is not imported, wrapped, or reused here.
+## 1. Что это
 
-This PR implements **Gate A only**: `backend-ws-only`. Gate B (`livekit-connect-only`) and Gate C (`livekit-subscribe-discard-rtp`) are intentionally documented but not implemented yet. Gate A opens backend listener WebSockets, sends the normal listener `connecting` envelope plus diagnostic metadata, maintains backend heartbeats during HOLD, and never connects to LiveKit.
+`tools/go_livekit_loadgen/` — текущий Go loadgen для stress/load testing BYOD. Он создает эмулированных Listener-воркеров, проходит обычный backend listener admission path и, в режимах LiveKit, использует данные, которые backend выдает слушателю.
 
-Windows is the primary operator environment. The PowerShell helpers in `scripts/` are convenience wrappers around `go run ./cmd/byod-loadgen` and keep important flags visible.
+Инструмент Windows-first: основной переносимый пакет собирается под Windows/Win64, а вспомогательные `.bat` файлы рассчитаны на операторские Windows-машины. При этом сам Go binary можно запускать там, где доступна подходящая сборка Go-программы.
 
-## Profiles
+Это не browser UI testing. Loadgen проверяет protocol/engine path, а не массовую работу реальных вкладок Web Listener, autoplay, audio device output, CSS/layout или UX.
 
-- `local-direct` bypasses nginx and targets the backend directly, for example `http://127.0.0.1:8000` resolves to `ws://127.0.0.1:8000/ws/listener`.
-- `vps-nginx` includes nginx in the backend WebSocket path and targets `ws://<host>/ws/listener` from `http://<VPS_PUBLIC_IP>`.
+## 2. Рубежи/Gates
 
-## Run examples
+### Gate A — `backend-ws-only`
 
-```powershell
-go run ./cmd/byod-loadgen `
-  -profile local-direct `
-  -mode backend-ws-only `
-  -server http://127.0.0.1:8000 `
-  -listeners 10 `
-  -ramp-per-sec 5 `
-  -hold-sec 60 `
-  -runner-id win-dev-1 `
-  -loadgen-key byod_loadgen_key_01
-```
+Проверяет backend WebSocket путь Listener: подключение к `/ws/listener`, обычный listener protocol, heartbeat и удержание соединений во время HOLD. В профиле `vps-nginx` backend WebSocket идет через nginx.
+
+Не проверяет LiveKit, ICE, audio subscription, RTP, браузерное воспроизведение или media egress.
+
+### Gate B — `livekit-connect-only`
+
+Проверяет backend admission плюс подключение worker как LiveKit participant. Режим нужен, чтобы отделить проблемы backend WebSocket от проблем LiveKit signaling/participant connection.
+
+Не подписывается на audio tracks и не проверяет RTP/media flow.
+
+### Gate C — `livekit-subscribe-discard-rtp`
+
+Проверяет backend admission, LiveKit connect, audio track subscription и получение RTP packets с немедленным discard payload. Opus не декодируется, физический audio output не используется.
+
+Это media-engine нагрузка, но не доказательство работы сотен реальных браузеров.
+
+## 3. Быстрый старт
+
+Запускайте команды из каталога `tools/go_livekit_loadgen/`. Во всех примерах замените `http://<VPS_PUBLIC_IP>` и `byod_loadgen_key_01` на значения текущего стенда.
+
+### A50 now
 
 ```powershell
 go run ./cmd/byod-loadgen `
   -profile vps-nginx `
   -mode backend-ws-only `
   -server http://<VPS_PUBLIC_IP> `
-  -listeners 500 `
-  -ramp-per-sec 50 `
-  -hold-sec 600 `
-  -runner-id win-home-1 `
-  -loadgen-key byod_loadgen_key_01
+  -listeners 50 `
+  -start-at now `
+  -start-mode burst `
+  -burst-size 50 `
+  -burst-interval-ms 0 `
+  -hold-sec 45 `
+  -target-wait-sec 20 `
+  -backend-connect-timeout-sec 10 `
+  -runner-id win1-a50 `
+  -loadgen-key byod_loadgen_key_01 `
+  -out-dir out/win1-a50
 ```
 
-Output is written under `-out-dir` (default `./out`) as `events_<timestamp>.jsonl` and `summary_<timestamp>.json`. Timestamps use `ts_iso` in Moscow time (`+03:00`) rounded to tenths of a second.
+### B50 now
 
-The loadgen key is not a password. It is a stress-event guard combined with backend-side enablement. Running the Go loadgen with `byod_loadgen_key_01` alone does nothing unless the backend operator explicitly enables the reconnect throttle bypass.
-
-To enable the temporary backend per-IP reconnect bypass for a stress event, set these backend environment overrides and restart the backend service:
-
-```text
-BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED=true
-BYOD_LOADGEN_RECONNECT_BYPASS_KEY=byod_loadgen_key_01
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-connect-only `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 50 `
+  -start-at now `
+  -start-mode burst `
+  -burst-size 50 `
+  -burst-interval-ms 0 `
+  -hold-sec 45 `
+  -target-wait-sec 20 `
+  -backend-connect-timeout-sec 10 `
+  -runner-id win1-b50 `
+  -loadgen-key byod_loadgen_key_01 `
+  -out-dir out/win1-b50
 ```
 
-Disable it after the stress run by removing the overrides or setting `BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED=false`, then restart the backend service. The bypass only affects `RECONNECT_TOO_FAST`; max active listeners, connection rate limits, malformed message handling, and normal listener protocol still apply.
+### C30/C50 selected now
 
-TCP/UDP ratio is `n/a` in Gate A because LiveKit is not used.
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-subscribe-discard-rtp `
+  -subscribe-mode selected `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 30 `
+  -start-at now `
+  -start-mode burst `
+  -burst-size 30 `
+  -burst-interval-ms 0 `
+  -hold-sec 45 `
+  -target-wait-sec 20 `
+  -backend-connect-timeout-sec 10 `
+  -runner-id win1-c30 `
+  -loadgen-key byod_loadgen_key_01 `
+  -out-dir out/win1-c30
+```
+
+Для C50 используйте `-listeners 50`, `-burst-size 50`, другой `-runner-id` и другой `-out-dir`.
+
+### Синхронный B100 с `-start-at <RFC3339 timestamp>`
+
+`-start-at now` запускает сразу. RFC3339 timestamp заставляет loadgen ждать указанного будущего времени, а затем запускать worker по форме, заданной `-start-mode`.
+
+```powershell
+go run ./cmd/byod-loadgen `
+  -profile vps-nginx `
+  -mode livekit-connect-only `
+  -server http://<VPS_PUBLIC_IP> `
+  -listeners 100 `
+  -start-at 2026-06-27T22:30:00+03:00 `
+  -start-mode burst `
+  -burst-size 50 `
+  -burst-interval-ms 1000 `
+  -hold-sec 60 `
+  -target-wait-sec 30 `
+  -backend-connect-timeout-sec 10 `
+  -runner-id win1-b100-sync `
+  -loadgen-key byod_loadgen_key_01 `
+  -out-dir out/win1-b100-sync
+```
+
+## 4. Все флаги
+
+### Core
+
+- `-profile` — профиль окружения. Допустимые значения: `local-direct`, `vps-nginx`. Default: пусто, нужно задать явно. Меняйте при переключении между прямым локальным backend и VPS/nginx. Частая ошибка: забыть профиль.
+- `-mode` — gate/mode. Допустимые значения: `backend-ws-only`, `livekit-connect-only`, `livekit-subscribe-discard-rtp`. Default: пусто, нужно задать явно. Меняйте только по сценарию Gate A/B/C.
+- `-server` — base URL сервера, например `http://127.0.0.1:8000` или `http://<VPS_PUBLIC_IP>`. Default: пусто, нужно задать явно. Из него строится Listener WebSocket path `/ws/listener`; при `https` используется `wss`.
+- `-listeners` — целевое число worker/listener. Default: `0`, нужно задать `>= 1`. Увеличивайте постепенно.
+- `-required-listeners` — сколько listener нужно для старта HOLD и оценки цели. Default: `0`, после validation становится равно `-listeners`. Меняйте только для осознанных частичных проверок.
+- `-exact-target` — требует полный target для official proof. Default: `true`. Если хотите `-required-listeners` меньше `-listeners`, нужно явно поставить `-exact-target=false`.
+
+### Start/ramp
+
+- `-start-at` — когда начинать запуск worker: `now` или будущий RFC3339 timestamp. Default: `now`. `now` означает немедленно; RFC3339 означает ждать до этого времени. Частая ошибка: указать время в прошлом.
+- `-start-mode` — форма запуска worker после наступления `-start-at`. Допустимые значения: `ramp`, `burst`. Default: `ramp`. Этот флаг не синхронизирует сам по себе; синхронизацию задает `-start-at`.
+- `-ramp-per-sec` — скорость запуска worker в режиме `-start-mode ramp`. Default: `0`, но для `ramp` нужно задать `>= 1`. В режиме `burst` при значении `< 1` validation приводит его к `1`, но фактическую форму запуска задают burst-флаги.
+- `-burst-size` — сколько worker запускать за один burst. Default: `0`; при `-start-mode burst` нужно задать `>= 1`.
+- `-burst-interval-ms` — пауза между burst в миллисекундах. Default: `1000`. Значение `0` означает без паузы между burst.
+
+### Timing
+
+- `-hold-sec` — длительность HOLD после достижения gate-specific target. Default: `0`, нужно задать `>= 1`.
+- `-target-wait-sec` — сколько секунд ждать достижения target после завершения запуска всех worker. Default: `15`. Увеличивайте для медленных стендов или больших запусков.
+- `-backend-connect-timeout-sec` — timeout backend connect / first message для worker. Default: `10`. Увеличивайте при медленной сети; слишком маленькое значение создает ложные backend timeout.
+
+### Gate C/media
+
+- `-subscribe-mode` — режим подписки для Gate C. Допустимые значения: `selected`, `all`. Default: `selected`. Для Gate A/B допустим только default `selected`; явное `all` вне Gate C rejected validation. Обычно используйте `selected`, чтобы проверять выбранный канал worker.
+
+### Output/identity
+
+- `-runner-id` — обязательный ID машины/запуска. Default: пусто, нужно задать явно. Используйте уникальные значения, например `win1-b50`, чтобы разделять логи и worker identity.
+- `-loadgen-key` — обязательный loadgen key, который worker отправляет в backend metadata/diagnostics. Default: пусто, нужно задать явно. Это не самостоятельный capacity bypass и не замена backend admission.
+- `-out-dir` — директория для output. Default: `./out`. Внутри создаются `events_*.jsonl` и `summary_*.json`.
+
+### Diagnostics
+
+Отдельных CLI-флагов diagnostics сейчас нет. Диагностические данные попадают в live terminal output, `events_*.jsonl` и `summary_*.json`; VPS-side diagnostics собираются отдельными серверными helper scripts.
+
+## 5. Как читать результат
+
+- `VALID_RUN` — достигнут gate-specific required target, HOLD завершен, нет критичных shortfall/terminal проблем, summary достаточно надежен на верхнем уровне.
+- `PARTIAL_RUN` — собраны полезные данные, но target/HOLD/terminal условия не полностью выполнены.
+- `INVALID_RUN` — setup/generator/config/metrics сломались так, что capacity interpretation ненадежна.
+- `backend_shortfall` — сколько worker не дошли до backend connected относительно `-listeners`.
+- `livekit_shortfall` — сколько worker не дошли до LiveKit connected относительно `-listeners`.
+- `audio_shortfall` — сколько worker в Gate C не получили audio track относительно `-listeners`.
+- `rtp_shortfall` — сколько worker в Gate C не получили RTP относительно `-listeners`.
+- `workers_without_terminal_event` — сколько started worker не дали финальное terminal событие. Для доверия к итогам желательно `0`.
+- `workers_failed_terminal` — сколько worker завершились terminal status, отличным от `completed` или `normal_shutdown`.
+- `partial_reason` — причина частичного результата, например timeout ожидания цели, невозможность цели после terminal failure или context/manual cancellation.
+- `first_target_shortfall_stage` — первый stage, где target не достигнут: `backend`, `livekit`, `audio` или `rtp`.
+- RTP counters: `rtp_packets`, `rtp_bytes`, `rtp_read_errors`, `workers_with_rtp`, `rtp_target_reached`. Для Gate C важно, чтобы пакеты и байты росли, а read errors не объясняли результат.
+- Transport counters: `transport_udp`, `transport_tcp`, `transport_unknown`, `udp_tcp_ratio`. Они полезны для live view, но окончательный transport forensic может требовать server-side log correlation.
+
+## 6. Что собирать после запуска
+
+Всегда сохраняйте:
+
+- `summary_*.json`;
+- `events_*.jsonl`, если файл доступен и не удален;
+- точную команду запуска или соответствующий `.bat`;
+- `runner-id`;
+- время запуска и профиль стенда.
+
+Для `PARTIAL_RUN`, `INVALID_RUN`, подозрительных результатов или runs около capacity boundary дополнительно собирайте VPS diagnostics: metrics snapshots, nginx/backend/livekit tails, `/opt/byod/metrics`, `/opt/byod/diagnostics` и operator screenshot, если он есть.
+
+## 7. Portable package
+
+Portable Win64 package собирается скриптом:
+
+```powershell
+cd tools/go_livekit_loadgen
+.\scripts\build_portable_windows.ps1
+```
+
+Скрипт выполняет `go mod tidy`, `go test ./...`, собирает `byod-loadgen.exe`, создает `.bat` wrappers и архив `dist/BYOD-Loadgen-Portable-Win64.zip`.
+
+На helper machines Go не нужен: оператор распаковывает zip, открывает нужный `.bat` и редактирует верхние переменные:
+
+- `SERVER` — адрес стенда с protocol, например `http://161.104.18.27`, а не bare IP;
+- `LOADGEN_KEY` — ключ текущего stress event;
+- `RUNNER_ID` — machine/operator point, например `PC1`, `home1`, `office2`;
+- `START_AT` — `now` или общий будущий RFC3339 timestamp для синхронного старта;
+- `LISTENERS` — число worker/listener для этого wrapper;
+- `SETUP` — форма теста, например `a50`, `b100`, `c100`.
+
+В `.bat` используйте quoted assignment syntax `set "VAR=value"`: так проще избежать случайных trailing spaces в значениях. Не добавляйте пробелы после caret `^` в многострочной команде.
+
+Текущая naming convention:
+
+- output folder: `out\%RUNNER_ID%_%SETUP%`;
+- loadgen `-runner-id`: `%RUNNER_ID%-%SETUP%`.
+
+Например, для `RUNNER_ID=PC1` и `SETUP=c100` output folder будет `out\PC1_c100`, а `-runner-id` будет `PC1-c100`.
+
+Рекомендуемый editable pattern для C100 slow selected RTP:
+
+```bat
+@echo off
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=100"
+set "SETUP=c%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
+byod-loadgen.exe ^
+  -profile vps-nginx ^
+  -mode livekit-subscribe-discard-rtp ^
+  -subscribe-mode selected ^
+  -server %SERVER% ^
+  -listeners %LISTENERS% ^
+  -start-at %START_AT% ^
+  -start-mode burst ^
+  -burst-size 5 ^
+  -burst-interval-ms 5000 ^
+  -hold-sec 1000 ^
+  -target-wait-sec 30 ^
+  -backend-connect-timeout-sec 15 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
+  -loadgen-key %LOADGEN_KEY% ^
+  -out-dir out\%RUNNER_ID%_%SETUP%
+```
+
+Portable package включает этот же `README.md` как главный manual. Отдельный полный `README_RU.md` или `PORTABLE_RU.md` не используется как основная инструкция.
+
+## 8. Known limitations
+
+- Go loadgen создает protocol/engine load, а не browser UI load.
+- Массовое тестирование реальных browser/Web Listener клиентов — отдельная задача.
+- Transport может требовать server-side log correlation, если loadgen не может напрямую и надежно наблюдать selected ICE pair.
+- Цель 2000 listener остается future work и направлением масштабирования, а не требованием MVP.

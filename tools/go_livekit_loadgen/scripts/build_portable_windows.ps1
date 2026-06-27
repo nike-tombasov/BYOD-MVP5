@@ -16,94 +16,125 @@ go mod tidy
 go test ./...
 go build -trimpath -ldflags="-s -w" -o (Join-Path $PackageDir "byod-loadgen.exe") .\cmd\byod-loadgen
 
-Copy-Item (Join-Path $Root "PORTABLE_RU.md") $PackageDir
-if (Test-Path (Join-Path $Root "README_RU.md")) {
-  Copy-Item (Join-Path $Root "README_RU.md") $PackageDir
-}
+Copy-Item (Join-Path $Root "README.md") $PackageDir
 
 $Wrappers = @{
   "run_a50_backend_now.bat" = @"
 @echo off
-set SERVER=http://161.104.18.27
-set RUNNER_ID=win1
-set LOADGEN_KEY=byod_loadgen_key_01
-set START_AT=now
-mkdir out\%RUNNER_ID%-a50 2>nul
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=50"
+set "SETUP=a%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
 byod-loadgen.exe ^
   -profile vps-nginx ^
   -mode backend-ws-only ^
   -server %SERVER% ^
-  -listeners 50 ^
+  -listeners %LISTENERS% ^
   -start-at %START_AT% ^
   -start-mode burst ^
-  -burst-size 50 ^
+  -burst-size %LISTENERS% ^
   -burst-interval-ms 0 ^
   -hold-sec 45 ^
   -target-wait-sec 20 ^
   -backend-connect-timeout-sec 10 ^
-  -runner-id %RUNNER_ID%-a50 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
   -loadgen-key %LOADGEN_KEY% ^
-  -out-dir out\%RUNNER_ID%-a50
+  -out-dir out\%RUNNER_ID%_%SETUP%
 "@;
   "run_b50_livekit_now.bat" = @"
 @echo off
-set SERVER=http://161.104.18.27
-set RUNNER_ID=win1
-set LOADGEN_KEY=byod_loadgen_key_01
-set START_AT=now
-mkdir out\%RUNNER_ID%-b50 2>nul
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=50"
+set "SETUP=b%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
 byod-loadgen.exe ^
   -profile vps-nginx ^
   -mode livekit-connect-only ^
   -server %SERVER% ^
-  -listeners 50 ^
+  -listeners %LISTENERS% ^
   -start-at %START_AT% ^
   -start-mode burst ^
-  -burst-size 50 ^
+  -burst-size %LISTENERS% ^
   -burst-interval-ms 0 ^
   -hold-sec 45 ^
   -target-wait-sec 20 ^
   -backend-connect-timeout-sec 10 ^
-  -runner-id %RUNNER_ID%-b50 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
   -loadgen-key %LOADGEN_KEY% ^
-  -out-dir out\%RUNNER_ID%-b50
+  -out-dir out\%RUNNER_ID%_%SETUP%
 "@;
   "run_c30_rtp_selected_now.bat" = @"
 @echo off
-set SERVER=http://161.104.18.27
-set RUNNER_ID=win1
-set LOADGEN_KEY=byod_loadgen_key_01
-set START_AT=now
-mkdir out\%RUNNER_ID%-c30 2>nul
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=30"
+set "SETUP=c%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
 byod-loadgen.exe ^
   -profile vps-nginx ^
   -mode livekit-subscribe-discard-rtp ^
   -subscribe-mode selected ^
   -server %SERVER% ^
-  -listeners 30 ^
+  -listeners %LISTENERS% ^
   -start-at %START_AT% ^
   -start-mode burst ^
-  -burst-size 30 ^
+  -burst-size %LISTENERS% ^
   -burst-interval-ms 0 ^
   -hold-sec 45 ^
   -target-wait-sec 20 ^
   -backend-connect-timeout-sec 10 ^
-  -runner-id %RUNNER_ID%-c30 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
   -loadgen-key %LOADGEN_KEY% ^
-  -out-dir out\%RUNNER_ID%-c30
+  -out-dir out\%RUNNER_ID%_%SETUP%
+"@;
+  "run_c100_rtp_selected_slow.bat" = @"
+@echo off
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=100"
+set "SETUP=c%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
+byod-loadgen.exe ^
+  -profile vps-nginx ^
+  -mode livekit-subscribe-discard-rtp ^
+  -subscribe-mode selected ^
+  -server %SERVER% ^
+  -listeners %LISTENERS% ^
+  -start-at %START_AT% ^
+  -start-mode burst ^
+  -burst-size 5 ^
+  -burst-interval-ms 5000 ^
+  -hold-sec 1000 ^
+  -target-wait-sec 30 ^
+  -backend-connect-timeout-sec 15 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
+  -loadgen-key %LOADGEN_KEY% ^
+  -out-dir out\%RUNNER_ID%_%SETUP%
 "@;
   "run_b100_livekit_at_time.bat" = @"
 @echo off
-set SERVER=http://161.104.18.27
-set RUNNER_ID=win1
-set LOADGEN_KEY=byod_loadgen_key_01
-set START_AT=2026-06-22T22:30:00+03:00
-mkdir out\%RUNNER_ID%-b100-sync 2>nul
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=2026-06-27T22:30:00+03:00"
+set "LISTENERS=100"
+set "SETUP=b%LISTENERS%_sync"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
 byod-loadgen.exe ^
   -profile vps-nginx ^
   -mode livekit-connect-only ^
   -server %SERVER% ^
-  -listeners 100 ^
+  -listeners %LISTENERS% ^
   -start-at %START_AT% ^
   -start-mode burst ^
   -burst-size 50 ^
@@ -111,12 +142,11 @@ byod-loadgen.exe ^
   -hold-sec 60 ^
   -target-wait-sec 30 ^
   -backend-connect-timeout-sec 10 ^
-  -runner-id %RUNNER_ID%-b100-sync ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
   -loadgen-key %LOADGEN_KEY% ^
-  -out-dir out\%RUNNER_ID%-b100-sync
+  -out-dir out\%RUNNER_ID%_%SETUP%
 "@;
 }
-
 foreach ($Name in $Wrappers.Keys) {
   Set-Content -Path (Join-Path $PackageDir $Name) -Value $Wrappers[$Name] -Encoding ASCII
 }
