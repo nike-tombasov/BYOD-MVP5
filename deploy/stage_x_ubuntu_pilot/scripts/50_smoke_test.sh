@@ -162,7 +162,7 @@ if [[ "$critical_failed" -ne 0 ]]; then
   overall=1
   printf "%b\n" "${RED}FAIL: Critical smoke checks failed.${NC}" >&2
 else
-  printf "%b\n" "${CYAN}SUCCESS: Stage X smoke checks completed.${NC}"
+  printf "%b\n" "${CYAN}SUCCESS: BYOD smoke checks completed.${NC}"
 fi
 
 exit "$overall"

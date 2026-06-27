@@ -1,4 +1,4 @@
-# Stage X Incident Quick Actions
+# BYOD VPS Incident Quick Actions
 
 Simple operator checklist.
 

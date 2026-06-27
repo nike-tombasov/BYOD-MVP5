@@ -1,5 +1,5 @@
 manifest_version: 1
-pilot_stage: "Stage X"
+package_name: "BYOD VPS deploy"
 updated_utc: "2026-04-19T00:00:00Z"
 rollback_reference: "git checkout <previous_tag_or_commit> && fresh deploy on new VPS"
 vps_layout:

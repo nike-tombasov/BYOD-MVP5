@@ -47,7 +47,7 @@ Documentation list:
 * legacy_readme.md
 
 
-## Stage X Ubuntu pilot package
+## BYOD VPS deploy package
 
 Deploy package path: `deploy/stage_x_ubuntu_pilot`
 
@@ -55,7 +55,7 @@ Operator docs:
 - `deploy/stage_x_ubuntu_pilot/docs/deploy_guide.md`
 - `deploy/stage_x_ubuntu_pilot/docs/smoke_test_guide.md`
 - `deploy/stage_x_ubuntu_pilot/docs/incident_quick_actions.md`
-- `deploy/stage_x_ubuntu_pilot/docs/env_variables.md`
+- `deploy/stage_x_ubuntu_pilot/docs/configuration_reference.md`
 
 Backend logging contract:
 - `docs/21_backend_logging_contract_stage_x.md`
@@ -63,9 +63,9 @@ Backend logging contract:
 Completed-stage snapshot:
 - `legacy/stage_x_ubuntu_pilot/`
 
-Stage X is a public-IPv4, HTTP-only pilot without a domain. Domain setup, TLS,
+The current BYOD VPS deploy is public-IPv4 and HTTP-only without a domain. Domain setup, TLS,
 production monitoring, scaling, load balancing, and multi-node deployment are
-future production-hardening work and are not Stage X requirements.
+future production-hardening work.
 
 ## Stage XI — Protocol/engine load measurement
 
