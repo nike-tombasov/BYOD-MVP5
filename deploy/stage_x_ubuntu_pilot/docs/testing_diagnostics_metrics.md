@@ -126,13 +126,71 @@ sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/50_smoke_test.sh
 
 ## Dangerous commands
 
-Use these only with an incident plan and current backups:
+These are not smoke-test commands. Use them only with an incident plan, current backups, and provider console access. Run the smallest necessary command and record what was changed.
+
+### Service restart
+
+Restart disconnects active sessions and forces clients to reconnect:
 
 ```bash
 sudo systemctl restart byod-backend byod-livekit nginx
-sudo rm -rf /opt/byod/app-src
-sudo rm -rf /opt/byod/backend_data
-sudo cp /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/config/livekit_udp_mux_7882.yaml /opt/byod/config/livekit.yaml
 ```
 
-Restarting or deleting state can disconnect users or erase persisted room data.
+### Service stop
+
+Stop makes the service unavailable until it is started again:
+
+```bash
+sudo systemctl stop byod-backend byod-livekit nginx
+```
+
+### Disable autostart
+
+Disable removes autostart after reboot. A later reboot can leave the VPS without the public web server, backend, or LiveKit service:
+
+```bash
+sudo systemctl disable nginx
+sudo systemctl disable byod-backend
+sudo systemctl disable byod-livekit
+```
+
+### Delete deploy checkout or state
+
+Deleting `app-src` removes deploy scripts and the package checkout. Deleting `backend_data` removes persisted room config, runtime state, and recording state:
+
+```bash
+sudo rm -rf /opt/byod/app-src
+sudo rm -rf /opt/byod/backend_data
+```
+
+Deleting `/opt/byod` removes the application, configs, state, logs, releases, diagnostics, and deploy checkout:
+
+```bash
+sudo rm -rf /opt/byod
+```
+
+### Destroy config files
+
+Truncate destroys config files and can prevent services from starting:
+
+```bash
+sudo truncate -s 0 /opt/byod/config/backend.env
+sudo truncate -s 0 /opt/byod/config/livekit.yaml
+```
+
+### Firewall reset
+
+`ufw reset` can lock out SSH or expose/close the wrong ports depending on provider defaults and later rules:
+
+```bash
+sudo ufw reset
+```
+
+### VPS power operations
+
+Reboot terminates sessions and restarts the VPS. Poweroff shuts down the VPS and may require provider panel access to start it again:
+
+```bash
+sudo reboot
+sudo poweroff
+```

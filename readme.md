@@ -56,6 +56,7 @@ Operator docs:
 - `deploy/stage_x_ubuntu_pilot/docs/smoke_test_guide.md`
 - `deploy/stage_x_ubuntu_pilot/docs/incident_quick_actions.md`
 - `deploy/stage_x_ubuntu_pilot/docs/configuration_reference.md`
+- `deploy/stage_x_ubuntu_pilot/docs/testing_diagnostics_metrics.md`
 
 Backend logging contract:
 - `docs/21_backend_logging_contract_stage_x.md`

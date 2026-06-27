@@ -18,7 +18,7 @@ Optional:
 | `BYOD_REPO_URL` | Yes | Git repository URL cloned by the bootstrap command. |
 | `BYOD_REPO_BRANCH` | Yes | Branch to clone into `/opt/byod/app-src`. |
 | `BYOD_VPS_PUBLIC_IP` | Yes | Public IPv4 used by operator notes and diagnostics. |
-| `BYOD_PUBLIC_ORIGIN` | Yes | Public browser origin, for example `http://203.0.113.10`. |
+| `BYOD_PUBLIC_ORIGIN` | Yes | Public browser origin, for example `http://203.0.113.10`. It should be an origin without a path; one trailing slash is normalized by the deploy script. |
 | `BYOD_LIVEKIT_URL` | Yes | LiveKit URL sent to clients, for example `ws://203.0.113.10:7880`. |
 | `BYOD_LIVEKIT_API_KEY` | Yes | LiveKit API key. |
 | `BYOD_LIVEKIT_API_SECRET` | Yes | LiveKit API secret; never print in full. |
