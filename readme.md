@@ -16,6 +16,8 @@ IMPORTANT:
 
 Documentation list:
 
+Entries `00_...` through `22_...` are under `docs/`; root-level docs and deploy/operator docs are shown with explicit paths.
+
 * 00_project_goal.md
 * 01_system_concept.md
 * 02_roles.md
@@ -29,7 +31,8 @@ Documentation list:
 * 10_scaling.md
 * 11_security.md
 * 12_future_features.md
-* 13_mvp_status.md
+* mvp_status.md
+* docs/13_ubuntu_deploy_contract.md
 * 14_open_issues.md
 * 15_ws_schema_v1.md
 * 16_backend_persistence_json_v1.md
@@ -58,7 +61,9 @@ Operator docs:
 - `deploy/stage_x_ubuntu_pilot/docs/configuration_reference.md`
 - `deploy/stage_x_ubuntu_pilot/docs/testing_diagnostics_metrics.md`
 
-Backend logging contract:
+Canonical spec docs:
+- `mvp_status.md`
+- `docs/13_ubuntu_deploy_contract.md`
 - `docs/21_backend_logging_contract_stage_x.md`
 
 Completed-stage snapshot:

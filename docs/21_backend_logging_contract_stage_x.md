@@ -16,7 +16,9 @@ This contract defines minimum logs for pilot diagnostics.
 
 Every event line must include:
 
-- `ts` (unix seconds)
+- `ts` remains unix epoch seconds
+- `timestamp_local` (local VPS time, same format as `metrics_analyzer.py`: `YYYY-MM-DD HH:MM:SS +ZZZZ`)
+- `timestamp_utc` (UTC ISO timestamp without milliseconds)
 - `event` (stable event name)
 
 Optional fields can include:

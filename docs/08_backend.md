@@ -401,3 +401,59 @@ to the final desired number and restart `byod-backend`.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.
+
+### 9.16. Backend endpoints
+
+The current backend exposes only the endpoints below. The VPS nginx contract must keep `/admin/*` local-only and must not proxy admin paths publicly.
+
+| Method | Path | Boundary | Purpose | Input/output shape |
+|---|---|---|---|---|
+| `GET` | `/health` | May be public through nginx. | Lightweight backend health check. | Returns `{"status":"ok"}`. |
+| `POST` | `/admin/import_json` | Local-only; nginx must not expose `/admin/*`. | Imports and validates room config JSON, applies it to runtime state, persists state, and broadcasts updated state. | Multipart form upload field `file`; returns `{"ok": false, "errors": [...]}` or `{"ok": true, "applied": {"room_name": ..., "target_capacity": ..., "max_active_listeners": ..., "max_new_connections_per_sec": ..., "channels": ...}}`. |
+| `GET` | `/admin/check_ws_compat` | Local-only; nginx must not expose `/admin/*`. | Builds Publisher and Listener state snapshots and verifies required schema keys for WebSocket compatibility. | Returns booleans such as `ok`, `publisher_state_ok`, `listener_state_ok`, plus schema versions. |
+| `GET` | `/admin/metrics_snapshot` | Local-only; nginx must not expose `/admin/*`. | Provides machine-readable backend and LiveKit diagnostic counters for VPS metrics tooling. It must not include tokens, PINs, API secrets, or private environment dumps. | Returns `ts`, `timestamp_local`, `timestamp_utc`, room limits/status, backend session counts, reject counters, per-channel activity, and LiveKit participant diagnostics. |
+| `POST` | `/admin/console_command` | Local-only; nginx must not expose `/admin/*`. | Executes an existing backend console command through the supported VPS control path. | JSON body `{"command":"help"}`; returns `{"ok": true, "command": "...", "result": "..."}`. |
+| `WS` | `/ws/publisher` | Public WebSocket path through nginx. | Publisher WebSocket protocol for connect, heartbeat, ON AIR, and stop/off-air interactions. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and state updates. |
+| `WS` | `/ws/listener` | Public WebSocket path through nginx. | Listener WebSocket protocol for connect, heartbeat, admission control, LiveKit token delivery, and reconnect-required signaling. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and listener state updates. |
+
+Security notes:
+- `/admin/*` endpoints enforce local-request checks in backend code and are local-only operational surfaces.
+- nginx must expose only intended public paths (`/`, `/health`, `/ws/listener`, `/ws/publisher`) and must not expose `/admin/*`.
+- Do not place secrets, PINs, API keys, or token examples in endpoint documentation or diagnostics output.
+
+### 9.17. Backend console commands
+
+Backend console commands are implemented in code and are available through the local-only admin endpoint. On VPS, operators must not type into systemd stdin. The supported VPS path is:
+
+```text
+POST http://127.0.0.1:8000/admin/console_command
+```
+
+The operator helper is:
+
+```bash
+sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/67_backend_console_command.sh help
+```
+
+Raw local endpoint shape:
+
+```json
+{"command":"help"}
+```
+
+Current commands:
+
+| Command | Description |
+|---|---|
+| `help` | Print the supported command list. |
+| `status` | Return room status, recording state, channel count, publisher/listener counts, target capacity, and derived listener admission limits. |
+| `set_room_status <OPENED|BLOCKED|CLOSED>` | Change room status, persist state, and broadcast updated state. |
+| `start_recording` | Mark recording active and persist recording/runtime state. |
+| `stop_recording` | Mark recording inactive and persist recording/runtime state. |
+| `set_channel_label <channel_id> <new_label>` | Update a channel label, persist state, log the change, and broadcast updated state. |
+| `set_listen <channel_id> <true|false>` | Enable or disable Listener availability for a channel, persist state, log the change, and broadcast updated state. |
+| `off_air <channel_id>` | Force-clear a channel owner, set its off-air timestamp, persist state, log the change, and broadcast updated state. |
+
+Security notes:
+- `/admin/console_command` is local-only.
+- nginx must not expose `/admin/*`.
