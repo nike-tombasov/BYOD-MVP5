@@ -16,8 +16,9 @@ This contract defines minimum logs for pilot diagnostics.
 
 Every event line must include:
 
-- `ts` (unix seconds)
-- `ts_iso_msk` (Europe/Moscow ISO timestamp without milliseconds, for example `2026-06-27T21:15:30+03:00`)
+- `ts` remains unix epoch seconds
+- `timestamp_local` (local VPS time, same format as `metrics_analyzer.py`: `YYYY-MM-DD HH:MM:SS +ZZZZ`)
+- `timestamp_utc` (UTC ISO timestamp without milliseconds)
 - `event` (stable event name)
 
 Optional fields can include:

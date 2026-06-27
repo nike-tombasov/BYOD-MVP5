@@ -16,6 +16,8 @@ IMPORTANT:
 
 Documentation list:
 
+Entries `00_...` through `22_...` are under `docs/`; root-level docs and deploy/operator docs are shown with explicit paths.
+
 * 00_project_goal.md
 * 01_system_concept.md
 * 02_roles.md

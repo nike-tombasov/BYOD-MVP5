@@ -125,8 +125,7 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
                 for channel in state_service.state.channels
             ]
             snapshot = {
-                "ts": now_ts,
-                "ts_iso_msk": JsonStorage.ts_iso_msk(now_ts),
+                **JsonStorage.timestamp_fields_for_ts(now_ts),
                 "room_status": state_service.runtime.room_status,
                 "target_capacity": state_service.runtime.target_capacity,
                 "max_active_listeners": state_service.runtime.max_active_listeners,

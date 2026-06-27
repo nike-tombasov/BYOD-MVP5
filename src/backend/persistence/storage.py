@@ -3,12 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timezone, timedelta
-
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # pragma: no cover - Python < 3.9 compatibility fallback
-    ZoneInfo = None  # type: ignore[assignment]
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,13 +22,15 @@ class JsonStorage:
         return int(time.time())
 
     @staticmethod
-    def ts_iso_msk(ts: int) -> str:
-        tz = ZoneInfo("Europe/Moscow") if ZoneInfo is not None else timezone(timedelta(hours=3))
-        return datetime.fromtimestamp(ts, tz).isoformat(timespec="seconds")
+    def timestamp_fields_for_ts(ts: int) -> dict[str, int | str]:
+        return {
+            "ts": ts,
+            "timestamp_local": datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+            "timestamp_utc": datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds"),
+        }
 
     def timestamp_fields(self) -> dict[str, int | str]:
-        ts = self.now_ts()
-        return {"ts": ts, "ts_iso_msk": self.ts_iso_msk(ts)}
+        return self.timestamp_fields_for_ts(self.now_ts())
 
     def _atomic_write_json(self, path: Path, payload: dict[str, Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")

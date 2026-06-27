@@ -12,88 +12,88 @@ Read in this order:
 1. HARD RULES
 hard_rules.md
 
-2. Development rules
+1. Development rules
 development_rules.md
 
-3. MVP RULES
+1. MVP RULES
 mvp_rules.md
 
-4. Development environment
+1. Development environment
 dev_environment.md
 
-5. Project goal
+1. Project goal
 docs/00_project_goal.md
 
-6. System concept
+1. System concept
 docs/01_system_concept.md
 
-7. Roles
+1. Roles
 docs/02_roles.md
 
-8. Use cases
+1. Use cases
 docs/03_use_cases.md
 
-9. Channel model
+1. Channel model
 docs/04_channel_model.md
 
-10. Audio architecture
+1. Audio architecture
 docs/05_audio_architecture.md
 
-11. LiveKit engine
+1. LiveKit engine
 docs/06_livekit_engine.md
 
-12. Publisher UI
+1. Publisher UI
 docs/07_publisher_ui.md
 
-13. Backend
+1. Backend
 docs/08_backend.md
 
-14. Listener UI
+1. Listener UI
 docs/09_listener_ui.md
 
-15. Scaling
+1. Scaling
 docs/10_scaling.md
 
-16. Security
+1. Security
 docs/11_security.md
 
-17. Future features
+1. Future features
 docs/12_future_features.md
 
-18. MVP status
+1. MVP status
 mvp_status.md
 
-19. Ubuntu deploy contract
+1. Ubuntu deploy contract
 docs/13_ubuntu_deploy_contract.md
 
-20. Open issues
+1. Open issues
 docs/14_open_issues.md
 
-21. WS schema v1
+1. WS schema v1
 docs/15_ws_schema_v1.md
 
-22. Backend persistence JSON schema v1
+1. Backend persistence JSON schema v1
 docs/16_backend_persistence_json_v1.md
 
-23. JSON import schema v1
+1. JSON import schema v1
 docs/17_json_import_schema_v1.md
 
-24. Stage VII-IX acceptance checklist
+1. Stage VII-IX acceptance checklist
 docs/18_stage_vii_ix_acceptance_checklist.md
 
-25. UX scenarios
+1. UX scenarios
 docs/19_ux_scenarios.md
 
-26. Unresolved bugs
+1. Unresolved bugs
 docs/20_unresolved_bugs.md
 
-27. Stage X backend logging contract
+1. Stage X backend logging contract
 docs/21_backend_logging_contract_stage_x.md
 
-28. Stress and load testing
+1. Stress and load testing
 docs/22_stress_tests.md
 
-28. Legacy implementations
+1. Legacy implementations
 legacy/legacy_readme.md
 
 Core rules:
