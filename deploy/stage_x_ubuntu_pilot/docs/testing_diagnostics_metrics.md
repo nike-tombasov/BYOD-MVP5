@@ -105,6 +105,20 @@ sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/95_metrics_analy
 | `90_collect_diagnostics.sh` | General diagnostics bundle. |
 | `95_metrics_analyzer.sh` | Start/status/stop metrics analyzer helper. |
 
+## Remove backend stress profile
+
+After stress testing, return backend admission limits to normal room-config-derived behavior:
+
+```bash
+sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/69_remove_backend_stress_profile.sh
+```
+
+Then confirm effective runtime limits:
+
+```bash
+curl -s http://127.0.0.1:8000/admin/metrics_snapshot | python3 -m json.tool
+```
+
 ## UDP profile checks
 
 Primary profile:

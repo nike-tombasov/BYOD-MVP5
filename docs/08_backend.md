@@ -322,7 +322,7 @@ Runtime text mutation is not used in current project.
 
 ### 9.15. Protection from unwanted room overflow by Listeners
 
-Для MVP Stage VII-IX вводятся базовые защитные лимиты. В normal event setup
+Backend uses baseline protective limits for Listener admission and room overflow control. В normal event setup
 оператор задаёт `target_capacity` в room config JSON; Python constants на VPS
 обычно не редактируются. Формулу полезно видеть целиком, но при temporary
 stress/emergency tuning менять только финальный override через env/drop-in.
@@ -334,8 +334,8 @@ stress/emergency tuning менять только финальный override ч
 | `BYOD_MAX_ACTIVE_LISTENERS_OVERRIDE` | Optional temporary hard override for `max_active_listeners`; normally unset. |
 | `max_new_connections_per_sec` | Global backend Listener admission rate, derived from `target_capacity` unless override is set. |
 | `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` | Temporary stress/emergency override for global Listener admission rate; normally unset. |
-| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_MIN` | Current default minimum: `1`. |
-| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR` | Current default divisor: `15.0`. |
+| `MAX_NEW_CONNECTIONS_PER_SEC_MIN` | Code default minimum in current implementation: `1`. |
+| `MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR` | Code default divisor in current implementation: `15.0`. |
 | `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` | Per-IP Listener connect/reconnect throttle. Default `2`; set `0` to disable this specific per-IP throttle. |
 | `BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED` | Controlled stress/load-test bypass for the per-IP reconnect throttle; not for real production/event traffic. |
 | `BYOD_LOADGEN_RECONNECT_BYPASS_KEY` | Shared key required by controlled load generators when bypass is enabled. |
@@ -351,21 +351,23 @@ stress/emergency tuning менять только финальный override ч
 max_new_connections_per_sec =
   BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE
   if BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE is set,
-  else max(BYOD_MAX_NEW_CONNECTIONS_PER_SEC_MIN,
-           int(target_capacity / BYOD_MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR))
+  else max(MAX_NEW_CONNECTIONS_PER_SEC_MIN,
+           int(target_capacity / MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR))
 ```
 
 Current defaults:
 
 ```text
-BYOD_MAX_NEW_CONNECTIONS_PER_SEC_MIN = 1
-BYOD_MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR = 15.0
+MAX_NEW_CONNECTIONS_PER_SEC_MIN = 1
+MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR = 15.0
 ```
 
-Normally do not edit the formula. For normal event sizing, prefer correct
-`target_capacity` in room config JSON. For temporary stress/emergency tuning,
-set only `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` to the final desired number
-(for example through the stress profile drop-in), then restart `byod-backend`.
+Normally do not edit the formula. `MAX_NEW_CONNECTIONS_PER_SEC_MIN` and
+`MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR` are code defaults in current
+implementation, not operator env variables. For normal event sizing, prefer
+correct `target_capacity` in room config JSON. For practical VPS temporary
+stress/emergency tuning, change only `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE`
+to the final desired number and restart `byod-backend`.
 
 3) Per-IP reconnect/connect interval:
 - `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` — per-IP Listener

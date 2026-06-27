@@ -27,6 +27,7 @@ Optional:
 | `BYOD_DEFAULT_PIN` | No | Clean-deploy bootstrap PIN. Defaults to `123456` if omitted. |
 | `BYOD_ENABLE_BACKEND_STRESS_TEST` | No | Deploy-time switch for applying the temporary backend stress profile before final smoke test. Supported: `true`/`false` plus `1`/`0`, `yes`/`no`, `on`/`off`. Defaults to `false`. |
 | `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` | No | Per-IP Listener connect/reconnect throttle in seconds. Integer `>= 0`; `0` disables this specific throttle. Defaults to `2`. |
+| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` | No | Optional global Listener admission-rate override. Empty/unset means backend derives `max_new_connections_per_sec` from `target_capacity`. Set an integer `>= 1` only for temporary tuning after VPS sizing/stress testing. |
 | `BYOD_ROOM_INPUT_PATH` | No | Defaults to `/tmp/room_input.json`. |
 | `BYOD_LIVEKIT_TGZ_PATH` | No | Defaults to `/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz`. |
 | `BYOD_LIVEKIT_SHA256_PATH` | No | Defaults to `/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256`. |
@@ -47,6 +48,7 @@ BYOD_BACKEND_PORT="8000"
 BYOD_DEFAULT_PIN="123456"
 BYOD_ENABLE_BACKEND_STRESS_TEST=false
 BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS=2
+BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE=""
 BYOD_ROOM_INPUT_PATH="/tmp/room_input.json"
 BYOD_LIVEKIT_TGZ_PATH="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz"
 BYOD_LIVEKIT_SHA256_PATH="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256"
@@ -59,6 +61,7 @@ BYOD_LISTENER_VENDOR_PATH="/tmp/livekit-client.umd.1.15.13.js"
 - `BYOD_BACKEND_PORT` must be an integer.
 - `BYOD_ENABLE_BACKEND_STRESS_TEST` must be a clear boolean: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, or `off`.
 - `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` must be an integer `>= 0`.
+- `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` must be empty or an integer `>= 1`.
 - `BYOD_PUBLIC_ORIGIN` must start with `http://` or `https://`.
 - `BYOD_LIVEKIT_URL` must start with `ws://` or `wss://`.
 - CRLF is removed before `source`; generated config files are also normalized to LF.
@@ -77,13 +80,16 @@ BYOD_LISTENER_VENDOR_PATH="/tmp/livekit-client.umd.1.15.13.js"
 | `BYOD_CORS_ALLOWED_ORIGIN` | `BYOD_PUBLIC_ORIGIN` |
 | `BYOD_DEFAULT_PIN` | `BYOD_DEFAULT_PIN` or default `123456` |
 | `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` | `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` or default `2` |
+| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` | `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` or empty |
 | `BYOD_DATA_DIR` and state paths | Fixed `/opt/byod/backend_data` paths |
 
 ## Backend capacity/admission variables
 
 Normal event sizing should come from `target_capacity` in `/tmp/room_input.json`; the backend derives active-listener and new-connection limits from that room JSON unless a temporary override is set. Do not add `BYOD_DEFAULT_TARGET_CAPACITY` to normal VPS config for now: the code fallback is only for clean deploy/no import.
 
-`/tmp/vps_config.env` carries only the per-IP reconnect throttle (`BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS`) and the optional deploy switch (`BYOD_ENABLE_BACKEND_STRESS_TEST`). Stress overrides themselves live in `deploy/stage_x_ubuntu_pilot/config/backend_stress_test.env` and are applied by `68_apply_backend_stress_profile.sh` when explicitly enabled or run manually.
+`/tmp/vps_config.env` carries the per-IP reconnect throttle (`BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS`), the optional global admission-rate override (`BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE`), and the optional deploy switch (`BYOD_ENABLE_BACKEND_STRESS_TEST`). Stress profile overrides live in `deploy/stage_x_ubuntu_pilot/config/backend_stress_test.env` and are applied by `68_apply_backend_stress_profile.sh` when explicitly enabled or run manually.
+
+To change connection admission speed on an already deployed VPS, edit `/opt/byod/config/backend.env`, set `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` to an integer `>= 1`, and restart `byod-backend`. Clear it back to an empty string to return to room-config-derived behavior.
 
 ## Generated `/opt/byod/config/livekit.yaml` mapping
 
