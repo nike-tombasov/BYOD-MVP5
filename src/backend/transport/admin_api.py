@@ -9,6 +9,7 @@ from backend.console.commands import process_console_command
 from backend.importers.room_config_json import parse_room_config_json_bytes
 from backend.services.room_service import RoomService
 from backend.services.state_service import StateService
+from backend.persistence.storage import JsonStorage
 
 
 def require_local_request(request: Request) -> None:
@@ -125,6 +126,7 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
             ]
             snapshot = {
                 "ts": now_ts,
+                "ts_iso_msk": JsonStorage.ts_iso_msk(now_ts),
                 "room_status": state_service.runtime.room_status,
                 "target_capacity": state_service.runtime.target_capacity,
                 "max_active_listeners": state_service.runtime.max_active_listeners,

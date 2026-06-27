@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python < 3.9 compatibility fallback
+    ZoneInfo = None  # type: ignore[assignment]
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +25,15 @@ class JsonStorage:
 
     def now_ts(self) -> int:
         return int(time.time())
+
+    @staticmethod
+    def ts_iso_msk(ts: int) -> str:
+        tz = ZoneInfo("Europe/Moscow") if ZoneInfo is not None else timezone(timedelta(hours=3))
+        return datetime.fromtimestamp(ts, tz).isoformat(timespec="seconds")
+
+    def timestamp_fields(self) -> dict[str, int | str]:
+        ts = self.now_ts()
+        return {"ts": ts, "ts_iso_msk": self.ts_iso_msk(ts)}
 
     def _atomic_write_json(self, path: Path, payload: dict[str, Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -68,9 +82,9 @@ class JsonStorage:
             f.flush()
 
     def log_connection(self, event: str, **fields: Any) -> None:
-        payload = {"ts": self.now_ts(), "event": event, **fields}
+        payload = {**self.timestamp_fields(), "event": event, **fields}
         self.append_jsonl(self.get_connections_log_path(), payload)
 
     def log_event(self, event: str, **fields: Any) -> None:
-        payload = {"ts": self.now_ts(), "event": event, **fields}
+        payload = {**self.timestamp_fields(), "event": event, **fields}
         self.append_jsonl(self.get_events_log_path(), payload)

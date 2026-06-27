@@ -61,33 +61,36 @@ docs/11_security.md
 docs/12_future_features.md
 
 18. MVP status
-docs/13_mvp_status.md
+mvp_status.md
 
-19. Open issues
+19. Ubuntu deploy contract
+docs/13_ubuntu_deploy_contract.md
+
+20. Open issues
 docs/14_open_issues.md
 
-20. WS schema v1
+21. WS schema v1
 docs/15_ws_schema_v1.md
 
-21. Backend persistence JSON schema v1
+22. Backend persistence JSON schema v1
 docs/16_backend_persistence_json_v1.md
 
-22. JSON import schema v1
+23. JSON import schema v1
 docs/17_json_import_schema_v1.md
 
-23. Stage VII-IX acceptance checklist
+24. Stage VII-IX acceptance checklist
 docs/18_stage_vii_ix_acceptance_checklist.md
 
-24. UX scenarios
+25. UX scenarios
 docs/19_ux_scenarios.md
 
-25. Unresolved bugs
+26. Unresolved bugs
 docs/20_unresolved_bugs.md
 
-26. Stage X backend logging contract
+27. Stage X backend logging contract
 docs/21_backend_logging_contract_stage_x.md
 
-27. Stress and load testing
+28. Stress and load testing
 docs/22_stress_tests.md
 
 28. Legacy implementations
