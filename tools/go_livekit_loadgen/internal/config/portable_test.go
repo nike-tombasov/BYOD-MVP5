@@ -12,7 +12,18 @@ func TestPortableBuildScriptReferencesRussianInstructions(t *testing.T) {
 		t.Fatalf("read build script: %v", err)
 	}
 	text := string(body)
-	for _, want := range []string{"README.md", "run_a50_backend_now.bat", "run_b100_livekit_at_time.bat", "BYOD-Loadgen-Portable-Win64", "$PackageName.zip"} {
+	for _, want := range []string{
+		"README.md",
+		"run_a50_backend_now.bat",
+		"run_b100_livekit_at_time.bat",
+		"run_c100_rtp_selected_slow.bat",
+		"BYOD-Loadgen-Portable-Win64",
+		"$PackageName.zip",
+		"LISTENERS",
+		"SETUP",
+		`out\%RUNNER_ID%_%SETUP%`,
+		`set "SERVER=http://<VPS_IP>"`,
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("build script missing %q", want)
 		}

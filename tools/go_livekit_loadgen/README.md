@@ -197,10 +197,50 @@ cd tools/go_livekit_loadgen
 
 На helper machines Go не нужен: оператор распаковывает zip, открывает нужный `.bat` и редактирует верхние переменные:
 
-- `SERVER` — адрес стенда;
-- `RUNNER_ID` — уникальный ID машины/запуска;
+- `SERVER` — адрес стенда с protocol, например `http://161.104.18.27`, а не bare IP;
 - `LOADGEN_KEY` — ключ текущего stress event;
-- `START_AT` — `now` или общий будущий RFC3339 timestamp для синхронного старта.
+- `RUNNER_ID` — machine/operator point, например `PC1`, `home1`, `office2`;
+- `START_AT` — `now` или общий будущий RFC3339 timestamp для синхронного старта;
+- `LISTENERS` — число worker/listener для этого wrapper;
+- `SETUP` — форма теста, например `a50`, `b100`, `c100`.
+
+В `.bat` используйте quoted assignment syntax `set "VAR=value"`: так проще избежать случайных trailing spaces в значениях. Не добавляйте пробелы после caret `^` в многострочной команде.
+
+Текущая naming convention:
+
+- output folder: `out\%RUNNER_ID%_%SETUP%`;
+- loadgen `-runner-id`: `%RUNNER_ID%-%SETUP%`.
+
+Например, для `RUNNER_ID=PC1` и `SETUP=c100` output folder будет `out\PC1_c100`, а `-runner-id` будет `PC1-c100`.
+
+Рекомендуемый editable pattern для C100 slow selected RTP:
+
+```bat
+@echo off
+set "SERVER=http://<VPS_IP>"
+set "LOADGEN_KEY=byod_loadgen_key_01"
+set "RUNNER_ID=PC1"
+set "START_AT=now"
+set "LISTENERS=100"
+set "SETUP=c%LISTENERS%"
+mkdir "out\%RUNNER_ID%_%SETUP%" 2>nul
+byod-loadgen.exe ^
+  -profile vps-nginx ^
+  -mode livekit-subscribe-discard-rtp ^
+  -subscribe-mode selected ^
+  -server %SERVER% ^
+  -listeners %LISTENERS% ^
+  -start-at %START_AT% ^
+  -start-mode burst ^
+  -burst-size 5 ^
+  -burst-interval-ms 5000 ^
+  -hold-sec 1000 ^
+  -target-wait-sec 30 ^
+  -backend-connect-timeout-sec 15 ^
+  -runner-id %RUNNER_ID%-%SETUP% ^
+  -loadgen-key %LOADGEN_KEY% ^
+  -out-dir out\%RUNNER_ID%_%SETUP%
+```
 
 Portable package включает этот же `README.md` как главный manual. Отдельный полный `README_RU.md` или `PORTABLE_RU.md` не используется как основная инструкция.
 
