@@ -3,9 +3,8 @@
 This repository contains the full technical specification of the BYOD Audio Distribution System.
 
 Current status: MVP10 supports a single-node Ubuntu Server 22.04 LTS VPS pilot
-with self-hosted LiveKit. Stage X is completed; Stage XI load and capacity
-characterization has an initial Protocol/engine tooling baseline; real VPS
-measurement runs are pending.
+with self-hosted LiveKit. Stage X and Stage XI are completed for current MVP
+pilot risk; Stage XII technology discussion and decisions are next.
 
 IMPORTANT:
 1. Read hard_rules.md first
@@ -66,8 +65,9 @@ Canonical spec docs:
 - `docs/13_ubuntu_deploy_contract.md`
 - `docs/21_backend_logging_contract_stage_x.md`
 
-Completed-stage snapshot:
+Completed-stage snapshots:
 - `legacy/stage_x_ubuntu_pilot/`
+- `legacy/stage_xi_load_capacity/`
 
 The current BYOD VPS deploy is public-IPv4 and HTTP-only without a domain. Domain setup, TLS,
 production monitoring, scaling, load balancing, and multi-node deployment are
@@ -75,15 +75,19 @@ future production-hardening work.
 
 ## Stage XI — Protocol/engine load measurement
 
-Stage XI tooling baseline is implemented for **Protocol/engine load only**.
-Browser/Web Listener UI load testing is explicitly out of scope and is
-postponed to future Web Listener UI hardening. The goal is VPS resource
-characterization: CPU, RAM, network RX/TX, disk, and backend/LiveKit/nginx
-behavior under increasing Listener count. The tooling includes Go LiveKit SDK loadgen, 
-a VPS Analyzer, and a local-only backend metrics endpoint.
+Stage XI is completed for current MVP pilot risk. The latest useful result is
+documented in `docs/22_stress_tests.md`: approximately 695 emulated listener
+participants were reached on the tested cloud.reg.ru VPS, with one real Web
+Listener open separately and audio remaining present during observed load.
 
-Permanent test manual:
+This is **Protocol/engine load only**. Browser/Web Listener UI mass-load testing
+and a 2000-listener certificate remain future scaling/hardening work.
+
+Permanent test manual and canonical result:
 - `docs/22_stress_tests.md`
+
+Historical snapshot:
+- `legacy/stage_xi_load_capacity/`
 
 Loader manual:
 - `tools/load_test/README.md`

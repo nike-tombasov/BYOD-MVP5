@@ -11,11 +11,13 @@
 - **Stage VII** — Backend hardening baseline — **DONE** (April 13, 2026).
 - **Stage VIII** — Listener room_status rules finalization — **DONE** (April 14, 2026).
 - **Stage IX** — Listener resilience & compatibility — **DONE** (April 19, 2026).
+- **Stage X** — Ubuntu 22.04 LTS single-VPS pilot — **DONE**.
+- **Stage XI** — Protocol/engine load and capacity characterization — **DONE** (latest useful result: June 23, 2026).
 
 ### 14.2 Current active stage
 
-- **Active:** Stage X (VPS deploy package & operator manuals).
-- **Why now:** Stage IX baseline is closed and accepted; next blocking scope is deploy/runbook packaging.
+- **Active/next:** Stage XII (Technology discussion and decisions).
+- **Why now:** Stage X deploy packaging and Stage XI MVP-risk load characterization are closed; next scope is architecture/technology decisions and hardening discussion.
 
 ### 14.3 Stage VII completion snapshot
 
@@ -44,16 +46,35 @@ Delivered in Stage IX:
 3) deterministic reconnect triggers and availability UX states;
 4) race-hardening baseline for listener attach/detach flow.
 
-### 14.6 Current postponements
+### 14.6 Stage X completion snapshot
+
+Delivered in Stage X:
+1) Ubuntu 22.04 LTS single-VPS deploy package;
+2) nginx/backend/LiveKit systemd deployment path;
+3) operator diagnostics and troubleshooting baseline.
+
+### 14.7 Stage XI completion snapshot
+
+Delivered in Stage XI:
+1) protocol/engine load and capacity characterization completed for current MVP risk;
+2) latest useful result documented in `docs/22_stress_tests.md`;
+3) approximately 695 emulated listener participants reached on the tested VPS;
+4) one real Web Listener remained usable during observed load;
+5) browser/Web Listener mass testing was not performed;
+6) the 2000-listener target remains future scaling work, not an MVP requirement.
+
+### 14.8 Current postponements
 
 - Unresolved bug **20.1** is **POSTPONED until VPS pilots end**.
 - Real backend recording implementation is moved to future features.
 
-### 14.7 Canonical references
+### 14.9 Canonical references
 
 This file is a status/history summary.
 Normative behavior is pinned in permanent docs:
 - backend architecture/semantics: `docs/08_backend.md`;
 - listener behavior: `docs/09_listener_ui.md`;
 - WS wire protocol: `docs/15_ws_schema_v1.md`;
-- LiveKit version baseline: `docs/06_livekit_engine.md`.
+- LiveKit version baseline: `docs/06_livekit_engine.md`;
+- Ubuntu deploy contract: `docs/13_ubuntu_deploy_contract.md`;
+- stress-test specification and latest useful result: `docs/22_stress_tests.md`.

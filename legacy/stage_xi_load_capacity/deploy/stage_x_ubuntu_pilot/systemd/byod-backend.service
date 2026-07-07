@@ -1,0 +1,20 @@
+[Unit]
+Description=BYOD backend (FastAPI/uvicorn)
+After=network.target byod-livekit.service
+Wants=byod-livekit.service
+
+[Service]
+Type=simple
+User=byod
+Group=byod
+WorkingDirectory=/opt/byod/app
+EnvironmentFile=/opt/byod/config/backend.env
+ExecStart=/opt/byod/app/.venv/bin/uvicorn backend.main:app --host ${BYOD_BACKEND_HOST} --port ${BYOD_BACKEND_PORT}
+Restart=always
+RestartSec=2
+StandardOutput=append:/opt/byod/logs/backend.stdout.log
+StandardError=append:/opt/byod/logs/backend.stderr.log
+LimitNOFILE=200000
+
+[Install]
+WantedBy=multi-user.target

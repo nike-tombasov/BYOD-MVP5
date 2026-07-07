@@ -1,14 +1,14 @@
 # Roadmap for next MVP stages (after successful Stage V)
 
-## Status on June 15, 2026
+## Status on June 23, 2026
 - Stage V is completed and stable for core multi-publisher / multi-listener baseline.
 - Stage VI is completed (Publisher UI hardening).
 - Stage VII is completed (backend architecture hardening baseline).
 - Stage VIII is completed (Listener room status behavior baseline).
 - Stage IX is completed (Listener resilience baseline).
 - Stage X is completed (Ubuntu 22.04 LTS single-VPS pilot).
-- Current active stage is Stage XI: Protocol/engine load and capacity
-  characterization on a concrete VPS.
+- Stage XI is completed (protocol/engine load and capacity characterization).
+- Current active/next stage is Stage XII: Technology discussion and decisions.
 
 ---
 
@@ -101,37 +101,29 @@ Canonical deploy package:
 
 ## Stage XI — Load and Capacity Characterization on a Concrete VPS (Priority 6)
 
-### Status
-Initial tooling baseline implementing; real VPS measurement runs and final
-capacity characterization are still pending.
+### Result (completed)
 
-### Main target
-Measure and characterize how the concrete single-VPS pilot environment consumes
-CPU, RAM, network RX/TX, and disk under increasing Listener count using
-Protocol/engine load only. Stage XI compares resource usage curves, observed
-stable ranges, observed degradation points, and observed failure modes across
-VPS configurations. Browser/Web Listener UI load testing is out of scope and
-belongs to future Web Listener UI hardening.
+Stage XI is completed for current MVP pilot risk.
 
-### Planned work
-1) measure the observed stable range on the selected VPS;
-2) maintain the permanent specification in `docs/22_stress_tests.md`;
-3) implement Go LiveKit SDK loadgen;
-4) implement `95_metrics_analyzer.sh start|stop|status`, backed by systemd (IMPLEMENTED);
-5) evaluate LiveKit API metrics and provide the local-only backend endpoint
-   `/admin/metrics_snapshot` as fallback;
-6) collect CPU, RAM, network, WebRTC, LiveKit, and backend metrics under load;
-7) classify runs as VALID RUN, PARTIAL RUN, or INVALID RUN for analysis quality;
-8) produce a reproducible test procedure and results report for that VPS.
+Delivered:
+1) Go LiveKit protocol/engine loadgen baseline;
+2) VPS metrics analyzer and local backend metrics endpoint baseline;
+3) gate-based stress-test specification in `docs/22_stress_tests.md`;
+4) useful VPS stress result on cloud.reg.ru VPS, reaching approximately 695 emulated listener participants;
+5) conclusion that the tested single-VPS setup is sufficient for current MVP pilot risk.
 
-Loader, Analyzer, service wrapper, deploy support, and backend metrics endpoint
-have an initial implementation baseline. Stage XI is not complete until actual
-VPS profiles are measured and documented.
+Observed latest useful result (23.06.2026):
+- VPS: cloud.reg.ru, 3 vCPU × 2.2 GHz, NVMe, 3 GB RAM, 10 GB SSD;
+- one real Web Listener was open separately and audio did not disappear during observed load;
+- peak CPU approximately 22.33%, RAM approximately 2.073 / 2.898 GB, TX approximately 54.937 Mbps.
 
-### Exit criteria
-- resource usage curves, observed stable range, observed degradation point,
-  observed failure mode, and a safe operating envelope are measured and
-  documented for the tested VPS
+Limitations:
+- not browser/Web Listener mass-load testing;
+- not a 2000-listener certificate;
+- further scaling characterization is deferred.
+
+Canonical result:
+- `docs/22_stress_tests.md`
 
 ---
 
