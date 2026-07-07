@@ -121,3 +121,16 @@ Include:
 * legacy/stage_ix/backend/transport/admin_api.py
 * legacy/stage_ix/listener/index.html
 * legacy/stage_ix/listener/listener.js
+
+## Stage XI
+
+Stage XI completed protocol/engine load and capacity characterization for current MVP pilot risk and preserved the single-VPS deploy/backend/listener/loadgen state used after finalization.
+
+Include:
+* legacy/stage_xi_load_capacity/README.md
+* legacy/stage_xi_load_capacity/deploy/stage_x_ubuntu_pilot/
+* legacy/stage_xi_load_capacity/backend/
+* legacy/stage_xi_load_capacity/listener/
+* legacy/stage_xi_load_capacity/tools/go_livekit_loadgen/
+* legacy/stage_xi_load_capacity/docs/22_stress_tests.md
+

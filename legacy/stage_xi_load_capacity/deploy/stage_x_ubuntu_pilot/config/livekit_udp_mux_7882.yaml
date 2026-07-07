@@ -1,0 +1,11 @@
+# Fallback profile: use only if the wide UDP range profile causes provider/VPS problems.
+# Primary stress profile remains livekit.yaml with 50000-59999/udp.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: true
+keys:
+  REPLACE_API_KEY: REPLACE_API_SECRET

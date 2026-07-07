@@ -42,3 +42,40 @@ Rules for docs/14_open_issues.md:
 5) Compact per-worker final state artifact
 - current `VALID_RUN` summaries can be trusted at summary level, but when detailed events are deleted it is hard to re-check every worker;
 - future improvement: add compact `workers_final_state.csv` or equivalent.
+
+### 15.4 Документационные разрывы между спецификацией и текущей реализацией
+
+Эти пункты фиксируют известные разрывы между текущей спецификацией и реализацией. Они не являются срочными runtime-исправлениями: MVP-система сейчас работает достаточно стабильно, а изменения в backend/listener/deploy-коде по этим темам могут быть рискованнее, чем сохранение текущего поведения. Вернуться к ним можно позже при архитектурном и спецификационном hardening.
+
+1) WS envelope `ts`
+- `docs/15_ws_schema_v1.md` описывает `ts` как обязательное поле каждого envelope.
+- Текущая backend/listener-валидация не навязывает `ts` строго; runtime оставляем без изменений.
+
+2) WS `client_role` в payload `connecting`
+- Спецификация показывает `client_role` для Listener/Publisher `connecting`.
+- Текущий backend не валидирует `client_role` строго; runtime оставляем без изменений.
+
+3) `request_on_air_ts` / `request_off_air_ts`
+- Спецификация говорит, что эти timestamps сохраняются для логирования, и упоминает freshness/age-логику.
+- Текущий runtime в основном опирается на порядок приёма backend и backend-время, без старого правила 30 секунд; для MVP это приемлемо, interlock-логику сейчас не меняем.
+
+4) Runtime session fields vs logs
+- Часть формулировок backend-спецификации всё ещё выглядит так, будто publisher/listener IP/timestamps являются постоянной DB-моделью.
+- В текущей реализации часть этих данных является runtime-only или JSONL diagnostic log data; уточнить позже без изменения кода.
+
+5) Listener diagnostic/loadgen fields
+- Текущий Listener/loadgen `connecting` payload может включать необязательные diagnostic fields: `client_type`, `runner_id`, `loader_run_id`, `worker_id`, `loadgen_key` и т.п.
+- Каноническая WS-схема пока не полностью описывает эти optional поля; protocol/runtime оставляем без изменений.
+
+6) Logging event names
+- Logging contract и фактические event names в коде не полностью нормализованы, например `listener_disconnected` vs текущие listener close/stale events.
+- Сейчас не переименовываем существующие log events.
+
+7) Owner state after backend restart
+- Текущая persistence может восстановить owner mappings из runtime state.
+- Если backend перезапущен без соответствующих live publisher sessions, operator recovery может требовать явный `off_air`; startup reconciliation сейчас не меняем.
+
+8) Listener rapid channel switching
+- `tbd.md` отмечает отсутствие формального debounce/backoff policy.
+- Текущий Listener имеет attach/detach busy guards и timeout protection, но без формального debounce contract; оставить как будущий UI hardening/documentation issue.
+
