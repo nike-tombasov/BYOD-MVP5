@@ -1,269 +1,111 @@
-# Stress/load testing architecture — MVP11
+# Stress-test specification and latest useful result
 
-This document is the single active guide for BYOD MVP11 stress/load testing architecture. It defines the future Windows-first Go LiveKit SDK load generator, the mandatory validation gates, and the metrics required for trusted capacity characterization.
+## 1. Purpose and scope
 
-## 1. Current status
+BYOD stress/load testing measures how the backend listener admission path, LiveKit connection path, media subscription path, and VPS host resources behave under many emulated listener participants. The goal is to find usable MVP risk signals and bottlenecks from correlated loadgen output, backend/nginx/LiveKit logs, and VPS metrics.
 
-- The previous Windows/Python portable loader has been frozen as **Legacy** under `legacy/stage_xi_failed_python_loader/`.
-- The Legacy Python loader is **not valid** for formal capacity characterization, MVP11 acceptance, or VPS scaling decisions.
-- It is retained only as a forensic/protocol reference for understanding the listener protocol, old counters, and observed failure modes.
-- The active future architecture is a **Windows-first Go LiveKit SDK loadgen**.
-- Do not use `python tools/load_test/byod_listener_loader.py` as an active capacity-testing command. The old Python commands are intentionally absent from this active guide.
-- This PR documents architecture only: it does not implement the Go loadgen, does not change backend runtime logic, does not change nginx runtime scripts, and does not change LiveKit runtime config.
+Protocol/engine loadgen is not browser UI load testing. It does not prove browser rendering, autoplay behavior, audio output device behavior, CSS/layout stability, or human-facing Listener UX under mass browser load.
 
-## 2. Scope and non-goals
+One or several real Web Listeners may be kept open during a stress run as monitoring clients. That is useful for operator observation, but it is separate from mass browser/Web Listener testing.
 
-Stage XI/Protocol-engine load is not browser UI load. A loadgen worker emulates the backend listener protocol and, in LiveKit modes, the LiveKit participant/media behavior needed for capacity measurement. It does not validate Web Listener UI rendering, browser audio output, browser autoplay behavior, CSS/layout, or human-facing UX.
+Infrastructure ports, nginx capacity settings, and Ubuntu deploy contract are documented in deploy docs and will be canonicalized separately.
 
-Browser/Web Listener UI mass testing is out of scope. One or two real browser listeners may be used as monitoring clients during VPS tests, but thousands of browser tabs are not part of this plan.
+## 2. Current canonical loadgen
 
-The loadgen must not require PIN. It must use the normal listener backend protocol and backend admission path that real listeners use after the relevant room/channel has been configured. The loadgen must not use the Publisher endpoint and must not use an admin token endpoint to bypass backend admission.
+The current canonical load generator is the Go loadgen under `tools/go_livekit_loadgen/`.
 
-`/admin/metrics_snapshot` remains local-only and must not be exposed through nginx. It can be read on the VPS host for diagnostics, analyzer inputs, or operator checks, but it is not a public loadgen API.
+The Python loader is legacy and is not canonical for current capacity conclusions. Historical Python outputs may be useful as forensic context only; they should not be used as the source for current MVP capacity claims.
 
-## 3. Overall MVP11 capacity goal
+The Go loadgen goes through the normal backend listener admission path. It connects as a listener worker, receives the backend-issued LiveKit data when the selected gate needs it, and does not bypass the normal listener admission flow for capacity conclusions.
 
-MVP-level acceptance succeeds when one VPS sustains **500 emulated listeners for 10 minutes** without observed degradation.
+## 3. Gates
 
-An **emulated listener** means:
+### Gate A: `backend-ws-only`
 
-- backend listener WebSocket connected;
-- LiveKit token received;
-- LiveKit RTC connection established in LiveKit modes;
-- for media mode, audio track subscribed and RTP packets read/discarded;
-- heartbeat maintained during HOLD.
+Gate A proves that the backend WebSocket listener path can admit workers, keep the listener protocol alive, and hold backend connections for the requested HOLD window. When run with the `vps-nginx` profile, nginx is part of the backend WebSocket path.
 
-Bonus/non-blocking scaling confidence target: up to **2000 active emulated listeners** with 1–2 publishers and 1–2 real browser listeners. The 2000 target is not required to pass MVP on the current small VPS; hitting VPS capacity is acceptable if the bottleneck and metrics are measured. The point of the 2000 target is to verify architectural scalability and expose the next bottleneck after the old 382 WebSocket ceiling.
+Gate A does not prove LiveKit signaling, WebRTC ICE, audio publication discovery, subscription, RTP receive, browser audio, or media egress capacity.
 
-Raw metrics remain more important than a single pass/fail label. A clean failure with trustworthy metrics is more useful than a green label from an untrusted generator.
+### Gate B: `livekit-connect-only`
 
-## 4. Important capacity distinction
+Gate B proves that workers can pass backend admission, obtain backend-issued LiveKit connection data, and connect to LiveKit as participants. It measures the backend + LiveKit signaling/participant connection path without media subscription.
 
-`target_capacity` is room/listener business capacity, not the raw WebSocket file-descriptor ceiling. Do not change the current backend default `DEFAULT_TARGET_CAPACITY = 200` in this documentation/relocation PR.
+Gate B does not prove audio subscription, RTP packet flow, Opus decode, browser audio output, or real browser UI behavior.
 
-For stress events, operator/imported room config may raise the room target manually. WebSocket/server limits must have separate headroom for:
+### Gate C: `livekit-subscribe-discard-rtp`
 
-- listeners;
-- publishers;
-- real browser monitoring;
-- admin UI;
-- metrics/smoke/diagnostic clients;
-- reconnect overlap.
+Gate C proves that workers can pass backend admission, connect to LiveKit, subscribe to audio according to the configured subscribe mode, receive RTP packets, and discard RTP payloads without decoding or playing audio.
 
-Future runtime implementation should support at least:
+Gate C is media-engine load, not browser playback. It does not prove that hundreds of real browser tabs render and play audio correctly.
 
-- required minimum: 500 emulated listeners plus service headroom;
-- ideal stress ceiling: 2000 emulated listeners plus service headroom;
-- acceptable formula: either explicit 2000+ peer ceiling or `target_capacity * 1.5` with safe lower/upper bounds.
+## 4. Run classification
 
-Do not make `target_capacity` the only raw WS ceiling. Future stress override policy should be controlled, explicit, and loadgen-only where appropriate; it must not silently weaken production listener admission semantics.
+`VALID_RUN` means the run reached the gate-specific required target, completed HOLD, and produced enough terminal worker and metric data to trust the result at summary level.
 
-## 5. Mandatory loadgen gates
+`PARTIAL_RUN` means the run collected useful capacity or degradation data, but did not fully satisfy the requested gate target or HOLD contract.
 
-The future Go loadgen must implement these gates in order. A later gate is not considered meaningful until the earlier gate is understood for the same endpoint profile and target range.
+`INVALID_RUN` means setup, generator, local machine, configuration, or missing metrics made the run unreliable for capacity interpretation.
 
-### Gate A — backend-ws-only
+Shortfall stages identify where the first target gap appeared:
 
-Purpose:
+- `backend` — workers did not all reach the backend WebSocket/listener path;
+- `livekit` — backend admission happened, but LiveKit participant connection did not reach target;
+- `audio` — LiveKit connection happened, but workers did not all subscribe to an expected audio track;
+- `rtp` — audio subscription happened, but workers did not all receive RTP packets.
 
-- Tests nginx/backend WebSocket admission, heartbeat, rate limits, stale cleanup, and backend metrics.
-- Does not connect to LiveKit.
-- Must support local-direct and vps-nginx endpoint profiles.
-- Must not stall in a local LAN test without nginx.
+Terminal worker events matter because a run can look successful in aggregate while some workers are still pending, cancelled, or missing final state. `workers_without_terminal_event=0` means every started worker produced a terminal event, making the final summary much easier to trust.
 
-Validity:
+## 5. Required artifacts for useful stress analysis
 
-- connected backend WS count reaches requested target;
-- heartbeats continue during HOLD;
-- backend reject counters and close codes are summarized;
-- HOLD duration completes or failure mode is clearly logged.
+A useful stress run should preserve:
 
-### Gate B — livekit-connect-only
+- loadgen `summary_*.json`;
+- loadgen `events_*.jsonl` when available;
+- VPS metrics from `/opt/byod/metrics`;
+- diagnostics from `/opt/byod/diagnostics`;
+- metrics snapshot, especially `/admin/metrics_snapshot` output when available from the VPS-local diagnostic path;
+- nginx, backend, and LiveKit tails when a run is partial, failed, suspicious, or close to a capacity boundary;
+- optional `btop` screenshot or equivalent operator-visible CPU/RAM/network observation.
 
-Purpose:
+## 6. Metrics principle
 
-- Tests backend WS plus LiveKit token issuance, LiveKit signaling, ICE, and participant connection.
-- Does not subscribe to audio tracks.
-- Measures LiveKit room/participant scale without media egress.
+Raw metrics are more important than a single green label. A `VALID_RUN` label is useful only when the raw counters and logs support it.
 
-Validity:
+Timestamps must be preserved. Stress analysis should correlate loadgen timestamps, backend events, nginx logs, LiveKit logs, VPS metrics, diagnostics snapshots, and operator observations. Do not strip timing data from bundles.
 
-- backend WS connected;
-- token received;
-- LiveKit room connected;
-- transport mode observed;
-- stable during HOLD.
+## 7. Latest useful stress-test result — 23.06.2026
 
-### Gate C — livekit-subscribe-discard-rtp
+The latest useful stress-test result for current MVP risk was observed on a `cloud.reg.ru` VPS.
 
-Purpose:
+VPS configuration:
 
-- Tests backend WS plus LiveKit participant plus audio subscription and actual media egress.
-- Must subscribe to selected audio track.
-- Must read RTP packets and immediately discard payload.
-- Must not decode Opus.
-- Must not use physical audio output.
+- 3 vCPU × 2.2 GHz;
+- NVMe;
+- 3 GB RAM;
+- 10 GB SSD.
 
-Validity:
+Available metrics show that the stress test reached approximately 695 listener participants. This was an emulated listener stress test, not a test of 695 real browser Web Listeners.
 
-- backend WS connected;
-- LiveKit room connected;
-- selected publication seen;
-- subscription requested;
-- track subscribed;
-- RTP packet counter grows during HOLD;
-- heartbeat maintained.
-
-Missing audio track is not automatically a VPS failure. In Gate C it may indicate publisher setup, channel selection, LiveKit publication timing, or loadgen subscription behavior. The run classification must explain the observed failure mode.
-
-## 6. Endpoint profiles
-
-```text
-local-direct
-  backend_base=http://127.0.0.1:8000
-  listener_ws=ws://127.0.0.1:8000/ws/listener
-  livekit_url normally ws://127.0.0.1:7880 or backend-issued equivalent
-  no nginx required
+One real Web Listener was kept open separately during the load. Audio did not disappear in that Web Listener during the observed load.
 
-vps-nginx
-  backend_base=http://<VPS_PUBLIC_IP>
-  listener_ws=ws://<VPS_PUBLIC_IP>/ws/listener
-  livekit_url normally ws://<VPS_PUBLIC_IP>:7880 from backend token response
-  nginx is part of the test path for backend WS
-```
+Observed host/network metrics:
 
-No domain and no HTTPS/WSS are assumed for the MVP11 public-IP pilot.
+- peak CPU: approximately `22.33%`;
+- RAM: approximately `2.073 / 2.898 GB`;
+- TX: approximately `54.937 Mbps`.
 
-## 7. Windows-first Go loadgen target
+This result is considered sufficient for current MVP pilot risk. It is not a capacity certificate for 2000 listeners, not proof that extreme burst joins are safe, and not proof that 695 real browser clients were tested.
 
-Future implementation target location:
+## 8. Current conclusion
 
-```text
-tools/go_livekit_loadgen/
-```
+VPS stress testing is sufficient for current MVP pilot risk.
 
-Initial operator workflow:
+Further scaling characterization is deferred. The future target remains 2000 listeners, but this is not required for MVP. The project should keep moving toward 2000 by finding and removing blockers step by step.
 
-- run from a Windows 10-11 developer/operator machine;
-- first from PyCharm/terminal using Go CLI + PowerShell `.ps1` helpers;
-- no Linux-first requirement;
-- no requirement for portable packaging in the first implementation;
-- portable one-folder package may be added after the tool is trusted;
-- keep commands simple and few.
+## 9. Known limitations
 
-Expected command shape, not implemented in this PR:
-
-```powershell
-.\run_loadgen.ps1 -Profile local-direct -Mode backend-ws-only -Server http://127.0.0.1:8000 -Listeners 500 -RampPerSec 50 -HoldSec 600 -RunnerId win-dev-1
-
-.\run_loadgen.ps1 -Profile vps-nginx -Mode livekit-connect-only -Server http://<VPS_PUBLIC_IP> -Listeners 500 -RampPerSec 25 -HoldSec 600 -RunnerId win-home-1
-
-.\run_loadgen.ps1 -Profile vps-nginx -Mode livekit-subscribe-discard-rtp -Server http://<VPS_PUBLIC_IP> -Listeners 500 -RampPerSec 10 -HoldSec 600 -RunnerId win-home-1
-```
-
-## 8. Protocol identity and channel invariants
-
-`runner_id` remains mandatory. The operator supplies it explicitly so every run can be separated in metrics, logs, and analyzer output.
-
-`worker_id` remains traceable. A recommended format is `<runner_id>-L<zero_padded_index>`, but the exact format may evolve if it remains stable and searchable.
-
-`client_type: "load_runner"` remains diagnostic metadata, not a general listener protocol change and not a privilege escalation. It helps separate loadgen clients from real browser listeners in logs and metrics.
-
-Fixed channel mode must fail fast if the channel is invalid. Silent fallback from fixed channel to random is forbidden because it makes capacity results impossible to interpret.
-
-Future loadgen-only reconnect throttle bypass must be explicitly enabled and must require both client_type="load_runner" and a static loadgen event key/ID. Default production behavior must remain protected.
-
-## 9. Live and final summaries required from future Go loadgen
-
-Live summary must include at least:
-
-- target listeners;
-- workers started;
-- backend WS connected;
-- backend WS failed/rejected;
-- LiveKit connected;
-- publication seen;
-- subscription requested;
-- track subscribed;
-- RTP packets per second;
-- RTP bytes per second;
-- UDP connections;
-- TCP connections;
-- UDP/TCP ratio;
-- reconnects;
-- disconnects;
-- current HOLD elapsed;
-- current error summary.
-
-Final summary must include at least:
-
-- requested mode;
-- endpoint profile;
-- target listeners;
-- ramp settings;
-- HOLD duration requested and actual;
-- backend connected total;
-- LiveKit connected total;
-- subscribed total;
-- RTP packet/byte totals for media mode;
-- UDP connections;
-- TCP connections;
-- UDP/TCP ratio;
-- first failure timestamp;
-- top error categories;
-- pass/partial/invalid classification;
-- generated log paths.
-
-TCP is allowed and must be measured. UDP/TCP ratio is diagnostic, not an automatic pass/fail by itself.
-
-Analyzer output remains CSV + JSONL + human-readable log. The future analyzer may consume Go loadgen output, backend metrics snapshots, LiveKit API snapshots, nginx logs, and host observations, but the durable output formats remain machine-readable CSV/JSONL plus an operator-readable log.
-
-## 10. HOLD and run classification
-
-HOLD is the steady-state observation period after ramp-up. During HOLD, workers must maintain heartbeat and the loadgen must report current connected/subscribed/media counters. HOLD is where CPU, RAM, network RX/TX, backend status, LiveKit status, nginx behavior, reconnects, and close/error codes are observed.
-
-```text
-VALID_RUN
-```
-
-The run reached the gate-specific target and held it for the requested HOLD duration with enough metrics to trust the result.
-
-```text
-PARTIAL_RUN
-```
-
-Some useful capacity/degradation data was collected, but the run did not fully satisfy the gate.
-
-```text
-INVALID_RUN
-```
-
-The load generator, local machine, setup, config, or metrics failed in a way that makes capacity interpretation unreliable.
-
-## 11. LiveKit UDP strategy for future implementation
-
-Intended future stress profile:
-
-- Primary stress UDP range: `50000-54000/udp`.
-- Reason: about 4001 UDP ports, enough for approximately 2000 peers if two UDP ports per participant are needed.
-- Fallback profile: `rtc.udp_port: 7882`, with firewall `7882/udp`, if wide UDP range causes VPS/provider/setup problems.
-- Do not switch to `7882/udp` as the first default in this PR.
-- Do not change actual config in this PR.
-
-The current stage pilot config may still use a narrower UDP range, and existing smoke/deploy scripts may still print older expectations. Those runtime files are intentionally not changed here; this document records the intended future stress profile.
-
-## 12. VPS/operator observations
-
-`btop` remains expected on the VPS for operator-visible CPU, memory, process, and network observation during stress events. Backend and LiveKit metrics should be captured near the same time as loadgen summaries whenever possible.
-
-Raw metrics remain more important than a single pass/fail label. Operators should preserve terminal output, generated logs, CSV/JSONL files, backend snapshots, and host observations for each run.
-
-## 13. Next implementation tasks
-
-1. Implement `tools/go_livekit_loadgen/`.
-2. Add future controlled loadgen-only bypass for per-IP reconnect throttle.
-3. Add future nginx full config/template with `worker_connections 65535`.
-4. Add future LiveKit config profile for `50000-54000/udp` and fallback `7882/udp`.
-5. Add future room config import helper script from `/tmp`.
-6. Add future simplified smoke test one-line-per-service output.
-7. Add future timestamp field `ts_iso` rounded to tenths of a second with Moscow timezone `+03:00`.
+- `71_collect_test_tails.sh` still needs real incident verification before it is treated as a trusted complete incident bundle collector.
+- Live stress watch UDP/TCP counters are approximate and may need log-level correlation for final forensic transport accounting.
+- Browser/Web Listener mass testing was not performed.
+- A compact per-worker final state artifact, such as `workers_final_state.csv`, is still desirable for later re-checks when detailed events are removed.
+- The 2000 listener goal remains future work, not an MVP requirement.

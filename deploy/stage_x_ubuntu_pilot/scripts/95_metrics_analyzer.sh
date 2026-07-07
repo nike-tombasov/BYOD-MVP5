@@ -5,11 +5,11 @@ SERVICE_NAME="byod-metrics-analyzer.service"
 METRICS_DIR="/opt/byod/metrics"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HELPER_PATH="${SCRIPT_DIR}/metrics_analyzer.py"
-INTERVAL_SEC="120"
+INTERVAL_SEC="10"
 
 usage() {
   cat <<EOF
-Usage: sudo bash $0 start [--interval-sec 120]
+Usage: sudo bash $0 start [--interval-sec 10]
        sudo bash $0 stop
        sudo bash $0 status
 EOF
@@ -87,6 +87,10 @@ case "${ACTION}" in
   status)
     systemctl status "${SERVICE_NAME}" --no-pager -l || true
     echo "Metrics output: ${METRICS_DIR}"
+    if systemctl cat "${SERVICE_NAME}" >/dev/null 2>&1; then
+      current_interval="$(systemctl cat "${SERVICE_NAME}" 2>/dev/null | sed -n 's/.*--interval-sec \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+      echo "Current interval: ${current_interval:-unknown} seconds"
+    fi
     ;;
   *)
     usage

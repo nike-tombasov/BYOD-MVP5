@@ -1,4 +1,4 @@
-# Backend-only dependencies for Ubuntu VPS Stage X pilot
+# Backend-only dependencies for BYOD VPS backend
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
 websockets==13.1
@@ -6,3 +6,4 @@ pyjwt==2.10.1
 livekit==1.1.5
 livekit-api==1.1.0
 python-multipart==0.0.20
+

@@ -4,9 +4,21 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
+from backend.config import LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS, LOADGEN_RECONNECT_BYPASS_ENABLED
+from backend.console.commands import process_console_command
 from backend.importers.room_config_json import parse_room_config_json_bytes
 from backend.services.room_service import RoomService
 from backend.services.state_service import StateService
+from backend.persistence.storage import JsonStorage
+
+
+def require_local_request(request: Request) -> None:
+    client_host = request.client.host if request.client else ""
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    forwarded_hosts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+    loopback_hosts = {"127.0.0.1", "::1", "localhost", "testclient"}
+    if client_host not in loopback_hosts or any(host not in loopback_hosts for host in forwarded_hosts):
+        raise HTTPException(status_code=403, detail="local_only")
 
 
 def build_admin_router(state_service: StateService, room_service: RoomService, state_lock: Any, broadcast_cb: Any) -> APIRouter:
@@ -17,7 +29,8 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
         return {"status": "ok"}
 
     @router.post("/admin/import_json")
-    async def import_json(file: UploadFile = File(...)) -> dict[str, Any]:
+    async def import_json(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+        require_local_request(request)
         content = await file.read()
         result = parse_room_config_json_bytes(content)
         if result.errors:
@@ -39,7 +52,8 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
         }
 
     @router.get("/admin/check_ws_compat")
-    async def check_ws_compat() -> dict[str, Any]:
+    async def check_ws_compat(request: Request) -> dict[str, Any]:
+        require_local_request(request)
         channels_snapshot = [dict(channel) for channel in state_service.state.channels]
         publisher_state = state_service.build_publisher_state_snapshot(channels_snapshot)
         listener_state = state_service.build_listener_state_snapshot(channels_snapshot)
@@ -74,16 +88,11 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
     async def metrics_snapshot(request: Request) -> dict[str, Any]:
         """Local-only machine-readable backend metrics for the VPS Analyzer.
 
-        The Stage X nginx configuration intentionally does not proxy this path.
+        The VPS nginx configuration intentionally does not proxy this path.
         The payload contains counts and diagnostic labels only; it must not
         include tokens, PINs, API secrets, or private environment dumps.
         """
-        client_host = request.client.host if request.client else ""
-        forwarded_for = request.headers.get("x-forwarded-for", "")
-        forwarded_hosts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
-        loopback_hosts = {"127.0.0.1", "::1", "localhost"}
-        if client_host not in loopback_hosts or any(host not in loopback_hosts for host in forwarded_hosts):
-            raise HTTPException(status_code=403, detail="local_only")
+        require_local_request(request)
 
         async with state_lock:
             now_ts = state_service.now_ts()
@@ -116,11 +125,13 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
                 for channel in state_service.state.channels
             ]
             snapshot = {
-                "ts": now_ts,
+                **JsonStorage.timestamp_fields_for_ts(now_ts),
                 "room_status": state_service.runtime.room_status,
                 "target_capacity": state_service.runtime.target_capacity,
                 "max_active_listeners": state_service.runtime.max_active_listeners,
                 "max_new_connections_per_sec": state_service.runtime.max_new_connections_per_sec,
+                "loadgen_reconnect_bypass_enabled": LOADGEN_RECONNECT_BYPASS_ENABLED,
+                "listener_min_reconnect_interval_per_ip_seconds": LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS,
                 "backend_publishers_count": len(publishers),
                 "backend_listeners_count": len(listeners),
                 "backend_active_play_count": active_play_count,
@@ -135,5 +146,21 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
         livekit_snapshot = await room_service.get_livekit_participant_snapshot()
         snapshot.update(livekit_snapshot)
         return snapshot
+
+    @router.post("/admin/console_command")
+    async def console_command(request: Request) -> dict[str, Any]:
+        require_local_request(request)
+        body = await request.json()
+        command = body.get("command") if isinstance(body, dict) else None
+        if not isinstance(command, str) or not command.strip():
+            raise HTTPException(status_code=422, detail="command_required")
+        result = await process_console_command(
+            line=command,
+            state_service=state_service,
+            room_service=room_service,
+            state_lock=state_lock,
+            broadcast_cb=broadcast_cb,
+        )
+        return {"ok": True, "command": command, "result": result}
 
     return router

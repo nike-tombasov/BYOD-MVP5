@@ -322,29 +322,65 @@ Runtime text mutation is not used in current project.
 
 ### 9.15. Protection from unwanted room overflow by Listeners
 
-Для MVP Stage VII-IX вводятся базовые защитные лимиты:
+Backend uses baseline protective limits for Listener admission and room overflow control. В normal event setup
+оператор задаёт `target_capacity` в room config JSON; Python constants на VPS
+обычно не редактируются. Формулу полезно видеть целиком, но при temporary
+stress/emergency tuning менять только финальный override через env/drop-in.
+
+| Variable / value | Meaning |
+|---|---|
+| `target_capacity` | Normal event sizing from imported room config JSON. Clean deploy/no import uses code fallback `DEFAULT_TARGET_CAPACITY`. |
+| `max_active_listeners` | Derived active Listener hard limit; normally `int(target_capacity * 1.05)`. |
+| `BYOD_MAX_ACTIVE_LISTENERS_OVERRIDE` | Optional temporary hard override for `max_active_listeners`; normally unset. |
+| `max_new_connections_per_sec` | Global backend Listener admission rate, derived from `target_capacity` unless override is set. |
+| `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` | Temporary stress/emergency override for global Listener admission rate; normally unset. |
+| `MAX_NEW_CONNECTIONS_PER_SEC_MIN` | Code default minimum in current implementation: `1`. |
+| `MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR` | Code default divisor in current implementation: `15.0`. |
+| `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` | Per-IP Listener connect/reconnect throttle. Default `2`; set `0` to disable this specific per-IP throttle. |
+| `BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED` | Controlled stress/load-test bypass for the per-IP reconnect throttle; not for real production/event traffic. |
+| `BYOD_LOADGEN_RECONNECT_BYPASS_KEY` | Shared key required by controlled load generators when bypass is enabled. |
 
 1) Hard limit active listeners:
-- `max_active_listeners = target_capacity * 1.05`
+- `max_active_listeners` is derived from `target_capacity` unless
+  `BYOD_MAX_ACTIVE_LISTENERS_OVERRIDE` is set;
 - при превышении новых listeners не подключать (возврат отказа подключения).
 
 2) Rate-limit new connections:
-- `max_new_connections_per_sec` — глобальный backend Listener admission rate;
-- baseline: `max(1, target_capacity / 15)` новых Listener подключений в секунду.
+
+```text
+max_new_connections_per_sec =
+  BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE
+  if BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE is set,
+  else max(MAX_NEW_CONNECTIONS_PER_SEC_MIN,
+           int(target_capacity / MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR))
+```
+
+Current defaults:
+
+```text
+MAX_NEW_CONNECTIONS_PER_SEC_MIN = 1
+MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR = 15.0
+```
+
+Normally do not edit the formula. `MAX_NEW_CONNECTIONS_PER_SEC_MIN` and
+`MAX_NEW_CONNECTIONS_PER_SEC_DIVISOR` are code defaults in current
+implementation, not operator env variables. For normal event sizing, prefer
+correct `target_capacity` in room config JSON. For practical VPS temporary
+stress/emergency tuning, change only `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE`
+to the final desired number and restart `byod-backend`.
 
 3) Per-IP reconnect/connect interval:
-- `listener_min_reconnect_interval_per_ip_seconds` — per-IP Listener
+- `BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS` — per-IP Listener
   connect/reconnect throttle;
 - baseline: `2 sec`;
+- `0` disables this specific per-IP throttle;
 - при NAT, public Wi-Fi или hotel networks несколько реальных пользователей
   могут выглядеть для backend как один public IP;
 - этот лимит может складываться с `max_new_connections_per_sec`: сначала
   действует global new Listener connection rate, затем per-IP interval;
-- это intentional protection, но оно должно быть adjustable для stress tests
-  и event emergency operations.
-- Важные emergency/stress числа сгруппированы в верхнем operator block
-  `src/backend/config.py`: изменить цифру, затем выполнить restart
-  `byod-backend`.
+- loadgen bypass (`BYOD_LOADGEN_RECONNECT_BYPASS_ENABLED` +
+  `BYOD_LOADGEN_RECONNECT_BYPASS_KEY`) is only for controlled stress/load tests,
+  not for real production/event traffic.
 
 4) Active PLAY heartbeat control:
 - после успешного backend WS connect backend ждёт `60 sec` первого ACTIVE PLAY trigger;
@@ -365,3 +401,59 @@ Runtime text mutation is not used in current project.
 
 Примечание:
 - точные численные лимиты могут уточняться по результатам VPS stress test, но вышеуказанные значения считаются MVP baseline.
+
+### 9.16. Backend endpoints
+
+The current backend exposes only the endpoints below. The VPS nginx contract must keep `/admin/*` local-only and must not proxy admin paths publicly.
+
+| Method | Path | Boundary | Purpose | Input/output shape |
+|---|---|---|---|---|
+| `GET` | `/health` | May be public through nginx. | Lightweight backend health check. | Returns `{"status":"ok"}`. |
+| `POST` | `/admin/import_json` | Local-only; nginx must not expose `/admin/*`. | Imports and validates room config JSON, applies it to runtime state, persists state, and broadcasts updated state. | Multipart form upload field `file`; returns `{"ok": false, "errors": [...]}` or `{"ok": true, "applied": {"room_name": ..., "target_capacity": ..., "max_active_listeners": ..., "max_new_connections_per_sec": ..., "channels": ...}}`. |
+| `GET` | `/admin/check_ws_compat` | Local-only; nginx must not expose `/admin/*`. | Builds Publisher and Listener state snapshots and verifies required schema keys for WebSocket compatibility. | Returns booleans such as `ok`, `publisher_state_ok`, `listener_state_ok`, plus schema versions. |
+| `GET` | `/admin/metrics_snapshot` | Local-only; nginx must not expose `/admin/*`. | Provides machine-readable backend and LiveKit diagnostic counters for VPS metrics tooling. It must not include tokens, PINs, API secrets, or private environment dumps. | Returns `ts`, `timestamp_local`, `timestamp_utc`, room limits/status, backend session counts, reject counters, per-channel activity, and LiveKit participant diagnostics. |
+| `POST` | `/admin/console_command` | Local-only; nginx must not expose `/admin/*`. | Executes an existing backend console command through the supported VPS control path. | JSON body `{"command":"help"}`; returns `{"ok": true, "command": "...", "result": "..."}`. |
+| `WS` | `/ws/publisher` | Public WebSocket path through nginx. | Publisher WebSocket protocol for connect, heartbeat, ON AIR, and stop/off-air interactions. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and state updates. |
+| `WS` | `/ws/listener` | Public WebSocket path through nginx. | Listener WebSocket protocol for connect, heartbeat, admission control, LiveKit token delivery, and reconnect-required signaling. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and listener state updates. |
+
+Security notes:
+- `/admin/*` endpoints enforce local-request checks in backend code and are local-only operational surfaces.
+- nginx must expose only intended public paths (`/`, `/health`, `/ws/listener`, `/ws/publisher`) and must not expose `/admin/*`.
+- Do not place secrets, PINs, API keys, or token examples in endpoint documentation or diagnostics output.
+
+### 9.17. Backend console commands
+
+Backend console commands are implemented in code and are available through the local-only admin endpoint. On VPS, operators must not type into systemd stdin. The supported VPS path is:
+
+```text
+POST http://127.0.0.1:8000/admin/console_command
+```
+
+The operator helper is:
+
+```bash
+sudo bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/67_backend_console_command.sh help
+```
+
+Raw local endpoint shape:
+
+```json
+{"command":"help"}
+```
+
+Current commands:
+
+| Command | Description |
+|---|---|
+| `help` | Print the supported command list. |
+| `status` | Return room status, recording state, channel count, publisher/listener counts, target capacity, and derived listener admission limits. |
+| `set_room_status <OPENED|BLOCKED|CLOSED>` | Change room status, persist state, and broadcast updated state. |
+| `start_recording` | Mark recording active and persist recording/runtime state. |
+| `stop_recording` | Mark recording inactive and persist recording/runtime state. |
+| `set_channel_label <channel_id> <new_label>` | Update a channel label, persist state, log the change, and broadcast updated state. |
+| `set_listen <channel_id> <true|false>` | Enable or disable Listener availability for a channel, persist state, log the change, and broadcast updated state. |
+| `off_air <channel_id>` | Force-clear a channel owner, set its off-air timestamp, persist state, log the change, and broadcast updated state. |
+
+Security notes:
+- `/admin/console_command` is local-only.
+- nginx must not expose `/admin/*`.

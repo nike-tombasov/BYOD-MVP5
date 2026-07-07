@@ -146,16 +146,16 @@ Rules:
 
 `connections_log_*.jsonl` line example:
 ```json
-{"ts":1710000110,"event":"publisher_connected","publisher_id":"hostA_0","ip":"10.0.0.12:53321"}
+{"ts":1710000110,"timestamp_local":"2024-03-10 02:21:50 +0300","timestamp_utc":"2024-03-09T23:21:50+00:00","event":"publisher_connected","publisher_id":"hostA_0","ip":"10.0.0.12:53321"}
 ```
 
 `events_log_*.jsonl` line example:
 ```json
-{"ts":1710000120,"event":"on_air_granted","publisher_id":"hostA_0","channel_id":"channel_1","request_id":"onair-req-5"}
+{"ts":1710000120,"timestamp_local":"2024-03-10 02:22:00 +0300","timestamp_utc":"2024-03-09T23:22:00+00:00","event":"on_air_granted","publisher_id":"hostA_0","channel_id":"channel_1","request_id":"onair-req-5"}
 ```
 
 Mandatory event fields:
-- `ts`, `event`, `request_id` (if WS-linked), `actor_id`/`client_id` when applicable.
+- `ts` (unix epoch seconds), `timestamp_local` (local VPS time in `YYYY-MM-DD HH:MM:SS +ZZZZ` format), `timestamp_utc` (UTC ISO timestamp without milliseconds), `event`, `request_id` (if WS-linked), `actor_id`/`client_id` when applicable.
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BYOD Stage XI VPS metrics analyzer helper.
+"""BYOD VPS metrics analyzer helper.
 
 Writes CSV, JSONL, and human-readable log samples to /opt/byod/metrics.
 Uses only Python stdlib and common Ubuntu 22.04 files/commands.
@@ -242,7 +242,7 @@ def run(interval_sec: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="BYOD VPS metrics analyzer")
-    parser.add_argument("--interval-sec", type=int, default=120)
+    parser.add_argument("--interval-sec", type=int, default=10)
     return parser.parse_args()
 
 

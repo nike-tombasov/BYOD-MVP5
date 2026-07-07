@@ -21,6 +21,17 @@ class JsonStorage:
     def now_ts(self) -> int:
         return int(time.time())
 
+    @staticmethod
+    def timestamp_fields_for_ts(ts: int) -> dict[str, int | str]:
+        return {
+            "ts": ts,
+            "timestamp_local": datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+            "timestamp_utc": datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds"),
+        }
+
+    def timestamp_fields(self) -> dict[str, int | str]:
+        return self.timestamp_fields_for_ts(self.now_ts())
+
     def _atomic_write_json(self, path: Path, payload: dict[str, Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -68,9 +79,9 @@ class JsonStorage:
             f.flush()
 
     def log_connection(self, event: str, **fields: Any) -> None:
-        payload = {"ts": self.now_ts(), "event": event, **fields}
+        payload = {**self.timestamp_fields(), "event": event, **fields}
         self.append_jsonl(self.get_connections_log_path(), payload)
 
     def log_event(self, event: str, **fields: Any) -> None:
-        payload = {"ts": self.now_ts(), "event": event, **fields}
+        payload = {**self.timestamp_fields(), "event": event, **fields}
         self.append_jsonl(self.get_events_log_path(), payload)
