@@ -90,4 +90,4 @@ Historical snapshot:
 - `legacy/stage_xi_load_capacity/`
 
 Loader manual:
-- `tools/load_test/README.md`
+- `tools/go_livekit_loadgen/README.md`
