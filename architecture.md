@@ -22,76 +22,79 @@ mvp_rules.md
 dev_environment.md
 
 1. Project goal
-docs/00_project_goal.md
+docs/01_project_goal.md
 
 1. System concept
-docs/01_system_concept.md
+docs/02_system_concept.md
 
 1. Roles
-docs/02_roles.md
+docs/03_roles.md
 
 1. Use cases
-docs/03_use_cases.md
+docs/04_use_cases.md
 
 1. Channel model
-docs/04_channel_model.md
+docs/05_channel_model.md
 
 1. Audio architecture
-docs/05_audio_architecture.md
+docs/06_audio_architecture.md
 
 1. LiveKit engine
-docs/06_livekit_engine.md
+docs/07_livekit_engine.md
 
 1. Publisher UI
-docs/07_publisher_ui.md
+docs/08_publisher_ui.md
 
 1. Backend
-docs/08_backend.md
+docs/09_backend.md
 
 1. Listener UI
-docs/09_listener_ui.md
+docs/10_listener_ui.md
 
 1. Scaling
-docs/10_scaling.md
+docs/11_scaling.md
 
 1. Security
-docs/11_security.md
+docs/12_security.md
 
 1. Future features
-docs/12_future_features.md
+docs/13_future_features.md
 
 1. MVP status
 mvp_status.md
 
 1. Ubuntu deploy contract
-docs/13_ubuntu_deploy_contract.md
+docs/14_ubuntu_deploy_contract.md
 
 1. Open issues
-docs/14_open_issues.md
+docs/15_open_issues.md
 
 1. WS schema v1
-docs/15_ws_schema_v1.md
+docs/16_ws_schema_v1.md
 
 1. Backend persistence JSON schema v1
-docs/16_backend_persistence_json_v1.md
+docs/17_backend_persistence_json_v1.md
 
 1. JSON import schema v1
-docs/17_json_import_schema_v1.md
+docs/18_json_import_schema_v1.md
 
-1. Stage VII-IX acceptance checklist
-docs/18_stage_vii_ix_acceptance_checklist.md
+1. Stage VII-IX acceptance checklist legacy artifact
+docs/19_stage_vii_ix_acceptance_checklist_legacy.md
+
+1. Domain HTTPS/WSS mode
+docs/20_domain_https_wss_mode.md
 
 1. UX scenarios
-docs/19_ux_scenarios.md
+docs/21_ux_scenarios.md
 
 1. Unresolved bugs
-docs/20_unresolved_bugs.md
+docs/22_unresolved_bugs.md
 
 1. Stage X backend logging contract
-docs/21_backend_logging_contract_stage_x.md
+docs/23_backend_logging_contract_stage_x.md
 
 1. Stress and load testing
-docs/22_stress_tests.md
+docs/24_stress_tests.md
 
 1. Legacy implementations
 legacy/legacy_readme.md

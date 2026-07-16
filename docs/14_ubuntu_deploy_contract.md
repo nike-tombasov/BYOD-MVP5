@@ -1,4 +1,4 @@
-# 13. Ubuntu deploy contract
+# 14. Ubuntu deploy contract
 
 This document is the canonical BYOD project/spec contract for the current single-node Ubuntu VPS deploy package in `deploy/stage_x_ubuntu_pilot/`. It records deployment structure, invariants, generated files, service boundaries, and known constraints. It is not an operator runbook; step-by-step VPS commands remain in the deploy package operator docs.
 

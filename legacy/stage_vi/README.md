@@ -19,5 +19,5 @@ Stage VI completed highlights:
 5) reproducible Windows onedir packaging baseline
 
 Known unresolved items moved to docs:
-- see `docs/20_unresolved_bugs.md`
-- see `docs/14_open_issues.md`
+- see `docs/22_unresolved_bugs.md`
+- see `docs/15_open_issues.md`

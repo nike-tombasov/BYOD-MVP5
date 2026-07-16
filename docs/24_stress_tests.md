@@ -1,4 +1,4 @@
-# Stress-test specification and latest useful result
+# 24. Stress-test specification and latest useful result
 
 ## 1. Purpose and scope
 

@@ -8,7 +8,7 @@
 - Stage IX is completed (Listener resilience baseline).
 - Stage X is completed (Ubuntu 22.04 LTS single-VPS pilot).
 - Stage XI is completed (protocol/engine load and capacity characterization).
-- Current active/next stage is Stage XII: Technology discussion and decisions.
+- Current active/next stage is Stage XII: Domain HTTPS/WSS mode and MVP launch hardening.
 
 ---
 
@@ -36,9 +36,9 @@ Deferred by decision:
 - real backend multi-track recording moved to future features after MVP pilots.
 
 Verification artifact:
-- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VII marked PASS).
+- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage VII marked PASS).
 
-Canonical behavior now lives in permanent docs (`docs/08_backend.md`, `docs/15_ws_schema_v1.md`, `docs/16_backend_persistence_json_v1.md`, `docs/17_json_import_schema_v1.md`).
+Canonical behavior now lives in permanent docs (`docs/09_backend.md`, `docs/16_ws_schema_v1.md`, `docs/17_backend_persistence_json_v1.md`, `docs/18_json_import_schema_v1.md`).
 
 ---
 
@@ -51,9 +51,9 @@ Delivered:
 3) strict schema v1 protocol cleanup completed (April 15, 2026).
 
 Verification artifact:
-- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage VIII marked PASS).
+- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage VIII marked PASS).
 
-Canonical behavior now lives in permanent docs (`docs/09_listener_ui.md`, `docs/15_ws_schema_v1.md`).
+Canonical behavior now lives in permanent docs (`docs/10_listener_ui.md`, `docs/16_ws_schema_v1.md`).
 
 ---
 
@@ -66,9 +66,9 @@ Delivered:
 3) listener resilience hardening baseline finalized.
 
 Verification artifact:
-- `docs/18_stage_vii_ix_acceptance_checklist.md` (Stage IX marked PASS).
+- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage IX marked PASS).
 
-Canonical behavior now lives in permanent docs (`docs/09_listener_ui.md`, `docs/15_ws_schema_v1.md`).
+Canonical behavior now lives in permanent docs (`docs/10_listener_ui.md`, `docs/16_ws_schema_v1.md`).
 
 ---
 
@@ -108,7 +108,7 @@ Stage XI is completed for current MVP pilot risk.
 Delivered:
 1) Go LiveKit protocol/engine loadgen baseline;
 2) VPS metrics analyzer and local backend metrics endpoint baseline;
-3) gate-based stress-test specification in `docs/22_stress_tests.md`;
+3) gate-based stress-test specification in `docs/24_stress_tests.md`;
 4) useful VPS stress result on cloud.reg.ru VPS, reaching approximately 695 emulated listener participants;
 5) conclusion that the tested single-VPS setup is sufficient for current MVP pilot risk.
 
@@ -123,27 +123,27 @@ Limitations:
 - further scaling characterization is deferred.
 
 Canonical result:
-- `docs/22_stress_tests.md`
+- `docs/24_stress_tests.md`
 
 ---
 
-## Stage XII — Technology discussion and decisions (Priority 7)
+## Stage XII — Domain HTTPS/WSS mode and MVP launch hardening (Priority 7)
 
-Topics:
-- full review of `docs/11_security.md`
-- adaptiveStream, dynacast, audio packet pacing
-- jitter buffer / packet recovery
-- reconnection after VPS reset
-- noise gate, audio processing, RMS visualizer
-- statistics, room dashboard, pre-warm publishing
-- backend real multi-track recording and recording file management policy
-- LiveKit version policy matrix and upgrade rules:
-  - server version policy
-  - Python SDK/API compatibility matrix
-  - Listener JS SDK pinned local artifact version
+### Current tasks
+1) Adapt Listener/backend/LiveKit deployment documentation for subdomain work.
+2) Preserve two modes: direct-IP pilot test mode and optional domain HTTPS/WSS mode.
+3) Document event aliases as same-HTML URL path aliases, not separate rooms.
+4) Document one simultaneous hall/event = one VPS for MVP.
+5) Add minimal MVP cybersecurity measures.
+6) Prepare deploy documentation requirements for later implementation.
+
+### Active domain-mode document
+- `docs/20_domain_https_wss_mode.md`
 
 ### Exit criteria
-- each topic has decision: adopt now / postpone / reject (with reason)
+- domain-mode documentation is clear enough to guide later deploy implementation;
+- direct-IP pilot mode remains explicitly supported;
+- minimum security requirements are documented.
 
 ---
 
@@ -157,7 +157,23 @@ Define and start Admin Web UI architecture and first vertical slice.
 
 ---
 
-## Post-MVP deferred items (after Stage XIII, non-priority unless risk escalates)
+## Stage XIV — Non-MVP technology review and later hardening (Priority 9)
+
+Broad technology discussions are deferred here unless required by Stage XII domain-mode testing:
+- adaptiveStream and dynacast;
+- audio packet pacing;
+- jitter buffer and packet recovery;
+- VPS reset reconnection hardening;
+- noise gate and audio processing;
+- RMS visualizer improvements;
+- statistics/dashboard;
+- pre-warm publishing;
+- backend real multitrack recording;
+- LiveKit version upgrade policy deep review.
+
+---
+
+## Post-MVP deferred items (after Stage XIII/Stage XIV planning, non-priority unless risk escalates)
 
 1) dynamic event-time i18n editing from Admin UI (currently only deploy-time dictionaries)
 2) advanced runtime language personalization (backend-side per-listener selection)

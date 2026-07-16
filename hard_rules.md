@@ -61,4 +61,4 @@ Server patch note:
 * LiveKit Server `1.9.12+` is not auto-approved by this spec; it requires compatibility checklist pass before replacing pinned `1.9.11`.
 
 Upgrade rule:
-* Any change of any matrix row requires explicit docs update in `docs/06_livekit_engine.md`, `docs/09_listener_ui.md`, `docs/14_open_issues.md` resolution note, and a compatibility re-test checklist.
+* Any change of any matrix row requires explicit docs update in `docs/07_livekit_engine.md`, `docs/10_listener_ui.md`, `docs/15_open_issues.md` resolution note, and a compatibility re-test checklist.

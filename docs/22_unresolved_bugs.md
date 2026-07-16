@@ -1,6 +1,6 @@
-## 20. Unresolved bugs
+## 22. Unresolved bugs
 
-### 20.1 Publisher/Backend behavior when LiveKit Server is absent
+### 22.1 Publisher/Backend behavior when LiveKit Server is absent
 
 Status: **postponed until VPS pilots end** (was unresolved, reproducible).
 

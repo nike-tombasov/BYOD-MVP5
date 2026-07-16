@@ -1,6 +1,6 @@
-## 20. UX scenarios
+## 21. UX scenarios
 
-### 20.1 Listener
+### 21.1 Listener
 
 Open page → visible of room name and channel buttons (if deployed backend exist), no sound.  
 Click channel → channels sound, clicked button highlights.  
@@ -21,7 +21,7 @@ CLOSED → no sound, button unhighlights, UI locked, appropriate language banner
 BLOCKED → OPENED → sound from highlighted button channel, banner disappears.  
 CLOSED → OPENED → no sound, buttons are clickable, UI available, banner disappears.
 
-### 20.2 Publisher
+### 21.2 Publisher
 
 Open Publisher UI → UI loads last IP, PIN, channel-device mapping (if exist), empty room name, room status, channel labels, actual channel statuses, UI locked except IP and PIN fields and CONNECT button.  
 CONNECT push with wrong PIN → invalid PIN error, CONNECT button available.  
@@ -35,7 +35,7 @@ Wrong audio device selected → ON AIR button unavailable and error status until
 Audio device is None → ON AIR button unavailable, NO DEVICE error while mouse hover over ON AIR button.  
 Network timeout drop → connection status Connection lost, ownership lost, all streaming stops.
 
-### 20.3 Admin (to be updated)
+### 21.3 Admin (to be updated)
 
 change status  
 change listen flag  

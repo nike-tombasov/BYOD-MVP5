@@ -10,9 +10,9 @@ Result statuses:
 - `DEFERRED_WITH_RISK_NOTE`
 
 Canonical behavior sources:
-- backend: `docs/08_backend.md`
-- listener UX/state: `docs/09_listener_ui.md`
-- WS wire protocol: `docs/15_ws_schema_v1.md`
+- backend: `docs/09_backend.md`
+- listener UX/state: `docs/10_listener_ui.md`
+- WS wire protocol: `docs/16_ws_schema_v1.md`
 
 Date of Stage VII closure record: **April 13, 2026**.
 Date of Stage VIII closure record: **April 14, 2026**.
