@@ -46,11 +46,20 @@ let selectedChannel = null;
 let playbackState = 'IDLE';
 let currentTrack = null;
 let currentTrackName = null;
+let lastSelectedChannel = null;
 let attachInProgress = false;
 let detachInProgress = false;
 
 const publicationByChannel = new Map();
 const trackByChannel = new Map();
+
+const listenerDiagnostics = {
+  mediaSessionSupported: false,
+  mediaSessionHandlersRegistered: {},
+  lastPlaybackEvent: null,
+  lastPlaybackError: null,
+  lastVisibilityState: document.visibilityState,
+};
 
 const player = document.getElementById('player');
 const roomNameEl = document.getElementById('roomName');
@@ -77,6 +86,11 @@ function updateDiagnosticsSnapshot() {
     i18nMismatchCount,
     sdkSource: window.__livekitSdkSource || 'unknown',
     lastBackendActivityMs,
+    mediaSessionSupported: listenerDiagnostics.mediaSessionSupported,
+    mediaSessionHandlersRegistered: listenerDiagnostics.mediaSessionHandlersRegistered,
+    lastPlaybackEvent: listenerDiagnostics.lastPlaybackEvent,
+    lastPlaybackError: listenerDiagnostics.lastPlaybackError,
+    lastVisibilityState: listenerDiagnostics.lastVisibilityState,
   };
 }
 
@@ -264,6 +278,11 @@ function getLocalizedRoomName() {
   return resolveTextByUiLanguage(i18nLibrary?.room_name_i18n, 'Room');
 }
 
+function getChannelLabel(channelId) {
+  const channel = (currentState?.channels || []).find((candidate) => candidate.channel_id === channelId);
+  return channel?.channel_label || channelId || '';
+}
+
 function getLocalizedStatusText(status) {
   if (status === 'BLOCKED') {
     return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, 'BLOCKED');
@@ -441,12 +460,50 @@ async function closeLiveKitForReconnect() {
   currentTrackName = null;
 }
 
+function notePlaybackEvent(eventName, detail = '') {
+  listenerDiagnostics.lastPlaybackEvent = eventName;
+  updateDiagnosticsSnapshot();
+  log(`playback event=${eventName}${detail ? ` ${detail}` : ''}`);
+}
+
+function notePlaybackError(error, context) {
+  const name = error?.name || 'Error';
+  const message = error?.message || String(error);
+  listenerDiagnostics.lastPlaybackError = `${context}: ${name}: ${message}`;
+  updateDiagnosticsSnapshot();
+  log(`playback error context=${context} name=${name} message=${message}`);
+}
+
+function setMediaSessionPlaybackState(nextState) {
+  if (!listenerDiagnostics.mediaSessionSupported || !('playbackState' in navigator.mediaSession)) return;
+  try {
+    navigator.mediaSession.playbackState = nextState;
+  } catch (error) {
+    log(`mediaSession playbackState warning: ${error.message}`);
+  }
+}
+
+function updateMediaSessionMetadata(channelId) {
+  if (!listenerDiagnostics.mediaSessionSupported || !channelId) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: getLocalizedRoomName() || 'Room',
+      artist: getChannelLabel(channelId) || channelId,
+      album: 'BYOD Listener',
+    });
+    log(`mediaSession metadata updated channel=${channelId}`);
+  } catch (error) {
+    log(`mediaSession metadata warning: ${error.message}`);
+  }
+}
+
 function stopPlayback() {
   player.pause();
   player.srcObject = null;
   currentTrack = null;
   currentTrackName = null;
   playbackState = 'IDLE';
+  setMediaSessionPlaybackState('none');
 }
 
 async function detachPlayback(reason, { force = false } = {}) {
@@ -482,16 +539,22 @@ async function attachPlaybackTrack(track, trackName) {
       const mediaStream = new MediaStream([track.mediaStreamTrack]);
       player.pause();
       player.srcObject = mediaStream;
-      await player.play();
+      const playPromise = player.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        await playPromise;
+      }
     }, ATTACH_DETACH_TIMEOUT_MS, `attach timeout (${trackName})`);
 
     currentTrack = track;
     currentTrackName = trackName;
     playbackState = 'PLAYING';
+    setMediaSessionPlaybackState('playing');
+    notePlaybackEvent('player.play.success', `channel=${trackName}`);
     log(`attach done channel=${trackName}`);
     return true;
   } catch (error) {
     stopPlayback();
+    notePlaybackError(error, `player.play channel=${trackName}`);
     log(`attach reset to IDLE channel=${trackName} error=${error.message}`);
     return false;
   } finally {
@@ -525,8 +588,58 @@ function syncSubscriptions() {
   }
 }
 
+async function stopCurrentChannel(reason) {
+  selectedChannel = null;
+  syncSubscriptions();
+  await detachPlayback(reason);
+  if (currentState) renderState(currentState);
+}
+
+async function selectChannel(channelId, reason) {
+  if (isRoomClosed()) return;
+  if (hasAudioOpInProgress()) {
+    log(`${reason} ignored: attach/detach in progress`);
+    return;
+  }
+
+  if (selectedChannel === channelId) {
+    await stopCurrentChannel(`${reason} stop`);
+    return;
+  }
+
+  selectedChannel = channelId;
+  lastSelectedChannel = channelId;
+  playbackState = 'WAITING';
+  updateMediaSessionMetadata(channelId);
+  renderState(currentState);
+  if (connectionState === CONNECTION_STATE.STALE) {
+    try {
+      await reconnectListener(reason);
+    } catch (error) {
+      log(`reconnect error: ${error.message}`);
+      return;
+    }
+  }
+  syncSubscriptions();
+  if (isRoomBlocked()) return;
+  await attachSelectedIfPossible();
+}
+
+async function resumeSelectedChannel(reason) {
+  if (!lastSelectedChannel) {
+    log(`mediaSession play ignored: no channel selected in this page session`);
+    return;
+  }
+  if (!isRoomOpened()) {
+    log(`mediaSession play ignored: room is not OPENED`);
+    return;
+  }
+  await selectChannel(lastSelectedChannel, reason);
+}
+
 async function attachSelectedIfPossible() {
   if (!selectedChannel || !isRoomOpened()) return;
+  updateMediaSessionMetadata(selectedChannel);
 
   const publication = publicationByChannel.get(selectedChannel);
   const track = trackByChannel.get(selectedChannel) || publication?.track || null;
@@ -596,40 +709,56 @@ function renderState(state) {
     button.disabled = isRoomClosed();
 
     button.onclick = async () => {
-      if (isRoomClosed()) return;
-      if (hasAudioOpInProgress()) {
-        log('click ignored: attach/detach in progress');
-        return;
-      }
-
-      if (selectedChannel === channel.channel_id) {
-        selectedChannel = null;
-        syncSubscriptions();
-        await detachPlayback('button stop');
-        renderState(currentState);
-        return;
-      }
-
-      selectedChannel = channel.channel_id;
-      playbackState = 'WAITING';
-      renderState(currentState);
-      if (connectionState === CONNECTION_STATE.STALE) {
-        try {
-          await reconnectListener('channel click');
-        } catch (error) {
-          log(`reconnect error: ${error.message}`);
-          return;
-        }
-      }
-      syncSubscriptions();
-      if (isRoomBlocked()) return;
-      await attachSelectedIfPossible();
+      await selectChannel(channel.channel_id, 'button');
     };
 
     buttonsEl.appendChild(button);
   }
 
   previousRoomStatus = state.room_status || null;
+}
+
+
+function setupPlaybackDiagnostics() {
+  ['pause', 'ended', 'stalled', 'suspend', 'waiting', 'playing'].forEach((eventName) => {
+    player.addEventListener(eventName, () => notePlaybackEvent(eventName));
+  });
+}
+
+function registerMediaSessionAction(action, handler) {
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+    listenerDiagnostics.mediaSessionHandlersRegistered[action] = true;
+    log(`mediaSession action handler registered action=${action}`);
+  } catch (error) {
+    listenerDiagnostics.mediaSessionHandlersRegistered[action] = false;
+    log(`mediaSession action handler not registered action=${action} error=${error.message}`);
+  }
+  updateDiagnosticsSnapshot();
+}
+
+function setupMediaSession() {
+  listenerDiagnostics.mediaSessionSupported = 'mediaSession' in navigator;
+  updateDiagnosticsSnapshot();
+  if (!listenerDiagnostics.mediaSessionSupported) {
+    log('mediaSession not supported');
+    return;
+  }
+
+  log('mediaSession supported');
+  setMediaSessionPlaybackState('none');
+  registerMediaSessionAction('play', () => {
+    notePlaybackEvent('mediaSession.play');
+    resumeSelectedChannel('mediaSession play').catch((error) => log(`mediaSession play error: ${error.message}`));
+  });
+  registerMediaSessionAction('pause', () => {
+    notePlaybackEvent('mediaSession.pause');
+    stopCurrentChannel('mediaSession pause').catch((error) => log(`mediaSession pause error: ${error.message}`));
+  });
+  registerMediaSessionAction('stop', () => {
+    notePlaybackEvent('mediaSession.stop');
+    stopCurrentChannel('mediaSession stop').catch((error) => log(`mediaSession stop error: ${error.message}`));
+  });
 }
 
 async function connectLiveKit(livekitUrl, token) {
@@ -875,6 +1004,8 @@ async function reconnectListener(reason) {
   }
 }
 
+setupPlaybackDiagnostics();
+setupMediaSession();
 initLanguageDetection();
 const env = detectClientEnvironment();
 log(`client env: platform=${env.platform} mobile=${env.isMobile}`);
@@ -891,6 +1022,8 @@ ensureLiveKitClientLoaded()
   });
 
 document.addEventListener('visibilitychange', () => {
+  listenerDiagnostics.lastVisibilityState = document.visibilityState;
+  notePlaybackEvent('visibilitychange', `state=${document.visibilityState}`);
   if (document.visibilityState === 'visible' && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
   }

@@ -364,3 +364,44 @@ Rule when backend connection restored:
 - backend-driven language selection по `ui_lang` от Listener;
 - динамическая смена status texts во время мероприятия;
 - серверная языковая персонализация текстов «на лету».
+
+### 10.10. Local Wi-Fi mobile Listener media controls test
+
+This manual test checks mobile system-player and locked-screen/background behavior on a local LAN. It is a compatibility experiment only; background or locked-screen playback remains browser/OS-dependent and is not guaranteed on all modern smartphones.
+
+Operator setup:
+
+- Put the laptop/server and phone on the same Wi-Fi/LAN.
+- Find the laptop LAN IPv4 address, for example `192.168.1.50`.
+- Configure Publisher to use backend WebSocket URL `ws://<LAN_IP>:8000/ws/publisher`.
+- Open the Listener page from the phone through the LAN address served by the local static server, nginx, or dev server.
+- If needed, add the Listener backend override: `?backend=ws://<LAN_IP>:8000/ws/listener`.
+- Ensure backend/LiveKit config returns a phone-reachable LiveKit URL, for example `ws://<LAN_IP>:7880`.
+- Allow the required backend, LiveKit, and web-server ports through the local firewall for the LAN test.
+- HTTPS/WSS is not required for this local experiment unless the local setup already supports it.
+- This test is only for mobile system player/background behavior, not for production security.
+
+Manual checklist:
+
+1. Start local backend.
+2. Start local LiveKit.
+3. Start local Listener static server/nginx/dev server.
+4. Start Publisher on laptop.
+5. Open Listener from phone over Wi-Fi.
+6. Press a channel button.
+7. Confirm audio plays.
+8. Lock screen.
+9. Observe whether audio continues.
+10. Check whether lock-screen media controls appear.
+11. Press pause from system player.
+12. Unlock and verify Listener state is consistent.
+13. Press play from system player if available.
+14. Test switching channels after unlock.
+15. Test STOP from page button after system pause/play.
+16. Save phone model, OS version, browser, result, and logs.
+
+Compatibility results template:
+
+| Device | OS/version | Browser/version | Opened via HTTP LAN or HTTPS | Audio continues after lock: yes/no | System player appears: yes/no | System pause works: yes/no | System play works: yes/no | Playback stops unexpectedly after lock: yes/no | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |  |  |  |  |
