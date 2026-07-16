@@ -405,3 +405,52 @@ Compatibility results template:
 | Device | OS/version | Browser/version | Opened via HTTP LAN or HTTPS | Audio continues after lock: yes/no | System player appears: yes/no | System pause works: yes/no | System play works: yes/no | Playback stops unexpectedly after lock: yes/no | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |  |  |  |
+
+### 10.11. Manual iPhone Media Session soft-pause test
+
+This test verifies that system media pause is a soft pause, not a full Listener STOP/detach. It improves Media Session behavior where the browser/OS supports it, but does not guarantee background or locked-screen playback on all iOS/Android browsers.
+
+Device:
+
+* iPhone 17e
+* browser:
+* iOS version:
+* test date:
+
+Steps:
+
+1. Open Listener page.
+2. Press one channel button.
+3. Confirm audio plays.
+4. Confirm iOS system player / Now Playing shows BYOD room name and channel name.
+5. Press pause in iOS system player.
+6. Expected after this PR:
+
+   * BYOD should remain in system player if iOS allows it;
+   * system player should not immediately switch to Yandex Music or another previous media app;
+   * Listener page should retain selected channel state;
+   * audio should be paused, not fully detached.
+7. Press play in iOS system player.
+8. Expected:
+
+   * BYOD resumes the same selected channel if room is OPENED and track is available.
+9. Unlock phone and inspect Listener page state.
+10. Press current channel button on the page.
+11. Expected:
+
+* full STOP still works;
+* it is acceptable if iOS then removes BYOD from system player because the user explicitly stopped the channel.
+
+12. Repeat with screen locked.
+13. Save diagnostics/log output if possible.
+
+Acceptance criteria:
+
+* Desktop Listener still works.
+* Mobile Listener still starts only after channel button tap.
+* One audio element remains.
+* No per-channel `Audio()` objects are introduced.
+* No subscribe-all behavior is introduced.
+* Page STOP behavior remains compatible with current spec.
+* System media pause is soft pause and does not detach/clear `srcObject`.
+* System media play resumes the previously user-selected channel when possible.

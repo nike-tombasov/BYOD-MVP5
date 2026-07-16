@@ -56,6 +56,7 @@ const trackByChannel = new Map();
 const listenerDiagnostics = {
   mediaSessionSupported: false,
   mediaSessionHandlersRegistered: {},
+  mediaSessionLastAction: null,
   lastPlaybackEvent: null,
   lastPlaybackError: null,
   lastVisibilityState: document.visibilityState,
@@ -88,6 +89,8 @@ function updateDiagnosticsSnapshot() {
     lastBackendActivityMs,
     mediaSessionSupported: listenerDiagnostics.mediaSessionSupported,
     mediaSessionHandlersRegistered: listenerDiagnostics.mediaSessionHandlersRegistered,
+    mediaSessionLastAction: listenerDiagnostics.mediaSessionLastAction,
+    playbackState,
     lastPlaybackEvent: listenerDiagnostics.lastPlaybackEvent,
     lastPlaybackError: listenerDiagnostics.lastPlaybackError,
     lastVisibilityState: listenerDiagnostics.lastVisibilityState,
@@ -460,6 +463,12 @@ async function closeLiveKitForReconnect() {
   currentTrackName = null;
 }
 
+function noteMediaSessionAction(action) {
+  listenerDiagnostics.mediaSessionLastAction = action;
+  updateDiagnosticsSnapshot();
+  log(`mediaSession action=${action}`);
+}
+
 function notePlaybackEvent(eventName, detail = '') {
   listenerDiagnostics.lastPlaybackEvent = eventName;
   updateDiagnosticsSnapshot();
@@ -495,6 +504,16 @@ function updateMediaSessionMetadata(channelId) {
   } catch (error) {
     log(`mediaSession metadata warning: ${error.message}`);
   }
+}
+
+async function playCurrentMedia(reason, channelId) {
+  const playPromise = player.play();
+  if (playPromise && typeof playPromise.then === 'function') {
+    await playPromise;
+  }
+  playbackState = 'PLAYING';
+  setMediaSessionPlaybackState('playing');
+  notePlaybackEvent('player.play.success', `reason=${reason} channel=${channelId}`);
 }
 
 function stopPlayback() {
@@ -539,17 +558,11 @@ async function attachPlaybackTrack(track, trackName) {
       const mediaStream = new MediaStream([track.mediaStreamTrack]);
       player.pause();
       player.srcObject = mediaStream;
-      const playPromise = player.play();
-      if (playPromise && typeof playPromise.then === 'function') {
-        await playPromise;
-      }
+      await playCurrentMedia('attach', trackName);
     }, ATTACH_DETACH_TIMEOUT_MS, `attach timeout (${trackName})`);
 
     currentTrack = track;
     currentTrackName = trackName;
-    playbackState = 'PLAYING';
-    setMediaSessionPlaybackState('playing');
-    notePlaybackEvent('player.play.success', `channel=${trackName}`);
     log(`attach done channel=${trackName}`);
     return true;
   } catch (error) {
@@ -625,16 +638,76 @@ async function selectChannel(channelId, reason) {
   await attachSelectedIfPossible();
 }
 
-async function resumeSelectedChannel(reason) {
+async function softPauseFromSystem(reason) {
+  log(`system pause requested reason=${reason}`);
+  if (!selectedChannel || playbackState === 'IDLE') {
+    log(`system pause ignored: no active selected channel`);
+    return;
+  }
+
+  player.pause();
+  playbackState = 'PAUSED_BY_SYSTEM';
+  setMediaSessionPlaybackState('paused');
+  updateMediaSessionMetadata(selectedChannel);
+  updateDiagnosticsSnapshot();
+  log(`system pause completed channel=${selectedChannel}`);
+}
+
+async function resumeFromSystem(reason) {
+  noteMediaSessionAction('play');
+  log(`system play requested reason=${reason}`);
   if (!lastSelectedChannel) {
-    log(`mediaSession play ignored: no channel selected in this page session`);
+    log(`system play ignored: no channel selected in this page session`);
+    return;
+  }
+  if (isRoomBlocked()) {
+    log(`system play ignored: room is BLOCKED`);
+    return;
+  }
+  if (isRoomClosed()) {
+    log(`system play ignored: room is CLOSED`);
     return;
   }
   if (!isRoomOpened()) {
-    log(`mediaSession play ignored: room is not OPENED`);
+    log(`system play ignored: room is not OPENED`);
     return;
   }
-  await selectChannel(lastSelectedChannel, reason);
+
+  if (!selectedChannel) {
+    log(`system play ignored: no active selected channel`);
+    return;
+  }
+
+  updateMediaSessionMetadata(selectedChannel);
+  const hasAttachedSelectedTrack = currentTrack && currentTrackName === selectedChannel && player.srcObject;
+  if (playbackState === 'PAUSED_BY_SYSTEM' && hasAttachedSelectedTrack) {
+    try {
+      await playCurrentMedia('mediaSession play', selectedChannel);
+      log(`system play success channel=${selectedChannel}`);
+    } catch (error) {
+      notePlaybackError(error, `mediaSession play channel=${selectedChannel}`);
+      setMediaSessionPlaybackState('paused');
+      log(`system play failure channel=${selectedChannel} error=${error.message}`);
+    }
+    return;
+  }
+
+  const publication = publicationByChannel.get(selectedChannel);
+  const track = trackByChannel.get(selectedChannel) || publication?.track || null;
+  if (!track) {
+    playbackState = 'WAITING';
+    syncSubscriptions();
+    updateDiagnosticsSnapshot();
+    log(`system play waiting: selected track unavailable channel=${selectedChannel}`);
+    return;
+  }
+
+  playbackState = 'WAITING';
+  syncSubscriptions();
+  await attachSelectedIfPossible();
+  if (playbackState === 'PLAYING') {
+    log(`system play success channel=${selectedChannel}`);
+  }
 }
 
 async function attachSelectedIfPossible() {
@@ -649,7 +722,9 @@ async function attachSelectedIfPossible() {
     return;
   }
 
-  if (currentTrack === track && currentTrackName === selectedChannel && playbackState === 'PLAYING') return;
+  if (currentTrack === track && currentTrackName === selectedChannel) {
+    if (playbackState === 'PLAYING' || playbackState === 'PAUSED_BY_SYSTEM') return;
+  }
   await attachPlaybackTrack(track, selectedChannel);
 }
 
@@ -749,13 +824,15 @@ function setupMediaSession() {
   setMediaSessionPlaybackState('none');
   registerMediaSessionAction('play', () => {
     notePlaybackEvent('mediaSession.play');
-    resumeSelectedChannel('mediaSession play').catch((error) => log(`mediaSession play error: ${error.message}`));
+    resumeFromSystem('mediaSession play').catch((error) => log(`mediaSession play error: ${error.message}`));
   });
   registerMediaSessionAction('pause', () => {
+    noteMediaSessionAction('pause');
     notePlaybackEvent('mediaSession.pause');
-    stopCurrentChannel('mediaSession pause').catch((error) => log(`mediaSession pause error: ${error.message}`));
+    softPauseFromSystem('mediaSession pause').catch((error) => log(`mediaSession pause error: ${error.message}`));
   });
   registerMediaSessionAction('stop', () => {
+    noteMediaSessionAction('stop');
     notePlaybackEvent('mediaSession.stop');
     stopCurrentChannel('mediaSession stop').catch((error) => log(`mediaSession stop error: ${error.message}`));
   });
