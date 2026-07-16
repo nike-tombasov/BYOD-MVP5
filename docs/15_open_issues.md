@@ -79,3 +79,9 @@ Rules for docs/15_open_issues.md:
 - `tbd.md` отмечает отсутствие формального debounce/backoff policy.
 - Текущий Listener имеет attach/detach busy guards и timeout protection, но без формального debounce contract; оставить как будущий UI hardening/documentation issue.
 
+9) Mobile background playback and system media controls
+- The spec requires mobile background/locked-screen playback and system media controls.
+- This behavior is currently browser/OS-dependent and is not guaranteed by the current Web Listener.
+- Stage I/IV legacy Media Session behavior is reference material only.
+- Legacy code must not be copied directly because the current Listener hard rules require one audio element, selective subscribe, and `autoSubscribe=false`.
+- Future implementation should add a small Media Session compatibility layer without changing the core Listener audio architecture.

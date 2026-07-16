@@ -78,26 +78,26 @@ docs/17_backend_persistence_json_v1.md
 1. JSON import schema v1
 docs/18_json_import_schema_v1.md
 
-1. Stage VII-IX acceptance checklist legacy artifact
-docs/19_stage_vii_ix_acceptance_checklist_legacy.md
-
 1. Domain HTTPS/WSS mode
-docs/20_domain_https_wss_mode.md
+docs/19_domain_https_wss_mode.md
 
 1. UX scenarios
-docs/21_ux_scenarios.md
+docs/20_ux_scenarios.md
 
 1. Unresolved bugs
-docs/22_unresolved_bugs.md
+docs/21_unresolved_bugs.md
 
 1. Stage X backend logging contract
-docs/23_backend_logging_contract_stage_x.md
+docs/22_backend_logging_contract_stage_x.md
 
 1. Stress and load testing
-docs/24_stress_tests.md
+docs/23_stress_tests.md
 
 1. Legacy implementations
 legacy/legacy_readme.md
+
+1. Stage VII-IX acceptance checklist legacy artifact
+legacy/stage_vii_ix_acceptance_checklist.md
 
 Core rules:
 

@@ -36,7 +36,7 @@ Deferred by decision:
 - real backend multi-track recording moved to future features after MVP pilots.
 
 Verification artifact:
-- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage VII marked PASS).
+- `legacy/stage_vii_ix_acceptance_checklist.md` (Stage VII marked PASS).
 
 Canonical behavior now lives in permanent docs (`docs/09_backend.md`, `docs/16_ws_schema_v1.md`, `docs/17_backend_persistence_json_v1.md`, `docs/18_json_import_schema_v1.md`).
 
@@ -51,7 +51,7 @@ Delivered:
 3) strict schema v1 protocol cleanup completed (April 15, 2026).
 
 Verification artifact:
-- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage VIII marked PASS).
+- `legacy/stage_vii_ix_acceptance_checklist.md` (Stage VIII marked PASS).
 
 Canonical behavior now lives in permanent docs (`docs/10_listener_ui.md`, `docs/16_ws_schema_v1.md`).
 
@@ -66,7 +66,7 @@ Delivered:
 3) listener resilience hardening baseline finalized.
 
 Verification artifact:
-- `docs/19_stage_vii_ix_acceptance_checklist_legacy.md` (Stage IX marked PASS).
+- `legacy/stage_vii_ix_acceptance_checklist.md` (Stage IX marked PASS).
 
 Canonical behavior now lives in permanent docs (`docs/10_listener_ui.md`, `docs/16_ws_schema_v1.md`).
 
@@ -108,7 +108,7 @@ Stage XI is completed for current MVP pilot risk.
 Delivered:
 1) Go LiveKit protocol/engine loadgen baseline;
 2) VPS metrics analyzer and local backend metrics endpoint baseline;
-3) gate-based stress-test specification in `docs/24_stress_tests.md`;
+3) gate-based stress-test specification in `docs/23_stress_tests.md`;
 4) useful VPS stress result on cloud.reg.ru VPS, reaching approximately 695 emulated listener participants;
 5) conclusion that the tested single-VPS setup is sufficient for current MVP pilot risk.
 
@@ -123,7 +123,7 @@ Limitations:
 - further scaling characterization is deferred.
 
 Canonical result:
-- `docs/24_stress_tests.md`
+- `docs/23_stress_tests.md`
 
 ---
 
@@ -138,7 +138,7 @@ Canonical result:
 6) Prepare deploy documentation requirements for later implementation.
 
 ### Active domain-mode document
-- `docs/20_domain_https_wss_mode.md`
+- `docs/19_domain_https_wss_mode.md`
 
 ### Exit criteria
 - domain-mode documentation is clear enough to guide later deploy implementation;

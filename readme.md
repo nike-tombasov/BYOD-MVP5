@@ -15,7 +15,7 @@ IMPORTANT:
 
 Documentation list:
 
-Root-level docs and continuous docs/01_... through docs/24_... files are listed below.
+Root-level docs and continuous docs/01_... through docs/23_... files are listed below.
 
 * docs/01_project_goal.md
 * docs/02_system_concept.md
@@ -36,18 +36,18 @@ Root-level docs and continuous docs/01_... through docs/24_... files are listed 
 * docs/16_ws_schema_v1.md
 * docs/17_backend_persistence_json_v1.md
 * docs/18_json_import_schema_v1.md
-* docs/19_stage_vii_ix_acceptance_checklist_legacy.md
-* docs/20_domain_https_wss_mode.md
-* docs/21_ux_scenarios.md
-* docs/22_unresolved_bugs.md
-* docs/23_backend_logging_contract_stage_x.md
-* docs/24_stress_tests.md
+* docs/19_domain_https_wss_mode.md
+* docs/20_ux_scenarios.md
+* docs/21_unresolved_bugs.md
+* docs/22_backend_logging_contract_stage_x.md
+* docs/23_stress_tests.md
 * hard_rules.md
 * development_rules.md
 * mvp_rules.md
 * dev_environment.md
 * roadmap.md
 * legacy/legacy_readme.md
+* legacy/stage_vii_ix_acceptance_checklist.md
 
 ## BYOD VPS deploy package
 
@@ -63,7 +63,7 @@ Operator docs:
 Canonical spec docs:
 - `mvp_status.md`
 - `docs/14_ubuntu_deploy_contract.md`
-- `docs/23_backend_logging_contract_stage_x.md`
+- `docs/22_backend_logging_contract_stage_x.md`
 
 Completed-stage snapshots:
 - `legacy/stage_x_ubuntu_pilot/`
@@ -74,7 +74,7 @@ The current BYOD VPS deploy keeps direct-IP pilot mode available. Stage XII docu
 ## Stage XI — Protocol/engine load measurement
 
 Stage XI is completed for current MVP pilot risk. The latest useful result is
-documented in `docs/24_stress_tests.md`: approximately 695 emulated listener
+documented in `docs/23_stress_tests.md`: approximately 695 emulated listener
 participants were reached on the tested cloud.reg.ru VPS, with one real Web
 Listener open separately and audio remaining present during observed load.
 
@@ -82,7 +82,7 @@ This is **Protocol/engine load only**. Browser/Web Listener UI mass-load testing
 and a 2000-listener certificate remain future scaling/hardening work.
 
 Permanent test manual and canonical result:
-- `docs/24_stress_tests.md`
+- `docs/23_stress_tests.md`
 
 Historical snapshot:
 - `legacy/stage_xi_load_capacity/`

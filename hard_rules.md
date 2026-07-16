@@ -44,6 +44,8 @@ Operator environment:
 - No Docker knowledge assumed
 - No Linux administration experience assumed
 
+Environment assumptions above describe direct-IP pilot mode. Stage XII may add optional domain HTTPS/WSS mode, but it must not remove or break direct-IP pilot testing.
+
 Documentation and deploy procedures must assume this environment unless explicitly stated otherwise.
 
 ## LiveKit pinned compatibility matrix (MVP baseline)
