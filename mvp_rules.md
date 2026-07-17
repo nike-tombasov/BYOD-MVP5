@@ -1,9 +1,10 @@
-# MVP rules for MVP10 after Stage X
+# MVP rules for MVP after Stage XI
 
 ## Current status
 Stage X is completed: the Ubuntu 22.04 LTS single-VPS deploy package and
-operator manuals were verified in a real VPS pilot. Stage XI load and capacity
-characterization is planned only and is not implemented by this baseline.
+operator manuals were verified in a real VPS pilot. Stage XI is completed for
+current MVP pilot risk: protocol/engine load characterization produced useful
+single-VPS capacity signals, not a browser mass-load certificate.
 
 ## Completed Stage X scope
 1) Deploy package structure and one-action flow for Ubuntu VPS.
@@ -11,10 +12,10 @@ characterization is planned only and is not implemented by this baseline.
 3) Artifact manifest and version/checksum discipline.
 4) Documentation alignment for Stage X deliverables.
 
-## Strictly OUT of scope for the completed Stage X baseline
+## Strictly OUT of scope for the completed Stage XI baseline
 - real backend multitrack recording implementation (future feature after MVP pilots)
 - Admin Web UI implementation
-- load/stress framework implementation and capacity claims (Stage XI)
+- browser/Web Listener mass-load certificate claims
 - major architecture redesign of backend/listener/publisher behavior
 
 ## Hard constraints
@@ -34,7 +35,7 @@ characterization is planned only and is not implemented by this baseline.
 - diagnostics console logging remains enabled.
 - no new scope from future stages without explicit approval.
 
-## MVP10 Deployment Topology
+## MVP deployment topology
 Single-node deployment.
 
 All components run on one VPS:
@@ -48,14 +49,20 @@ No Kubernetes.
 No Docker orchestration.
 No external database.
 
-Optimization for scale is out of scope for MVP10.
+Optimization for scale is out of scope for the current MVP.
 
 ## Anti-overdevelopment policy
-If work is not required for Stage X exit criteria, postpone it to roadmap/future features with a short reason.
+If work is not required for the current stage exit criteria, postpone it to roadmap/future features with a short reason.
+
+## Stage XII scope note
+Stage XII documents optional domain HTTPS/WSS mode while preserving direct-IP
+pilot mode. Event aliases are URL path aliases only, not separate rooms. For
+MVP operations, one simultaneous hall/event equals one VPS. Future technology
+topics remain future unless required by practical domain-mode testing.
 
 ## Canonical protocol and architecture note
 Stage-specific file (`mvp_rules.md`) must not duplicate permanent protocol canon.
 For stable behavior rules use:
-- `docs/08_backend.md`
-- `docs/09_listener_ui.md`
-- `docs/15_ws_schema_v1.md`
+- `docs/09_backend.md`
+- `docs/10_listener_ui.md`
+- `docs/16_ws_schema_v1.md`

@@ -1,6 +1,6 @@
 ## 8. Publisher UI
 
-WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+WS wire-protocol canonical source: `docs/16_ws_schema_v1.md`.
 This document keeps Publisher semantics/UX/operations only and must not redefine wire format.
 
 ### 8.1. Сценарии использования в комнате:

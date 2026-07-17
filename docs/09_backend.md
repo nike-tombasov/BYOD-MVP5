@@ -1,6 +1,6 @@
 ## 9. Backend - FastAPI
 
-WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+WS wire-protocol canonical source: `docs/16_ws_schema_v1.md`.
 This file describes backend semantics/operations and must not conflict with canonical wire schema.
 
 pip install fastapi uvicorn websockets pyjwt livekit-api
@@ -8,8 +8,8 @@ pip install fastapi uvicorn websockets pyjwt livekit-api
 ### 9.1. Содержание базы данных Backend, управляемых admin
 
 Persistence formalization:
-- canonical file for storage layout and atomic write rules: `docs/16_backend_persistence_json_v1.md`.
-- canonical file for admin JSON import format and validation: `docs/17_json_import_schema_v1.md`.
+- canonical file for storage layout and atomic write rules: `docs/17_backend_persistence_json_v1.md`.
+- canonical file for admin JSON import format and validation: `docs/18_json_import_schema_v1.md`.
 
 Startup/import persistence policy:
 - after restart backend must keep last successful imported room metadata;
@@ -238,7 +238,7 @@ Backend рассылает **два разных state-сообщения**:
 - channels (channel_id, channel_label, listen)
 
 Schema rule:
-- `publisher_state` и `listener_state` используют общий envelope schema v1 из `docs/15_ws_schema_v1.md`.
+- `publisher_state` и `listener_state` используют общий envelope schema v1 из `docs/16_ws_schema_v1.md`.
 
 Publisher использует owner для interlock логики.
 Listener НЕ использует owner для управления аудио.
@@ -266,7 +266,7 @@ send snapshot to clients (without lock)
 Formal WS schema requirement:
 * отдельный документ контракта обязателен (типы сообщений, обязательные поля, коды ошибок, retry behavior);
 * до публикации schema v1 используются временные строгие runtime-валидации и совместимость через acceptance checklist.
-* canonical v1 document: `docs/15_ws_schema_v1.md`.
+* canonical v1 document: `docs/16_ws_schema_v1.md`.
 
 ### 9.13. Multi-language data delivery for Publisher and Listener UI (MVP)
 
@@ -310,8 +310,8 @@ JSON must be UTF-8/Unicode safe for Cyrillic, CJK and other language symbols.
 
 i18n/import and persistence consistency note:
 - i18n library bootstrap/import format is formalized in:
-  - `docs/17_json_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
-  - `docs/16_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
+  - `docs/18_json_import_schema_v1.md` (required JSON fields for channels + i18n library maps);
+  - `docs/17_backend_persistence_json_v1.md` (`room_config_v1.json` includes `i18n_library` + deploy immutable defaults before first import).
 - MVP rule unchanged: backend sends full immutable `i18n_library`, backend does not store per-user `ui_lang`, backend does not choose language per listener.
 
 
@@ -413,8 +413,8 @@ The current backend exposes only the endpoints below. The VPS nginx contract mus
 | `GET` | `/admin/check_ws_compat` | Local-only; nginx must not expose `/admin/*`. | Builds Publisher and Listener state snapshots and verifies required schema keys for WebSocket compatibility. | Returns booleans such as `ok`, `publisher_state_ok`, `listener_state_ok`, plus schema versions. |
 | `GET` | `/admin/metrics_snapshot` | Local-only; nginx must not expose `/admin/*`. | Provides machine-readable backend and LiveKit diagnostic counters for VPS metrics tooling. It must not include tokens, PINs, API secrets, or private environment dumps. | Returns `ts`, `timestamp_local`, `timestamp_utc`, room limits/status, backend session counts, reject counters, per-channel activity, and LiveKit participant diagnostics. |
 | `POST` | `/admin/console_command` | Local-only; nginx must not expose `/admin/*`. | Executes an existing backend console command through the supported VPS control path. | JSON body `{"command":"help"}`; returns `{"ok": true, "command": "...", "result": "..."}`. |
-| `WS` | `/ws/publisher` | Public WebSocket path through nginx. | Publisher WebSocket protocol for connect, heartbeat, ON AIR, and stop/off-air interactions. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and state updates. |
-| `WS` | `/ws/listener` | Public WebSocket path through nginx. | Listener WebSocket protocol for connect, heartbeat, admission control, LiveKit token delivery, and reconnect-required signaling. | Uses schema-versioned WebSocket envelopes from `docs/15_ws_schema_v1.md`; returns connect success/error and listener state updates. |
+| `WS` | `/ws/publisher` | Public WebSocket path through nginx. | Publisher WebSocket protocol for connect, heartbeat, ON AIR, and stop/off-air interactions. | Uses schema-versioned WebSocket envelopes from `docs/16_ws_schema_v1.md`; returns connect success/error and state updates. |
+| `WS` | `/ws/listener` | Public WebSocket path through nginx. | Listener WebSocket protocol for connect, heartbeat, admission control, LiveKit token delivery, and reconnect-required signaling. | Uses schema-versioned WebSocket envelopes from `docs/16_ws_schema_v1.md`; returns connect success/error and listener state updates. |
 
 Security notes:
 - `/admin/*` endpoints enforce local-request checks in backend code and are local-only operational surfaces.
