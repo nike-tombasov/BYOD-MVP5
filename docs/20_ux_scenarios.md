@@ -6,10 +6,11 @@ Open page → visible of room name and channel buttons (if deployed backend exis
 Click channel → channels sound, clicked button highlights.  
 Switch channel → sound switches, button rehighlights to new one.  
 Stop channel → silence, button unhighlights.  
-System player pause → silence, button unhighlights.  
-System player play → last channels sound, last button highlights.  
+System player pause (<60s) → silence, system player remains if browser/OS allows, selected channel button may remain highlighted; click highlighted button → sound resumes.
+System player pause (≥60s expiry) → silence, system player clears if browser/OS allows, selected channel button unhighlights, no heartbeat; return to page may reconnect backend/LiveKit with no sound.
+System player play → best-effort local resume only before system-pause expiry; after expiry page interaction is required.  
 Publisher restart/change → auto recovery, no visible changes.  
-Publisher offline/STOP steam → silence, no visible changes.  
+Publisher offline/STOP stream → silence, no visible changes.  
 Page background with ACTIVE PLAY → sound continuing, system volume and player works, no visible page changes.  
 Page background with stopped channel button → return after timeout → click → sound.  
 Backend unavailable → CONNECTING (0-3s) / RETRYING (3-10s) / UNAVAILABLE (>10s) message shown.
