@@ -6,7 +6,7 @@ Open page → visible of room name and channel buttons (if deployed backend exis
 Click channel → channels sound, clicked button highlights.  
 Switch channel → sound switches, button rehighlights to new one.  
 Stop channel → silence, button unhighlights.  
-System player pause (<60s) → silence, system player remains if browser/OS allows, selected channel button may remain highlighted; click highlighted button → sound resumes.  
+System player pause (<60s) → silence, system player remains if browser/OS allows, selected channel button may remain highlighted; click highlighted button → sound resumes.
 System player pause (≥60s expiry) → silence, system player clears if browser/OS allows, selected channel button unhighlights, no heartbeat; return to page may reconnect backend/LiveKit with no sound.
 System player play → best-effort local resume only before system-pause expiry; after expiry page interaction is required.  
 Publisher restart/change → auto recovery, no visible changes.  
