@@ -6,6 +6,7 @@ const HEARTBEAT_INTERVAL_MS = 10_000;
 const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 const RETRYING_RECONNECT_DELAY_MS = 3_000;
 const UNAVAILABLE_RECONNECT_DELAY_MS = 10_000;
+const MEDIA_SESSION_RECONNECT_AFTER_PAUSE_MS = 45_000;
 
 let backendWs = null;
 let room = null;
@@ -46,6 +47,14 @@ let selectedChannel = null;
 let playbackState = 'IDLE';
 let currentTrack = null;
 let currentTrackName = null;
+let lastMediaSessionChannel = null;
+let mediaSessionPausedAtMs = null;
+let lastMediaSessionPauseDurationMs = null;
+let mediaSessionHandlersRegistered = false;
+let mediaSessionLastAction = null;
+let lastPlaybackEvent = null;
+let lastPlaybackError = null;
+let lastReconnectReason = null;
 let attachInProgress = false;
 let detachInProgress = false;
 
@@ -66,6 +75,25 @@ function log(message) {
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
+function isMediaSessionSupported() {
+  return typeof navigator !== 'undefined' && 'mediaSession' in navigator;
+}
+
+function setMediaSessionPlaybackState(nextState) {
+  if (!isMediaSessionSupported() || !('playbackState' in navigator.mediaSession)) return;
+  try {
+    navigator.mediaSession.playbackState = nextState;
+  } catch (error) {
+    log(`media session playbackState warning: ${error.message}`);
+  }
+}
+
+function notePlaybackEvent(event, error = null) {
+  lastPlaybackEvent = event;
+  lastPlaybackError = error ? error.message : null;
+  updateDiagnosticsSnapshot();
+}
+
 function updateDiagnosticsSnapshot() {
   window.__listenerDiagnostics = {
     connectionState,
@@ -77,6 +105,16 @@ function updateDiagnosticsSnapshot() {
     i18nMismatchCount,
     sdkSource: window.__livekitSdkSource || 'unknown',
     lastBackendActivityMs,
+    mediaSessionSupported: isMediaSessionSupported(),
+    mediaSessionHandlersRegistered,
+    mediaSessionLastAction,
+    lastMediaSessionChannel,
+    mediaSessionPausedAtMs,
+    lastMediaSessionPauseDurationMs,
+    playbackState,
+    lastPlaybackEvent,
+    lastPlaybackError,
+    lastReconnectReason,
   };
 }
 
@@ -447,6 +485,33 @@ function stopPlayback() {
   currentTrack = null;
   currentTrackName = null;
   playbackState = 'IDLE';
+  setMediaSessionPlaybackState('none');
+  notePlaybackEvent('stop');
+}
+
+function getSelectedChannelLabel(channelId) {
+  const channel = (currentState?.channels || []).find((item) => item.channel_id === channelId);
+  return channel?.channel_label || channelId || 'Live audio';
+}
+
+function updateMediaSessionMetadata(channelId) {
+  if (!isMediaSessionSupported() || !channelId) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: getSelectedChannelLabel(channelId),
+      artist: getLocalizedRoomName(),
+      album: 'BYOD Live',
+    });
+  } catch (error) {
+    log(`media session metadata warning: ${error.message}`);
+  }
+}
+
+function clearRememberedMediaSessionChannel() {
+  lastMediaSessionChannel = null;
+  mediaSessionPausedAtMs = null;
+  lastMediaSessionPauseDurationMs = null;
+  updateDiagnosticsSnapshot();
 }
 
 async function detachPlayback(reason, { force = false } = {}) {
@@ -488,10 +553,14 @@ async function attachPlaybackTrack(track, trackName) {
     currentTrack = track;
     currentTrackName = trackName;
     playbackState = 'PLAYING';
+    setMediaSessionPlaybackState('playing');
+    updateMediaSessionMetadata(trackName);
+    notePlaybackEvent(`play:${trackName}`);
     log(`attach done channel=${trackName}`);
     return true;
   } catch (error) {
     stopPlayback();
+    notePlaybackEvent(`play-error:${trackName}`, error);
     log(`attach reset to IDLE channel=${trackName} error=${error.message}`);
     return false;
   } finally {
@@ -532,6 +601,8 @@ async function attachSelectedIfPossible() {
   const track = trackByChannel.get(selectedChannel) || publication?.track || null;
   if (!track) {
     playbackState = 'WAITING';
+    updateMediaSessionMetadata(selectedChannel);
+    notePlaybackEvent(`waiting:${selectedChannel}`);
     log(`attach waiting channel=${selectedChannel}`);
     return;
   }
@@ -603,6 +674,11 @@ function renderState(state) {
       }
 
       if (selectedChannel === channel.channel_id) {
+        if (playbackState === 'PAUSED_BY_SYSTEM') {
+          await resumeFromSystemPlayer('button');
+          return;
+        }
+        clearRememberedMediaSessionChannel();
         selectedChannel = null;
         syncSubscriptions();
         await detachPlayback('button stop');
@@ -611,7 +687,9 @@ function renderState(state) {
       }
 
       selectedChannel = channel.channel_id;
+      lastMediaSessionChannel = channel.channel_id;
       playbackState = 'WAITING';
+      updateMediaSessionMetadata(channel.channel_id);
       renderState(currentState);
       if (connectionState === CONNECTION_STATE.STALE) {
         try {
@@ -838,7 +916,32 @@ async function connectBackend(reason = 'connect') {
   });
 }
 
+async function resumeSelectedChannelAfterMediaSession(reason) {
+  if (!selectedChannel || !isRoomOpened()) return;
+  playbackState = 'WAITING';
+  updateMediaSessionMetadata(selectedChannel);
+  renderState(currentState);
+  syncSubscriptions();
+  if (currentTrack && currentTrackName === selectedChannel && player.srcObject) {
+    try {
+      await player.play();
+      playbackState = 'PLAYING';
+      setMediaSessionPlaybackState('playing');
+      notePlaybackEvent(`resume:${reason}`);
+      renderState(currentState);
+      return;
+    } catch (error) {
+      notePlaybackEvent(`resume-error:${reason}`, error);
+      log(`media session resume play error: ${error.message}`);
+    }
+  }
+  await attachSelectedIfPossible();
+  renderState(currentState);
+}
+
 async function reconnectListener(reason) {
+  lastReconnectReason = reason;
+  updateDiagnosticsSnapshot();
   if (connectionState === CONNECTION_STATE.CONNECTED) {
     log(`reconnect skipped: already CONNECTED (${reason})`);
     return;
@@ -875,10 +978,138 @@ async function reconnectListener(reason) {
   }
 }
 
+async function forceReconnectListenerForMediaSession(reason) {
+  lastReconnectReason = reason;
+  updateDiagnosticsSnapshot();
+  if (reconnectPromise) {
+    log(`media session force reconnect joins existing reconnect (${reason})`);
+    return reconnectPromise;
+  }
+
+  reconnectPromise = (async () => {
+    reconnectAttemptCount += 1;
+    updateDiagnosticsSnapshot();
+    setConnectionState(CONNECTION_STATE.RECONNECTING, reason);
+    await closeBackendSocketForReconnect();
+    await closeLiveKitForReconnect();
+    resetHandshakeFlagsForReconnect();
+    await connectBackend(`media-session:${reason}`);
+    reconnectSuccessCount += 1;
+    updateDiagnosticsSnapshot();
+  })();
+
+  try {
+    await reconnectPromise;
+  } catch (error) {
+    reconnectFailureCount += 1;
+    updateDiagnosticsSnapshot();
+    markConnectionStale(`media session reconnect failed: ${error.message}`);
+    throw error;
+  } finally {
+    reconnectPromise = null;
+  }
+}
+
+function pauseFromSystemPlayer(reason) {
+  mediaSessionLastAction = `pause:${reason}`;
+  if (!selectedChannel || !['PLAYING', 'WAITING'].includes(playbackState)) {
+    log(`media session pause ignored reason=${reason}`);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+
+  lastMediaSessionChannel = selectedChannel;
+  mediaSessionPausedAtMs = Date.now();
+  player.pause();
+  playbackState = 'PAUSED_BY_SYSTEM';
+  setMediaSessionPlaybackState('paused');
+  updateMediaSessionMetadata(selectedChannel);
+  notePlaybackEvent(`pause:${reason}`);
+  renderState(currentState);
+}
+
+async function resumeFromSystemPlayer(reason) {
+  mediaSessionLastAction = `play:${reason}`;
+  const rememberedChannel = lastMediaSessionChannel || selectedChannel;
+  if (!rememberedChannel) {
+    log(`media session play ignored: no remembered channel reason=${reason}`);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  if (isRoomClosed() || isRoomBlocked()) {
+    log(`media session play ignored: room unavailable reason=${reason}`);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+
+  const wasPausedBySystem = playbackState === 'PAUSED_BY_SYSTEM';
+  selectedChannel = rememberedChannel;
+  lastMediaSessionChannel = rememberedChannel;
+  lastMediaSessionPauseDurationMs = mediaSessionPausedAtMs ? Date.now() - mediaSessionPausedAtMs : null;
+  const staleRisk = lastMediaSessionPauseDurationMs !== null
+    && lastMediaSessionPauseDurationMs > MEDIA_SESSION_RECONNECT_AFTER_PAUSE_MS;
+  const suspiciousState = connectionState !== CONNECTION_STATE.CONNECTED
+    || !isBackendWsOpen()
+    || !livekitConnected
+    || !room
+    || (wasPausedBySystem && currentTrackName !== rememberedChannel);
+
+  playbackState = 'WAITING';
+  updateMediaSessionMetadata(rememberedChannel);
+  renderState(currentState);
+
+  try {
+    if (staleRisk || suspiciousState) {
+      await forceReconnectListenerForMediaSession(`system play:${reason}`);
+    }
+    await resumeSelectedChannelAfterMediaSession(reason);
+  } catch (error) {
+    notePlaybackEvent(`resume-error:${reason}`, error);
+    log(`media session play error: ${error.message}`);
+  }
+}
+
+function setupMediaSession() {
+  if (!isMediaSessionSupported()) {
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  try {
+    navigator.mediaSession.setActionHandler('play', () => {
+      resumeFromSystemPlayer('action').catch((error) => log(`media session play handler error: ${error.message}`));
+    });
+    navigator.mediaSession.setActionHandler('pause', () => pauseFromSystemPlayer('action'));
+    navigator.mediaSession.setActionHandler('stop', () => {
+      mediaSessionLastAction = 'stop:action';
+      clearRememberedMediaSessionChannel();
+      selectedChannel = null;
+      syncSubscriptions();
+      detachPlayback('media session stop', { force: true })
+        .then(() => {
+          if (currentState) renderState(currentState);
+        })
+        .catch((error) => log(`media session stop error: ${error.message}`));
+    });
+    for (const action of ['seekbackward', 'seekforward', 'seekto', 'previoustrack', 'nexttrack']) {
+      try {
+        navigator.mediaSession.setActionHandler(action, null);
+      } catch (error) {
+        log(`media session unsupported action=${action}`);
+      }
+    }
+    mediaSessionHandlersRegistered = true;
+    updateDiagnosticsSnapshot();
+    log('media session handlers registered');
+  } catch (error) {
+    log(`media session setup warning: ${error.message}`);
+  }
+}
+
 initLanguageDetection();
 const env = detectClientEnvironment();
 log(`client env: platform=${env.platform} mobile=${env.isMobile}`);
 log(`client env: ua=${env.ua}`);
+setupMediaSession();
 updateDiagnosticsSnapshot();
 startHeartbeatLoops();
 startConnectionBannerLoop();
