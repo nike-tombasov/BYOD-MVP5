@@ -56,6 +56,7 @@ let systemPauseExpired = false;
 let systemPauseStartedAtMs = null;
 let systemPauseExpireTimerId = null;
 let lastSystemPausedChannel = null;
+let lastSystemPauseExpiredAtMs = null;
 let lastPlaybackEvent = null;
 let lastPlaybackError = null;
 let intentionalPauseExpiryCleanup = false;
@@ -96,6 +97,7 @@ function updateDiagnosticsSnapshot() {
     systemPauseStartedAtMs,
     systemPauseElapsedMs: getSystemPauseElapsedMs(),
     lastSystemPausedChannel,
+    lastSystemPauseExpiredAtMs,
     playbackState,
     lastPlaybackEvent,
     lastPlaybackError,
@@ -176,7 +178,7 @@ function clearAutoRetryTimer() {
 }
 
 function scheduleAutoRetry(reason) {
-  if (systemPauseActive || systemPauseExpired || intentionalPauseExpiryCleanup) {
+  if (systemPauseActive || intentionalPauseExpiryCleanup) {
     log(`auto-retry suppressed reason=${reason}`);
     return;
   }
@@ -414,7 +416,7 @@ function setConnectionState(nextState, reason = '') {
 }
 
 function markConnectionStale(reason) {
-  if (systemPauseActive || systemPauseExpired || intentionalPauseExpiryCleanup) {
+  if (systemPauseActive || intentionalPauseExpiryCleanup) {
     log(`connection stale auto-reconnect suppressed reason=${reason}`);
   }
   setConnectionState(CONNECTION_STATE.STALE, reason);
@@ -572,6 +574,7 @@ function expireSystemPause(reason) {
   clearSystemPauseTimer();
   systemPauseActive = false;
   systemPauseExpired = true;
+  lastSystemPauseExpiredAtMs = Date.now();
   systemPauseStartedAtMs = null;
   lastSystemPausedChannel = null;
   selectedChannel = null;
@@ -584,11 +587,12 @@ function expireSystemPause(reason) {
   clearMediaSessionMetadata();
   syncSubscriptions();
   if (currentState) renderState(currentState);
-  closeLiveKitForSystemPauseExpiry().finally(() => { intentionalPauseExpiryCleanup = false; });
+  closeLiveKitForSystemPauseExpiry().catch((error) => log(`livekit system-pause cleanup warning: ${error.message}`));
   closeBackendSocketForSystemPauseExpiry();
   livekitConnected = false;
   setConnectionState(CONNECTION_STATE.STALE, 'system pause expired');
   clearAutoRetryTimer();
+  intentionalPauseExpiryCleanup = false;
   updateDiagnosticsSnapshot();
   return true;
 }
@@ -760,7 +764,6 @@ function syncSubscriptions() {
 async function attachSelectedIfPossible() {
   expireSystemPauseIfOverdue('before attach');
   if (systemPauseActive) { log('attach skipped: system pause active'); return; }
-  if (systemPauseExpired) { log('attach skipped: system pause expired'); return; }
   if (!selectedChannel || !isRoomOpened()) return;
 
   const publication = publicationByChannel.get(selectedChannel);
@@ -1105,7 +1108,7 @@ async function connectBackend(reason = 'connect') {
 async function reconnectListener(reason) {
   lastReconnectReason = reason;
   updateDiagnosticsSnapshot();
-  if ((systemPauseActive || systemPauseExpired) && reason !== 'channel click' && reason !== 'system pause page resume') {
+  if ((systemPauseActive || intentionalPauseExpiryCleanup) && reason !== 'channel click' && reason !== 'system pause page resume') {
     log(`reconnect skipped: system pause state (${reason})`);
     return;
   }
@@ -1163,22 +1166,28 @@ ensureLiveKitClientLoaded()
 
 document.addEventListener('visibilitychange', () => {
   expireSystemPauseIfOverdue('visibilitychange');
-  if (document.visibilityState === 'visible' && !systemPauseActive && !systemPauseExpired && connectionState === CONNECTION_STATE.STALE) {
+  if (document.visibilityState === 'visible' && !systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
   }
 });
 
 window.addEventListener('online', () => {
   expireSystemPauseIfOverdue('online');
-  if (!systemPauseActive && !systemPauseExpired && connectionState === CONNECTION_STATE.STALE) {
+  if (!systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('network online').catch((error) => log(`reconnect error: ${error.message}`));
   }
 });
 
 window.addEventListener('pageshow', () => {
   expireSystemPauseIfOverdue('pageshow');
+  if (!systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
+    reconnectListener('pageshow').catch((error) => log(`reconnect error: ${error.message}`));
+  }
 });
 
 window.addEventListener('focus', () => {
   expireSystemPauseIfOverdue('focus');
+  if (!systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
+    reconnectListener('focus').catch((error) => log(`reconnect error: ${error.message}`));
+  }
 });
