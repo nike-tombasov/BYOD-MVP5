@@ -1,6 +1,6 @@
 ## 10. Listener Web UI (HTML)
 
-WS wire-protocol canonical source: `docs/15_ws_schema_v1.md`.
+WS wire-protocol canonical source: `docs/16_ws_schema_v1.md`.
 This file describes Listener behavior/UX and must not conflict with canonical wire schema.
 
 ### 10.1. Внешний вид. 
@@ -175,7 +175,7 @@ Implementation priority note:
 - users system volume control для динамиков/наушников
 - active with blocked screen on mobile
 - users system mobile player (includes only pause/play button) 
-- token lifecycle rules: см. docs/08_backend.md, раздел 9.2
+- token lifecycle rules: см. docs/09_backend.md, раздел 9.2
 - LiveKit JS SDK policy: pinned `1.15.13`.
 - Local pinned file path (project): `src/listener/vendor/livekit-client.umd.1.15.13.js`.
 - CDN source reference: `https://unpkg.com/livekit-client@1.15.13/dist/livekit-client.umd.js` (optional, future fallback discussion).
@@ -253,7 +253,7 @@ Language/i18n rendering baseline (permanent):
 
 #### 10.9.3 Формат данных и fallback на стороне Listener
 
-Backend payload (образец): см. docs/08_backend.md, раздел 9.13.
+Backend payload (образец): см. docs/09_backend.md, раздел 9.13.
 
 Listener language selection rule:
 ```
@@ -279,7 +279,7 @@ else:
 
 Backend JSON и Listener UI обязаны поддерживать Unicode без потери символов (кириллица, иероглифы, диакритика и т.д.).
 
-Override details: см. docs/08_backend.md, раздел 9.14.
+Override details: см. docs/09_backend.md, раздел 9.14.
 
 ### 10.10. Active PLAY heartbeat control
 

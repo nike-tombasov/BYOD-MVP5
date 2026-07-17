@@ -1,6 +1,6 @@
 ## 15. Open issues
 
-Rules for docs/14_open_issues.md:
+Rules for docs/15_open_issues.md:
 - This file is updated only by special request.
 - All new ambiguities are discussed in chat first.
 - Only unresolved items after discussion are written here.
@@ -48,7 +48,7 @@ Rules for docs/14_open_issues.md:
 Эти пункты фиксируют известные разрывы между текущей спецификацией и реализацией. Они не являются срочными runtime-исправлениями: MVP-система сейчас работает достаточно стабильно, а изменения в backend/listener/deploy-коде по этим темам могут быть рискованнее, чем сохранение текущего поведения. Вернуться к ним можно позже при архитектурном и спецификационном hardening.
 
 1) WS envelope `ts`
-- `docs/15_ws_schema_v1.md` описывает `ts` как обязательное поле каждого envelope.
+- `docs/16_ws_schema_v1.md` описывает `ts` как обязательное поле каждого envelope.
 - Текущая backend/listener-валидация не навязывает `ts` строго; runtime оставляем без изменений.
 
 2) WS `client_role` в payload `connecting`
@@ -79,3 +79,9 @@ Rules for docs/14_open_issues.md:
 - `tbd.md` отмечает отсутствие формального debounce/backoff policy.
 - Текущий Listener имеет attach/detach busy guards и timeout protection, но без формального debounce contract; оставить как будущий UI hardening/documentation issue.
 
+9) Mobile background playback and system media controls
+- The spec requires mobile background/locked-screen playback and system media controls.
+- This behavior is currently browser/OS-dependent and is not guaranteed by the current Web Listener.
+- Stage I/IV legacy Media Session behavior is reference material only.
+- Legacy code must not be copied directly because the current Listener hard rules require one audio element, selective subscribe, and `autoSubscribe=false`.
+- Future implementation should add a small Media Session compatibility layer without changing the core Listener audio architecture.

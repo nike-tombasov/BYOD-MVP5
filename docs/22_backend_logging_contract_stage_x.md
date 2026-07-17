@@ -1,4 +1,4 @@
-# 21. Backend Logging Contract (Stage X Pilot)
+# 22. Backend Logging Contract (Stage X Pilot)
 
 This contract defines minimum logs for pilot diagnostics.
 

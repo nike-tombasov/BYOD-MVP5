@@ -57,7 +57,7 @@ Delivered in Stage X:
 
 Delivered in Stage XI:
 1) protocol/engine load and capacity characterization completed for current MVP risk;
-2) latest useful result documented in `docs/22_stress_tests.md`;
+2) latest useful result documented in `docs/23_stress_tests.md`;
 3) approximately 695 emulated listener participants reached on the tested VPS;
 4) one real Web Listener remained usable during observed load;
 5) browser/Web Listener mass testing was not performed;
@@ -72,9 +72,9 @@ Delivered in Stage XI:
 
 This file is a status/history summary.
 Normative behavior is pinned in permanent docs:
-- backend architecture/semantics: `docs/08_backend.md`;
-- listener behavior: `docs/09_listener_ui.md`;
-- WS wire protocol: `docs/15_ws_schema_v1.md`;
-- LiveKit version baseline: `docs/06_livekit_engine.md`;
-- Ubuntu deploy contract: `docs/13_ubuntu_deploy_contract.md`;
-- stress-test specification and latest useful result: `docs/22_stress_tests.md`.
+- backend architecture/semantics: `docs/09_backend.md`;
+- listener behavior: `docs/10_listener_ui.md`;
+- WS wire protocol: `docs/16_ws_schema_v1.md`;
+- LiveKit version baseline: `docs/07_livekit_engine.md`;
+- Ubuntu deploy contract: `docs/14_ubuntu_deploy_contract.md`;
+- stress-test specification and latest useful result: `docs/23_stress_tests.md`.

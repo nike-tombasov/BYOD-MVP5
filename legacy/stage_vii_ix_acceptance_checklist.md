@@ -1,4 +1,4 @@
-## 19. Stage VII-IX acceptance checklist (formal)
+## Stage VII-IX acceptance checklist (legacy formal artifact)
 
 Purpose:
 - verification artifact for go/no-go before Stage X;
@@ -10,9 +10,9 @@ Result statuses:
 - `DEFERRED_WITH_RISK_NOTE`
 
 Canonical behavior sources:
-- backend: `docs/08_backend.md`
-- listener UX/state: `docs/09_listener_ui.md`
-- WS wire protocol: `docs/15_ws_schema_v1.md`
+- backend: `docs/09_backend.md`
+- listener UX/state: `docs/10_listener_ui.md`
+- WS wire protocol: `docs/16_ws_schema_v1.md`
 
 Date of Stage VII closure record: **April 13, 2026**.
 Date of Stage VIII closure record: **April 14, 2026**.
@@ -20,7 +20,7 @@ Date of Stage IX closure record: **April 19, 2026**.
 
 ---
 
-### 19.1 Stage VII — Backend hardening (verification)
+### Stage VII — Backend hardening (verification)
 
 1) WS contract — **PASS**
 - schema v1 implemented and validated against canonical WS doc.
@@ -45,7 +45,7 @@ Date of Stage IX closure record: **April 19, 2026**.
 
 ---
 
-### 19.2 Stage VIII — Listener room_status behavior (verification)
+### Stage VIII — Listener room_status behavior (verification)
 
 1) BLOCKED path — **PASS**
 2) CLOSED path — **PASS**
@@ -57,7 +57,7 @@ All checks verified against canonical listener/WS docs.
 
 ---
 
-### 19.3 Stage IX — Listener resilience/compatibility (verification)
+### Stage IX — Listener resilience/compatibility (verification)
 
 1) Token reconnect policy — **PASS**
 2) Local pinned SDK wiring — **PASS**
