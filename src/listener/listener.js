@@ -47,6 +47,8 @@ let selectedChannel = null;
 let playbackState = 'IDLE';
 let currentTrack = null;
 let currentTrackName = null;
+let systemPauseActive = false;
+let systemPlayRequested = false;
 let lastMediaSessionChannel = null;
 let mediaSessionPausedAtMs = null;
 let lastMediaSessionPauseDurationMs = null;
@@ -107,6 +109,8 @@ function updateDiagnosticsSnapshot() {
     lastBackendActivityMs,
     mediaSessionSupported: isMediaSessionSupported(),
     mediaSessionHandlersRegistered,
+    systemPauseActive,
+    systemPlayRequested,
     mediaSessionLastAction,
     lastMediaSessionChannel,
     mediaSessionPausedAtMs,
@@ -150,6 +154,10 @@ function hasActivePlayRequest() {
 
 function hasAudioOpInProgress() {
   return attachInProgress || detachInProgress;
+}
+
+function shouldSuppressAutoplayBecauseSystemPaused() {
+  return systemPauseActive === true && systemPlayRequested !== true;
 }
 
 function getAvailabilityText(elapsedMs) {
@@ -480,6 +488,8 @@ async function closeLiveKitForReconnect() {
 }
 
 function stopPlayback() {
+  systemPauseActive = false;
+  systemPlayRequested = false;
   player.pause();
   player.srcObject = null;
   currentTrack = null;
@@ -508,6 +518,8 @@ function updateMediaSessionMetadata(channelId) {
 }
 
 function clearRememberedMediaSessionChannel() {
+  systemPauseActive = false;
+  systemPlayRequested = false;
   lastMediaSessionChannel = null;
   mediaSessionPausedAtMs = null;
   lastMediaSessionPauseDurationMs = null;
@@ -536,6 +548,14 @@ async function detachPlayback(reason, { force = false } = {}) {
 }
 
 async function attachPlaybackTrack(track, trackName) {
+  if (shouldSuppressAutoplayBecauseSystemPaused()) {
+    playbackState = 'PAUSED_BY_SYSTEM';
+    updateMediaSessionMetadata(selectedChannel || trackName);
+    notePlaybackEvent(`autoplay-suppressed:${trackName}`);
+    log(`attach suppressed by system pause channel=${trackName}`);
+    return false;
+  }
+
   if (hasAudioOpInProgress()) {
     log(`attach skipped (busy) channel=${trackName}`);
     return false;
@@ -597,6 +617,14 @@ function syncSubscriptions() {
 async function attachSelectedIfPossible() {
   if (!selectedChannel || !isRoomOpened()) return;
 
+  if (shouldSuppressAutoplayBecauseSystemPaused()) {
+    playbackState = 'PAUSED_BY_SYSTEM';
+    updateMediaSessionMetadata(selectedChannel);
+    notePlaybackEvent(`autoplay-suppressed:${selectedChannel}`);
+    log(`attach selected suppressed by system pause channel=${selectedChannel}`);
+    return;
+  }
+
   const publication = publicationByChannel.get(selectedChannel);
   const track = trackByChannel.get(selectedChannel) || publication?.track || null;
   if (!track) {
@@ -628,9 +656,11 @@ function enforceRoomStatusRules(state) {
   }
 
   if (nextStatus === 'OPENED' && previousRoomStatus === 'BLOCKED' && selectedChannel) {
-    playbackState = 'WAITING';
+    playbackState = shouldSuppressAutoplayBecauseSystemPaused() ? 'PAUSED_BY_SYSTEM' : 'WAITING';
     syncSubscriptions();
-    attachSelectedIfPossible().catch((error) => log(`resume attach error: ${error.message}`));
+    if (!shouldSuppressAutoplayBecauseSystemPaused()) {
+      attachSelectedIfPossible().catch((error) => log(`resume attach error: ${error.message}`));
+    }
   }
 }
 
@@ -686,6 +716,8 @@ function renderState(state) {
         return;
       }
 
+      systemPauseActive = false;
+      systemPlayRequested = true;
       selectedChannel = channel.channel_id;
       lastMediaSessionChannel = channel.channel_id;
       playbackState = 'WAITING';
@@ -918,6 +950,13 @@ async function connectBackend(reason = 'connect') {
 
 async function resumeSelectedChannelAfterMediaSession(reason) {
   if (!selectedChannel || !isRoomOpened()) return;
+  if (shouldSuppressAutoplayBecauseSystemPaused()) {
+    playbackState = 'PAUSED_BY_SYSTEM';
+    updateMediaSessionMetadata(selectedChannel);
+    notePlaybackEvent(`resume-suppressed:${reason}`);
+    renderState(currentState);
+    return;
+  }
   playbackState = 'WAITING';
   updateMediaSessionMetadata(selectedChannel);
   renderState(currentState);
@@ -1018,6 +1057,8 @@ function pauseFromSystemPlayer(reason) {
     return;
   }
 
+  systemPauseActive = true;
+  systemPlayRequested = false;
   lastMediaSessionChannel = selectedChannel;
   mediaSessionPausedAtMs = Date.now();
   player.pause();
@@ -1042,7 +1083,9 @@ async function resumeFromSystemPlayer(reason) {
     return;
   }
 
-  const wasPausedBySystem = playbackState === 'PAUSED_BY_SYSTEM';
+  const wasPausedBySystem = playbackState === 'PAUSED_BY_SYSTEM' || systemPauseActive;
+  systemPlayRequested = true;
+  systemPauseActive = false;
   selectedChannel = rememberedChannel;
   lastMediaSessionChannel = rememberedChannel;
   lastMediaSessionPauseDurationMs = mediaSessionPausedAtMs ? Date.now() - mediaSessionPausedAtMs : null;
