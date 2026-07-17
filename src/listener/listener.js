@@ -7,6 +7,9 @@ const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 const RETRYING_RECONNECT_DELAY_MS = 3_000;
 const UNAVAILABLE_RECONNECT_DELAY_MS = 10_000;
 const SYSTEM_PAUSE_EXPIRE_MS = 60_000;
+const ANDROID_CHROME_RECOVERY_THROTTLE_MS = 2_000;
+const ANDROID_CHROME_RECOVERY_MAX_ATTEMPTS_PER_EPISODE = 3;
+const ANDROID_CHROME_NATIVE_AUDIO_CONTROLS_EXPERIMENT = false;
 
 let backendWs = null;
 let room = null;
@@ -35,6 +38,21 @@ let reconnectFailureCount = 0;
 let heartbeatSentCount = 0;
 let lastReconnectReason = null;
 let heartbeatSuppressedReason = null;
+let clientEnvironment = null;
+let lastPlayerEvent = null;
+let lastPlayerEventAtMs = null;
+let lastPlayerPaused = null;
+let lastPlayerReadyState = null;
+let lastPlayerNetworkState = null;
+let lastPlayerError = null;
+let lastVisibilityState = document.visibilityState;
+let androidChromeRecoveryAttemptCount = 0;
+let androidChromeRecoverySuccessCount = 0;
+let androidChromeRecoveryFailureCount = 0;
+let androidChromeRecoveryEpisodeAttemptCount = 0;
+let lastAndroidChromeRecoveryReason = null;
+let lastAndroidChromeRecoveryAttemptAtMs = 0;
+let androidChromeSuspiciousMediaEvent = false;
 let i18nApplyCount = 0;
 let i18nMismatchCount = 0;
 
@@ -102,6 +120,18 @@ function updateDiagnosticsSnapshot() {
     lastPlaybackEvent,
     lastPlaybackError,
     lastReconnectReason,
+    clientEnvironment,
+    lastPlayerEvent,
+    lastPlayerEventAtMs,
+    lastPlayerPaused,
+    lastPlayerReadyState,
+    lastPlayerNetworkState,
+    lastPlayerError,
+    lastVisibilityState,
+    androidChromeRecoveryAttemptCount,
+    androidChromeRecoverySuccessCount,
+    androidChromeRecoveryFailureCount,
+    lastAndroidChromeRecoveryReason,
     i18nApplyCount,
     i18nMismatchCount,
     sdkSource: window.__livekitSdkSource || 'unknown',
@@ -112,8 +142,13 @@ function updateDiagnosticsSnapshot() {
 function detectClientEnvironment() {
   const ua = navigator.userAgent || 'unknown';
   const platform = navigator.platform || 'unknown';
+  const uaDataBrands = navigator.userAgentData?.brands?.map((brand) => brand.brand).join(',') || '';
   const isMobile = /android|iphone|ipad|ipod|mobile/i.test(ua);
-  return { ua, platform, isMobile };
+  const isAndroid = /android/i.test(ua);
+  const isSamsungBrowser = /SamsungBrowser/i.test(ua) || /Samsung Internet/i.test(uaDataBrands);
+  const isChrome = /(Chrome|CriOS|Chromium)\//i.test(ua) || /Chromium|Google Chrome/i.test(uaDataBrands);
+  const isAndroidChrome = isAndroid && isChrome && !isSamsungBrowser;
+  return { ua, platform, isMobile, isAndroid, isChrome, isSamsungBrowser, isAndroidChrome };
 }
 
 function nowTs() { return Math.floor(Date.now() / 1000); }
@@ -141,6 +176,90 @@ function hasActivePlayRequest() {
 
 function hasAudioOpInProgress() {
   return attachInProgress || detachInProgress;
+}
+
+function recordPlayerEvent(eventName) {
+  lastPlayerEvent = eventName;
+  lastPlayerEventAtMs = Date.now();
+  lastPlayerPaused = player.paused;
+  lastPlayerReadyState = player.readyState;
+  lastPlayerNetworkState = player.networkState;
+  if (player.error) {
+    lastPlayerError = `${player.error.code}:${player.error.message || 'media error'}`;
+  }
+  updateDiagnosticsSnapshot();
+  log(`player event=${eventName} paused=${player.paused} readyState=${player.readyState} networkState=${player.networkState}`);
+}
+
+function isAndroidChromeClient() {
+  return clientEnvironment?.isAndroidChrome === true;
+}
+
+function isPlaybackExpectedToContinue() {
+  return selectedChannel !== null
+    && playbackState === 'PLAYING'
+    && !!player.srcObject
+    && !!currentTrack
+    && !systemPauseActive
+    && !intentionalPauseExpiryCleanup
+    && !isRoomClosed()
+    && !isRoomBlocked()
+    && !hasAudioOpInProgress();
+}
+
+async function attemptAndroidChromeResumeExistingMedia(reason) {
+  if (!isAndroidChromeClient()) return false;
+  if (!isPlaybackExpectedToContinue()) return false;
+  if (!player.paused && !androidChromeSuspiciousMediaEvent) return false;
+
+  const nowMs = Date.now();
+  if (nowMs - lastAndroidChromeRecoveryAttemptAtMs < ANDROID_CHROME_RECOVERY_THROTTLE_MS) return false;
+  if (androidChromeRecoveryEpisodeAttemptCount >= ANDROID_CHROME_RECOVERY_MAX_ATTEMPTS_PER_EPISODE) return false;
+
+  androidChromeRecoveryAttemptCount += 1;
+  androidChromeRecoveryEpisodeAttemptCount += 1;
+  lastAndroidChromeRecoveryAttemptAtMs = nowMs;
+  lastAndroidChromeRecoveryReason = reason;
+  updateDiagnosticsSnapshot();
+  log(`android chrome recovery attempt reason=${reason}`);
+
+  try {
+    await player.play();
+    playbackState = 'PLAYING';
+    setMediaSessionPlaybackState('playing');
+    lastPlaybackEvent = 'android chrome recovery resume';
+    androidChromeSuspiciousMediaEvent = false;
+    androidChromeRecoverySuccessCount += 1;
+    updateDiagnosticsSnapshot();
+    log(`android chrome recovery success reason=${reason}`);
+    return true;
+  } catch (error) {
+    lastPlaybackError = `${error.name || 'Error'}: ${error.message}`;
+    androidChromeRecoveryFailureCount += 1;
+    updateDiagnosticsSnapshot();
+    log(`android chrome recovery failed reason=${reason} error=${error.name || 'Error'}:${error.message}`);
+    return false;
+  }
+}
+
+function maybeAttemptAndroidChromeRecovery(reason) {
+  attemptAndroidChromeResumeExistingMedia(reason).catch((error) => {
+    lastPlaybackError = error.message;
+    log(`android chrome recovery error reason=${reason} error=${error.message}`);
+    updateDiagnosticsSnapshot();
+  });
+}
+
+function initializePlayerDiagnostics() {
+  for (const eventName of ['play', 'playing', 'pause', 'waiting', 'stalled', 'suspend', 'emptied', 'abort', 'ended', 'error', 'volumechange']) {
+    player.addEventListener(eventName, () => {
+      recordPlayerEvent(eventName);
+      if (['pause', 'waiting', 'stalled', 'suspend'].includes(eventName)) {
+        androidChromeSuspiciousMediaEvent = true;
+        maybeAttemptAndroidChromeRecovery(eventName);
+      }
+    });
+  }
 }
 
 function getAvailabilityText(elapsedMs) {
@@ -716,19 +835,24 @@ async function attachPlaybackTrack(track, trackName) {
       const mediaStream = new MediaStream([track.mediaStreamTrack]);
       player.pause();
       player.srcObject = mediaStream;
+      setMediaSessionMetadata(trackName);
       await player.play();
     }, ATTACH_DETACH_TIMEOUT_MS, `attach timeout (${trackName})`);
 
     currentTrack = track;
     currentTrackName = trackName;
     playbackState = 'PLAYING';
+    setMediaSessionMetadata(trackName);
     setMediaSessionPlaybackState('playing');
+    lastPlaybackEvent = 'playback attached';
+    androidChromeSuspiciousMediaEvent = false;
+    androidChromeRecoveryEpisodeAttemptCount = 0;
     log(`attach done channel=${trackName}`);
     return true;
   } catch (error) {
-    lastPlaybackError = error.message;
+    lastPlaybackError = `${error.name || 'Error'}: ${error.message}`;
     stopPlayback();
-    log(`attach reset to IDLE channel=${trackName} error=${error.message}`);
+    log(`attach reset to IDLE channel=${trackName} error=${error.name || 'Error'}:${error.message}`);
     return false;
   } finally {
     attachInProgress = false;
@@ -878,7 +1002,6 @@ function renderState(state) {
       selectedChannel = channel.channel_id;
       playbackState = 'WAITING';
       setMediaSessionMetadata(selectedChannel);
-      setMediaSessionPlaybackState('playing');
       renderState(currentState);
       if (connectionState === CONNECTION_STATE.STALE) {
         try {
@@ -1149,11 +1272,13 @@ async function reconnectListener(reason) {
 }
 
 initLanguageDetection();
-const env = detectClientEnvironment();
-log(`client env: platform=${env.platform} mobile=${env.isMobile}`);
-log(`client env: ua=${env.ua}`);
+clientEnvironment = detectClientEnvironment();
+if (ANDROID_CHROME_NATIVE_AUDIO_CONTROLS_EXPERIMENT && clientEnvironment.isAndroidChrome) player.controls = true;
+log(`client env: platform=${clientEnvironment.platform} mobile=${clientEnvironment.isMobile} android=${clientEnvironment.isAndroid} chrome=${clientEnvironment.isChrome} samsung=${clientEnvironment.isSamsungBrowser}`);
+log(`client env: ua=${clientEnvironment.ua}`);
 updateDiagnosticsSnapshot();
 initializeMediaSession();
+initializePlayerDiagnostics();
 startHeartbeatLoops();
 startConnectionBannerLoop();
 ensureLiveKitClientLoaded()
@@ -1165,7 +1290,15 @@ ensureLiveKitClientLoaded()
   });
 
 document.addEventListener('visibilitychange', () => {
+  lastVisibilityState = document.visibilityState;
   expireSystemPauseIfOverdue('visibilitychange');
+  if (document.visibilityState === 'hidden') {
+    androidChromeRecoveryEpisodeAttemptCount = 0;
+    maybeAttemptAndroidChromeRecovery('visibility hidden');
+  }
+  if (document.visibilityState === 'visible') {
+    maybeAttemptAndroidChromeRecovery('visibility visible');
+  }
   if (document.visibilityState === 'visible' && !systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
   }
@@ -1179,15 +1312,26 @@ window.addEventListener('online', () => {
 });
 
 window.addEventListener('pageshow', () => {
+  lastVisibilityState = document.visibilityState;
   expireSystemPauseIfOverdue('pageshow');
+  maybeAttemptAndroidChromeRecovery('pageshow');
   if (!systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('pageshow').catch((error) => log(`reconnect error: ${error.message}`));
   }
 });
 
 window.addEventListener('focus', () => {
+  lastVisibilityState = document.visibilityState;
   expireSystemPauseIfOverdue('focus');
+  maybeAttemptAndroidChromeRecovery('focus');
   if (!systemPauseActive && !intentionalPauseExpiryCleanup && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('focus').catch((error) => log(`reconnect error: ${error.message}`));
   }
+});
+
+window.addEventListener('pagehide', () => {
+  lastVisibilityState = document.visibilityState;
+  androidChromeRecoveryEpisodeAttemptCount = 0;
+  expireSystemPauseIfOverdue('pagehide');
+  maybeAttemptAndroidChromeRecovery('pagehide');
 });
