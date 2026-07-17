@@ -7,6 +7,7 @@ const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 const RETRYING_RECONNECT_DELAY_MS = 3_000;
 const UNAVAILABLE_RECONNECT_DELAY_MS = 10_000;
 const MEDIA_SESSION_RECONNECT_AFTER_PAUSE_MS = 45_000;
+const SYSTEM_PAUSE_EXPIRE_MS = 60_000;
 
 let backendWs = null;
 let room = null;
@@ -49,6 +50,10 @@ let currentTrack = null;
 let currentTrackName = null;
 let systemPauseActive = false;
 let systemPlayRequested = false;
+let systemPauseExpired = false;
+let systemPauseExpireAtMs = null;
+let systemPauseExpireTimeoutId = null;
+let lastSystemPauseExpireReason = null;
 let lastMediaSessionChannel = null;
 let mediaSessionPausedAtMs = null;
 let lastMediaSessionPauseDurationMs = null;
@@ -111,6 +116,9 @@ function updateDiagnosticsSnapshot() {
     mediaSessionHandlersRegistered,
     systemPauseActive,
     systemPlayRequested,
+    systemPauseExpired,
+    systemPauseExpireAtMs,
+    lastSystemPauseExpireReason,
     mediaSessionLastAction,
     lastMediaSessionChannel,
     mediaSessionPausedAtMs,
@@ -158,6 +166,67 @@ function hasAudioOpInProgress() {
 
 function shouldSuppressAutoplayBecauseSystemPaused() {
   return systemPauseActive === true && systemPlayRequested !== true;
+}
+
+function clearSystemPauseExpireTimer() {
+  if (!systemPauseExpireTimeoutId) return;
+  clearTimeout(systemPauseExpireTimeoutId);
+  systemPauseExpireTimeoutId = null;
+}
+
+function clearMediaSessionMetadata() {
+  if (!isMediaSessionSupported()) return;
+  try {
+    navigator.mediaSession.metadata = null;
+  } catch (error) {
+    log(`media session metadata clear warning: ${error.message}`);
+  }
+}
+
+async function expireSystemPause(reason) {
+  if (!systemPauseActive) return false;
+  const elapsedMs = mediaSessionPausedAtMs ? Date.now() - mediaSessionPausedAtMs : SYSTEM_PAUSE_EXPIRE_MS;
+  if (elapsedMs < SYSTEM_PAUSE_EXPIRE_MS) return false;
+
+  clearSystemPauseExpireTimer();
+  lastMediaSessionPauseDurationMs = elapsedMs;
+  lastSystemPauseExpireReason = reason;
+  systemPauseActive = false;
+  systemPlayRequested = false;
+  systemPauseExpired = true;
+  lastMediaSessionChannel = null;
+  mediaSessionPausedAtMs = null;
+  systemPauseExpireAtMs = null;
+  selectedChannel = null;
+  player.pause();
+  player.srcObject = null;
+  currentTrack = null;
+  currentTrackName = null;
+  playbackState = 'IDLE';
+  setMediaSessionPlaybackState('none');
+  clearMediaSessionMetadata();
+  notePlaybackEvent(`system-pause-expired:${reason}`);
+  log(`system pause expired reason=${reason} elapsedMs=${elapsedMs}`);
+  syncSubscriptions();
+  if (currentState) renderState(currentState);
+  await closeLiveKitForReconnect();
+  await closeBackendSocketForReconnect();
+  resetHandshakeFlagsForReconnect();
+  markConnectionStale('system pause expired');
+  return true;
+}
+
+async function expireSystemPauseIfOverdue(reason) {
+  return expireSystemPause(reason);
+}
+
+function scheduleSystemPauseExpiry() {
+  clearSystemPauseExpireTimer();
+  systemPauseExpireAtMs = Date.now() + SYSTEM_PAUSE_EXPIRE_MS;
+  systemPauseExpireTimeoutId = setTimeout(() => {
+    expireSystemPause('system pause timer')
+      .catch((error) => log(`system pause expire error: ${error.message}`));
+  }, SYSTEM_PAUSE_EXPIRE_MS);
 }
 
 function getAvailabilityText(elapsedMs) {
@@ -488,8 +557,11 @@ async function closeLiveKitForReconnect() {
 }
 
 function stopPlayback() {
+  clearSystemPauseExpireTimer();
   systemPauseActive = false;
   systemPlayRequested = false;
+  systemPauseExpired = false;
+  systemPauseExpireAtMs = null;
   player.pause();
   player.srcObject = null;
   currentTrack = null;
@@ -518,8 +590,11 @@ function updateMediaSessionMetadata(channelId) {
 }
 
 function clearRememberedMediaSessionChannel() {
+  clearSystemPauseExpireTimer();
   systemPauseActive = false;
   systemPlayRequested = false;
+  systemPauseExpired = false;
+  systemPauseExpireAtMs = null;
   lastMediaSessionChannel = null;
   mediaSessionPausedAtMs = null;
   lastMediaSessionPauseDurationMs = null;
@@ -697,6 +772,7 @@ function renderState(state) {
     button.disabled = isRoomClosed();
 
     button.onclick = async () => {
+      await expireSystemPauseIfOverdue('channel button click');
       if (isRoomClosed()) return;
       if (hasAudioOpInProgress()) {
         log('click ignored: attach/detach in progress');
@@ -716,8 +792,11 @@ function renderState(state) {
         return;
       }
 
+      clearSystemPauseExpireTimer();
       systemPauseActive = false;
       systemPlayRequested = true;
+      systemPauseExpired = false;
+      systemPauseExpireAtMs = null;
       selectedChannel = channel.channel_id;
       lastMediaSessionChannel = channel.channel_id;
       playbackState = 'WAITING';
@@ -979,6 +1058,7 @@ async function resumeSelectedChannelAfterMediaSession(reason) {
 }
 
 async function reconnectListener(reason) {
+  if (await expireSystemPauseIfOverdue(`reconnect:${reason}`)) return;
   lastReconnectReason = reason;
   updateDiagnosticsSnapshot();
   if (connectionState === CONNECTION_STATE.CONNECTED) {
@@ -1018,6 +1098,7 @@ async function reconnectListener(reason) {
 }
 
 async function forceReconnectListenerForMediaSession(reason) {
+  if (await expireSystemPauseIfOverdue(`media-session-reconnect:${reason}`)) return;
   lastReconnectReason = reason;
   updateDiagnosticsSnapshot();
   if (reconnectPromise) {
@@ -1057,10 +1138,13 @@ function pauseFromSystemPlayer(reason) {
     return;
   }
 
+  clearSystemPauseExpireTimer();
   systemPauseActive = true;
   systemPlayRequested = false;
+  systemPauseExpired = false;
   lastMediaSessionChannel = selectedChannel;
   mediaSessionPausedAtMs = Date.now();
+  scheduleSystemPauseExpiry();
   player.pause();
   playbackState = 'PAUSED_BY_SYSTEM';
   setMediaSessionPlaybackState('paused');
@@ -1071,6 +1155,15 @@ function pauseFromSystemPlayer(reason) {
 
 async function resumeFromSystemPlayer(reason) {
   mediaSessionLastAction = `play:${reason}`;
+  if (await expireSystemPauseIfOverdue(`media session play:${reason}`)) {
+    log(`media session play ignored: system pause expired reason=${reason}`);
+    return;
+  }
+  if (systemPauseExpired) {
+    log(`media session play ignored: expired session reason=${reason}`);
+    updateDiagnosticsSnapshot();
+    return;
+  }
   const rememberedChannel = lastMediaSessionChannel || selectedChannel;
   if (!rememberedChannel) {
     log(`media session play ignored: no remembered channel reason=${reason}`);
@@ -1084,8 +1177,11 @@ async function resumeFromSystemPlayer(reason) {
   }
 
   const wasPausedBySystem = playbackState === 'PAUSED_BY_SYSTEM' || systemPauseActive;
+  clearSystemPauseExpireTimer();
   systemPlayRequested = true;
   systemPauseActive = false;
+  systemPauseExpired = false;
+  systemPauseExpireAtMs = null;
   selectedChannel = rememberedChannel;
   lastMediaSessionChannel = rememberedChannel;
   lastMediaSessionPauseDurationMs = mediaSessionPausedAtMs ? Date.now() - mediaSessionPausedAtMs : null;
@@ -1165,13 +1261,33 @@ ensureLiveKitClientLoaded()
   });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && connectionState === CONNECTION_STATE.STALE) {
-    reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
+  if (document.visibilityState === 'visible') {
+    expireSystemPauseIfOverdue('page visible')
+      .then((expired) => {
+        if (!expired && connectionState === CONNECTION_STATE.STALE && !systemPauseExpired) {
+          reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
+        }
+      })
+      .catch((error) => log(`system pause expiry check error: ${error.message}`));
   }
 });
 
+window.addEventListener('pageshow', () => {
+  expireSystemPauseIfOverdue('pageshow')
+    .catch((error) => log(`system pause expiry check error: ${error.message}`));
+});
+
+window.addEventListener('focus', () => {
+  expireSystemPauseIfOverdue('focus')
+    .catch((error) => log(`system pause expiry check error: ${error.message}`));
+});
+
 window.addEventListener('online', () => {
-  if (connectionState === CONNECTION_STATE.STALE) {
-    reconnectListener('network online').catch((error) => log(`reconnect error: ${error.message}`));
-  }
+  expireSystemPauseIfOverdue('network online')
+    .then((expired) => {
+      if (!expired && connectionState === CONNECTION_STATE.STALE && !systemPauseExpired) {
+        reconnectListener('network online').catch((error) => log(`reconnect error: ${error.message}`));
+      }
+    })
+    .catch((error) => log(`system pause expiry check error: ${error.message}`));
 });
