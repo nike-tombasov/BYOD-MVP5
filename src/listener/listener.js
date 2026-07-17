@@ -6,6 +6,7 @@ const HEARTBEAT_INTERVAL_MS = 10_000;
 const ATTACH_DETACH_TIMEOUT_MS = 1_000;
 const RETRYING_RECONNECT_DELAY_MS = 3_000;
 const UNAVAILABLE_RECONNECT_DELAY_MS = 10_000;
+const SYSTEM_PAUSE_EXPIRE_MS = 60_000;
 
 let backendWs = null;
 let room = null;
@@ -32,6 +33,8 @@ let reconnectAttemptCount = 0;
 let reconnectSuccessCount = 0;
 let reconnectFailureCount = 0;
 let heartbeatSentCount = 0;
+let lastReconnectReason = null;
+let heartbeatSuppressedReason = null;
 let i18nApplyCount = 0;
 let i18nMismatchCount = 0;
 
@@ -48,11 +51,20 @@ let currentTrack = null;
 let currentTrackName = null;
 let attachInProgress = false;
 let detachInProgress = false;
+let systemPauseActive = false;
+let systemPauseExpired = false;
+let systemPauseStartedAtMs = null;
+let systemPauseExpireTimerId = null;
+let lastSystemPausedChannel = null;
+let lastPlaybackEvent = null;
+let lastPlaybackError = null;
+let intentionalPauseExpiryCleanup = false;
 
 const publicationByChannel = new Map();
 const trackByChannel = new Map();
 
 const player = document.getElementById('player');
+const mediaSession = 'mediaSession' in navigator ? navigator.mediaSession : null;
 const roomNameEl = document.getElementById('roomName');
 const buttonsEl = document.getElementById('buttons');
 const connectionBox = document.getElementById('connectionBox');
@@ -66,6 +78,11 @@ function log(message) {
   logEl.textContent = `[${new Date().toISOString()}] ${message}\n` + logEl.textContent;
 }
 
+function getSystemPauseElapsedMs() {
+  if (!systemPauseStartedAtMs) return 0;
+  return Math.max(0, Date.now() - systemPauseStartedAtMs);
+}
+
 function updateDiagnosticsSnapshot() {
   window.__listenerDiagnostics = {
     connectionState,
@@ -73,6 +90,16 @@ function updateDiagnosticsSnapshot() {
     reconnectSuccessCount,
     reconnectFailureCount,
     heartbeatSentCount,
+    heartbeatSuppressedReason,
+    systemPauseActive,
+    systemPauseExpired,
+    systemPauseStartedAtMs,
+    systemPauseElapsedMs: getSystemPauseElapsedMs(),
+    lastSystemPausedChannel,
+    playbackState,
+    lastPlaybackEvent,
+    lastPlaybackError,
+    lastReconnectReason,
     i18nApplyCount,
     i18nMismatchCount,
     sdkSource: window.__livekitSdkSource || 'unknown',
@@ -107,7 +134,7 @@ function noteBackendActivity(source) {
 }
 
 function hasActivePlayRequest() {
-  return selectedChannel !== null && playbackState !== 'IDLE';
+  return selectedChannel !== null && (playbackState === 'WAITING' || playbackState === 'PLAYING');
 }
 
 function hasAudioOpInProgress() {
@@ -149,6 +176,10 @@ function clearAutoRetryTimer() {
 }
 
 function scheduleAutoRetry(reason) {
+  if (systemPauseActive || systemPauseExpired || intentionalPauseExpiryCleanup) {
+    log(`auto-retry suppressed reason=${reason}`);
+    return;
+  }
   if (connectionState === CONNECTION_STATE.CONNECTED) return;
   if (autoRetryTimeoutId) return;
   if (reconnectPromise) return;
@@ -383,6 +414,9 @@ function setConnectionState(nextState, reason = '') {
 }
 
 function markConnectionStale(reason) {
+  if (systemPauseActive || systemPauseExpired || intentionalPauseExpiryCleanup) {
+    log(`connection stale auto-reconnect suppressed reason=${reason}`);
+  }
   setConnectionState(CONNECTION_STATE.STALE, reason);
   livekitConnected = false;
 }
@@ -408,9 +442,10 @@ async function closeBackendSocketForReconnect() {
 }
 
 function sendHeartbeatIfNeeded() {
-  if (connectionState !== CONNECTION_STATE.CONNECTED) return;
-  if (!hasActivePlayRequest()) return;
-  if (!isBackendWsOpen()) return;
+  heartbeatSuppressedReason = null;
+  if (connectionState !== CONNECTION_STATE.CONNECTED) { heartbeatSuppressedReason = 'connection not connected'; updateDiagnosticsSnapshot(); return; }
+  if (!hasActivePlayRequest()) { heartbeatSuppressedReason = systemPauseActive ? 'system pause active' : (systemPauseExpired ? 'system pause expired' : 'no active playback'); updateDiagnosticsSnapshot(); return; }
+  if (!isBackendWsOpen()) { heartbeatSuppressedReason = 'backend websocket not open'; updateDiagnosticsSnapshot(); return; }
   backendWs.send(JSON.stringify(makeEnvelope('heartbeat', {
     client_role: 'listener',
     selected_channel: selectedChannel,
@@ -447,6 +482,201 @@ function stopPlayback() {
   currentTrack = null;
   currentTrackName = null;
   playbackState = 'IDLE';
+}
+
+function clearSystemPauseTimer() {
+  if (!systemPauseExpireTimerId) return;
+  clearTimeout(systemPauseExpireTimerId);
+  systemPauseExpireTimerId = null;
+}
+
+function setMediaSessionPlaybackState(state) {
+  if (!mediaSession) return;
+  try {
+    mediaSession.playbackState = state;
+  } catch (error) {
+    log(`media session playbackState warning: ${error.message}`);
+  }
+}
+
+function setMediaSessionMetadata(channelId) {
+  if (!mediaSession || typeof MediaMetadata === 'undefined') return;
+  const channel = (currentState?.channels || []).find((item) => item.channel_id === channelId);
+  try {
+    mediaSession.metadata = new MediaMetadata({
+      title: channel ? channel.channel_label : channelId,
+      artist: getLocalizedRoomName(),
+      album: 'BYOD Listener',
+    });
+  } catch (error) {
+    log(`media session metadata warning: ${error.message}`);
+  }
+}
+
+function clearMediaSessionMetadata() {
+  if (!mediaSession) return;
+  try {
+    mediaSession.metadata = null;
+  } catch (error) {
+    log(`media session metadata clear warning: ${error.message}`);
+  }
+}
+
+function resetSystemPauseState() {
+  clearSystemPauseTimer();
+  systemPauseActive = false;
+  systemPauseExpired = false;
+  systemPauseStartedAtMs = null;
+  lastSystemPausedChannel = null;
+  updateDiagnosticsSnapshot();
+}
+
+function scheduleSystemPauseExpiryTimer() {
+  clearSystemPauseTimer();
+  systemPauseExpireTimerId = setTimeout(() => {
+    systemPauseExpireTimerId = null;
+    expireSystemPause('system pause timer');
+  }, SYSTEM_PAUSE_EXPIRE_MS);
+}
+
+function closeBackendSocketForSystemPauseExpiry() {
+  if (!backendWs) return;
+  suppressBackendCloseEvent = true;
+  try {
+    backendWs.close();
+  } catch (error) {
+    log(`backend close warning: ${error.message}`);
+  }
+  backendWs = null;
+}
+
+async function closeLiveKitForSystemPauseExpiry() {
+  if (!room) return;
+  try {
+    await room.disconnect();
+  } catch (error) {
+    log(`livekit disconnect warning: ${error.message}`);
+  }
+  room = null;
+  publicationByChannel.clear();
+  trackByChannel.clear();
+}
+
+function expireSystemPause(reason) {
+  if (!systemPauseActive) return false;
+  const elapsedMs = getSystemPauseElapsedMs();
+  if (elapsedMs < SYSTEM_PAUSE_EXPIRE_MS) return false;
+
+  log(`system pause expired reason=${reason} elapsedMs=${elapsedMs}`);
+  intentionalPauseExpiryCleanup = true;
+  clearSystemPauseTimer();
+  systemPauseActive = false;
+  systemPauseExpired = true;
+  systemPauseStartedAtMs = null;
+  lastSystemPausedChannel = null;
+  selectedChannel = null;
+  player.pause();
+  player.srcObject = null;
+  currentTrack = null;
+  currentTrackName = null;
+  playbackState = 'IDLE';
+  setMediaSessionPlaybackState('none');
+  clearMediaSessionMetadata();
+  syncSubscriptions();
+  if (currentState) renderState(currentState);
+  closeLiveKitForSystemPauseExpiry().finally(() => { intentionalPauseExpiryCleanup = false; });
+  closeBackendSocketForSystemPauseExpiry();
+  livekitConnected = false;
+  setConnectionState(CONNECTION_STATE.STALE, 'system pause expired');
+  clearAutoRetryTimer();
+  updateDiagnosticsSnapshot();
+  return true;
+}
+
+function expireSystemPauseIfOverdue(reason) {
+  if (!systemPauseActive) return false;
+  return expireSystemPause(reason);
+}
+
+function handleMediaSessionPause() {
+  if (!selectedChannel) {
+    lastPlaybackEvent = 'system pause ignored: no selected channel';
+    log(lastPlaybackEvent);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  systemPauseActive = true;
+  systemPauseExpired = false;
+  systemPauseStartedAtMs = Date.now();
+  lastSystemPausedChannel = selectedChannel;
+  lastPlaybackEvent = 'system pause';
+  player.pause();
+  playbackState = 'PAUSED_BY_SYSTEM';
+  setMediaSessionPlaybackState('paused');
+  scheduleSystemPauseExpiryTimer();
+  if (currentState) renderState(currentState);
+  updateDiagnosticsSnapshot();
+  log(`system pause active channel=${selectedChannel}`);
+}
+
+async function handleMediaSessionPlay() {
+  expireSystemPauseIfOverdue('media session play');
+  if (systemPauseExpired) {
+    lastPlaybackEvent = 'media session play ignored: system pause expired';
+    playbackState = 'IDLE';
+    setMediaSessionPlaybackState('none');
+    log(`${lastPlaybackEvent}; page interaction required`);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  if (!systemPauseActive || playbackState !== 'PAUSED_BY_SYSTEM' || !player.srcObject) {
+    lastPlaybackEvent = 'media session play ignored: no resumable local media';
+    log(lastPlaybackEvent);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  if (connectionState !== CONNECTION_STATE.CONNECTED || !room || !livekitConnected) {
+    lastPlaybackEvent = 'media session play ignored: stale connection requires page interaction';
+    log(lastPlaybackEvent);
+    updateDiagnosticsSnapshot();
+    return;
+  }
+  try {
+    await player.play();
+    clearSystemPauseTimer();
+    systemPauseActive = false;
+    playbackState = 'PLAYING';
+    setMediaSessionPlaybackState('playing');
+    lastPlaybackEvent = 'media session local resume';
+  } catch (error) {
+    lastPlaybackError = error.message;
+    log(`media session play warning: ${error.message}`);
+  }
+  updateDiagnosticsSnapshot();
+}
+
+function initializeMediaSession() {
+  if (!mediaSession) return;
+  try { mediaSession.setActionHandler('pause', handleMediaSessionPause); } catch (error) { log(`media session pause handler warning: ${error.message}`); }
+  try {
+    mediaSession.setActionHandler('play', () => {
+      handleMediaSessionPlay().catch((error) => log(`media session play error: ${error.message}`));
+    });
+  } catch (error) { log(`media session play handler warning: ${error.message}`); }
+  try {
+    mediaSession.setActionHandler('stop', () => {
+      resetSystemPauseState();
+      selectedChannel = null;
+      syncSubscriptions();
+      detachPlayback('media session stop', { force: true }).catch((error) => log(`detach error: ${error.message}`));
+      clearMediaSessionMetadata();
+      setMediaSessionPlaybackState('none');
+      if (currentState) renderState(currentState);
+    });
+  } catch (error) { log(`media session stop handler warning: ${error.message}`); }
+  for (const action of ['seekbackward', 'seekforward', 'seekto', 'previoustrack', 'nexttrack']) {
+    try { mediaSession.setActionHandler(action, null); } catch (_error) { /* action unsupported */ }
+  }
 }
 
 async function detachPlayback(reason, { force = false } = {}) {
@@ -488,9 +718,11 @@ async function attachPlaybackTrack(track, trackName) {
     currentTrack = track;
     currentTrackName = trackName;
     playbackState = 'PLAYING';
+    setMediaSessionPlaybackState('playing');
     log(`attach done channel=${trackName}`);
     return true;
   } catch (error) {
+    lastPlaybackError = error.message;
     stopPlayback();
     log(`attach reset to IDLE channel=${trackName} error=${error.message}`);
     return false;
@@ -526,6 +758,9 @@ function syncSubscriptions() {
 }
 
 async function attachSelectedIfPossible() {
+  expireSystemPauseIfOverdue('before attach');
+  if (systemPauseActive) { log('attach skipped: system pause active'); return; }
+  if (systemPauseExpired) { log('attach skipped: system pause expired'); return; }
   if (!selectedChannel || !isRoomOpened()) return;
 
   const publication = publicationByChannel.get(selectedChannel);
@@ -596,6 +831,7 @@ function renderState(state) {
     button.disabled = isRoomClosed();
 
     button.onclick = async () => {
+      expireSystemPauseIfOverdue('button click');
       if (isRoomClosed()) return;
       if (hasAudioOpInProgress()) {
         log('click ignored: attach/detach in progress');
@@ -603,15 +839,43 @@ function renderState(state) {
       }
 
       if (selectedChannel === channel.channel_id) {
+        if (systemPauseActive && playbackState === 'PAUSED_BY_SYSTEM') {
+          clearSystemPauseTimer();
+          systemPauseActive = false;
+          systemPauseExpired = false;
+          systemPauseStartedAtMs = null;
+          lastSystemPausedChannel = null;
+          playbackState = 'WAITING';
+          lastPlaybackEvent = 'page resumed system pause';
+          renderState(currentState);
+          if (connectionState === CONNECTION_STATE.STALE) {
+            try {
+              await reconnectListener('system pause page resume');
+            } catch (error) {
+              log(`reconnect error: ${error.message}`);
+              return;
+            }
+          }
+          syncSubscriptions();
+          if (isRoomBlocked()) return;
+          await attachSelectedIfPossible();
+          return;
+        }
+        resetSystemPauseState();
         selectedChannel = null;
         syncSubscriptions();
         await detachPlayback('button stop');
+        clearMediaSessionMetadata();
+        setMediaSessionPlaybackState('none');
         renderState(currentState);
         return;
       }
 
+      resetSystemPauseState();
       selectedChannel = channel.channel_id;
       playbackState = 'WAITING';
+      setMediaSessionMetadata(selectedChannel);
+      setMediaSessionPlaybackState('playing');
       renderState(currentState);
       if (connectionState === CONNECTION_STATE.STALE) {
         try {
@@ -839,6 +1103,12 @@ async function connectBackend(reason = 'connect') {
 }
 
 async function reconnectListener(reason) {
+  lastReconnectReason = reason;
+  updateDiagnosticsSnapshot();
+  if ((systemPauseActive || systemPauseExpired) && reason !== 'channel click' && reason !== 'system pause page resume') {
+    log(`reconnect skipped: system pause state (${reason})`);
+    return;
+  }
   if (connectionState === CONNECTION_STATE.CONNECTED) {
     log(`reconnect skipped: already CONNECTED (${reason})`);
     return;
@@ -880,6 +1150,7 @@ const env = detectClientEnvironment();
 log(`client env: platform=${env.platform} mobile=${env.isMobile}`);
 log(`client env: ua=${env.ua}`);
 updateDiagnosticsSnapshot();
+initializeMediaSession();
 startHeartbeatLoops();
 startConnectionBannerLoop();
 ensureLiveKitClientLoaded()
@@ -891,13 +1162,23 @@ ensureLiveKitClientLoaded()
   });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && connectionState === CONNECTION_STATE.STALE) {
+  expireSystemPauseIfOverdue('visibilitychange');
+  if (document.visibilityState === 'visible' && !systemPauseActive && !systemPauseExpired && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('page visible').catch((error) => log(`reconnect error: ${error.message}`));
   }
 });
 
 window.addEventListener('online', () => {
-  if (connectionState === CONNECTION_STATE.STALE) {
+  expireSystemPauseIfOverdue('online');
+  if (!systemPauseActive && !systemPauseExpired && connectionState === CONNECTION_STATE.STALE) {
     reconnectListener('network online').catch((error) => log(`reconnect error: ${error.message}`));
   }
+});
+
+window.addEventListener('pageshow', () => {
+  expireSystemPauseIfOverdue('pageshow');
+});
+
+window.addEventListener('focus', () => {
+  expireSystemPauseIfOverdue('focus');
 });
