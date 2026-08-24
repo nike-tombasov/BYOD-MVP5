@@ -19,6 +19,26 @@ set -a; source "$CONFIG_PATH"; set +a
 
 require_var(){ local n="$1"; [[ -n "${!n:-}" ]] || fatal "Missing required config value: $n"; }
 for n in BYOD_REPO_URL BYOD_REPO_BRANCH BYOD_VPS_PUBLIC_IP BYOD_PUBLIC_ORIGIN BYOD_LIVEKIT_URL BYOD_LIVEKIT_API_KEY BYOD_LIVEKIT_API_SECRET BYOD_BACKEND_HOST BYOD_BACKEND_PORT; do require_var "$n"; done
+BYOD_DOMAIN_TLS_MODE="${BYOD_DOMAIN_TLS_MODE:-false}"
+case "${BYOD_DOMAIN_TLS_MODE,,}" in
+  true) BYOD_DOMAIN_TLS_MODE=true ;;
+  false) BYOD_DOMAIN_TLS_MODE=false ;;
+  *) fatal "BYOD_DOMAIN_TLS_MODE must be true or false" ;;
+esac
+validate_hostname() {
+  local name="$1" value="${!1:-}"
+  [[ "$value" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] ||
+    fatal "$name must be a hostname only (no scheme, port, path, or wildcard)"
+}
+if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
+  for n in BYOD_LISTENER_DOMAIN BYOD_LIVEKIT_DOMAIN BYOD_TLS_EMAIL; do require_var "$n"; done
+  validate_hostname BYOD_LISTENER_DOMAIN
+  validate_hostname BYOD_LIVEKIT_DOMAIN
+  [[ -z "${BYOD_ADMIN_DOMAIN:-}" ]] || validate_hostname BYOD_ADMIN_DOMAIN
+  [[ "$BYOD_TLS_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || fatal "BYOD_TLS_EMAIL must be a valid email address"
+  [[ "$BYOD_PUBLIC_ORIGIN" == "https://$BYOD_LISTENER_DOMAIN" ]] || fatal "domain mode requires BYOD_PUBLIC_ORIGIN=https://$BYOD_LISTENER_DOMAIN (no path)"
+  [[ "$BYOD_LIVEKIT_URL" == "wss://$BYOD_LIVEKIT_DOMAIN" ]] || fatal "domain mode requires BYOD_LIVEKIT_URL=wss://$BYOD_LIVEKIT_DOMAIN (no path)"
+fi
 [[ "$BYOD_BACKEND_PORT" =~ ^[0-9]+$ ]] || fatal "BYOD_BACKEND_PORT must be an integer"
 [[ "$BYOD_PUBLIC_ORIGIN" =~ ^https?:// ]] || fatal "BYOD_PUBLIC_ORIGIN must start with http:// or https://"
 [[ "$BYOD_LIVEKIT_URL" =~ ^wss?:// ]] || fatal "BYOD_LIVEKIT_URL must start with ws:// or wss://"
@@ -45,7 +65,7 @@ if [[ -n "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" ]]; then
   [[ "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" =~ ^[0-9]+$ ]] || fatal "BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE must be an integer >= 1 when set"
   [[ "$BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE" -ge 1 ]] || fatal "BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE must be >= 1 when set"
 fi
-export BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE
+export BYOD_DOMAIN_TLS_MODE BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE
 redacted_secret="${BYOD_LIVEKIT_API_SECRET:0:4}…redacted…${BYOD_LIVEKIT_API_SECRET: -4}"
 ok "Loaded config: repo_branch=${BYOD_REPO_BRANCH}, origin=${BYOD_PUBLIC_ORIGIN}, livekit=${BYOD_LIVEKIT_URL}, api_key=${BYOD_LIVEKIT_API_KEY}, api_secret=${redacted_secret}"
 
@@ -126,6 +146,12 @@ fi
 step "Enable and start services"
 bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
 
+if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
+  step "Verify domain DNS and configure trusted TLS"
+  bash deploy/stage_x_ubuntu_pilot/scripts/30_domain_dns_preflight.sh
+  bash deploy/stage_x_ubuntu_pilot/scripts/31_setup_domain_tls.sh
+fi
+
 step "Import optional room config"
 if [[ -s "$BYOD_ROOM_INPUT_PATH" ]]; then
   response_file="$(mktemp /tmp/byod-room-import-XXXXXX.json)"
@@ -166,5 +192,9 @@ publisher_ws_origin="${publisher_ws_origin/https:\/\//wss://}"
 printf 'listener_url=%s/\n' "$public_origin"
 printf 'publisher_backend_url=%s/ws/publisher\n' "$publisher_ws_origin"
 printf 'smoke_output_file=%s\n' "${smoke_path:-unknown}"
-warn "Provider firewall: allow 80/tcp, 7880/tcp, 7881/tcp, 50000-59999/udp; do not expose 8000/tcp."
+if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
+  warn "Provider firewall: allow 80/tcp, 443/tcp, 7881/tcp, 50000-59999/udp; do not expose 8000/tcp."
+else
+  warn "Provider firewall: allow 80/tcp, 7880/tcp, 7881/tcp, 50000-59999/udp; do not expose 8000/tcp."
+fi
 ok "BYOD VPS deploy completed."

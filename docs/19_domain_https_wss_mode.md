@@ -6,7 +6,10 @@ This document records the MVP domain-mode deployment model. Domain mode is optio
 
 - `listen-*` subdomains are guest-facing Listener entry points. They serve the same Listener HTML and WebSocket path under HTTPS/WSS for QR links.
 - `lk-*` or `livekit-*` subdomains are LiveKit signaling / WebRTC entry endpoints used by the LiveKit SDK.
+- `admin-*` is reserved for a future Admin UI. Stage XII does not implement that UI; the reserved HTTPS host returns `404` and never proxies the backend `/admin/*` API.
 - The backend remains a private service behind nginx. Public guest traffic must not expose backend port `8000/tcp` directly.
+
+The Publisher UI has no domain. Its operator continues to enter a backend URL manually, for example `ws://194.58.118.140/ws/publisher` through nginx. Do not create Publisher DNS records.
 
 ### 19.2 DNS A-record model
 
@@ -30,3 +33,5 @@ This keeps guest QR links readable while preserving the MVP capacity rule: one s
 ### 19.4 Direct-IP pilot mode
 
 Direct-IP pilot mode remains supported for practical testing, diagnostics, and emergency fallback. Domain HTTPS/WSS mode is preferred for guest QR links when configured, but it is not mandatory for every pilot.
+
+Set `BYOD_DOMAIN_TLS_MODE=true` to opt in. Deployment then validates the HTTPS/WSS origins, verifies every configured A-record against the VPS IPv4, obtains a Let's Encrypt certificate, and installs the domain nginx configuration. With the default `false`, no domain values or certificate are required and existing HTTP/WS behavior remains in use.

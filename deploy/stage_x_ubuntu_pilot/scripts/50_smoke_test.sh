@@ -155,7 +155,28 @@ printf 'metrics: %s\n' "$metrics"
 printf 'backend-limits: max_active_listeners=%s max_new_connections_per_sec=%s loadgen_reconnect_bypass_enabled=%s listener_min_reconnect_interval_per_ip_seconds=%s\n' "$max_active_listeners" "$max_new_connections_per_sec" "$loadgen_reconnect_bypass_enabled" "$listener_min_reconnect_interval_per_ip_seconds"
 printf 'livekit-config: udp_range=50000-59999, fallback_udp_mux=7882\n'
 
-printf "%b\n" "${YELLOW}Provider firewall reminder: allow inbound 80/tcp, 7880/tcp, 7881/tcp, and 50000-59999/udp. Do not expose backend port 8000 publicly.${NC}"
+if [[ "${BYOD_DOMAIN_TLS_MODE:-false}" == "true" ]]; then
+  domain_failed=0
+  curl -fsS "https://${BYOD_LISTENER_DOMAIN}/" >/dev/null || domain_failed=1
+  curl -fsS "https://${BYOD_LISTENER_DOMAIN}/health" >/dev/null || domain_failed=1
+  admin_status="not-configured"
+  if [[ -n "${BYOD_ADMIN_DOMAIN:-}" ]]; then
+    admin_status="$(curl -sS -o /dev/null -w '%{http_code}' "https://${BYOD_ADMIN_DOMAIN}/admin/metrics_snapshot" || true)"
+    [[ "$admin_status" != 2* ]] || domain_failed=1
+  fi
+  public_admin_status="$(curl -sS -o /dev/null -w '%{http_code}' "https://${BYOD_LISTENER_DOMAIN}/admin/metrics_snapshot" || true)"
+  [[ "$public_admin_status" != 2* ]] || domain_failed=1
+  backend_livekit_url="$(awk -F= '$1 == "BYOD_LIVEKIT_URL" {gsub(/^"|"$/, "", $2); print $2}' /opt/byod/config/backend.env 2>/dev/null)"
+  [[ "$backend_livekit_url" == "wss://${BYOD_LIVEKIT_DOMAIN}" ]] || domain_failed=1
+  printf 'domain-tls: listener=https://%s livekit=%s public-admin-http=%s reserved-admin-http=%s\n' "$BYOD_LISTENER_DOMAIN" "$backend_livekit_url" "$public_admin_status" "$admin_status"
+  printf 'domain-tls: WSS paths share the validated HTTPS nginx endpoints (protocol upgrade requires a client token)\n'
+  if [[ "$domain_failed" -ne 0 ]]; then critical_failed=1; fi
+  firewall_ports='80/tcp, 443/tcp, 7881/tcp, and 50000-59999/udp'
+else
+  firewall_ports='80/tcp, 7880/tcp, 7881/tcp, and 50000-59999/udp'
+fi
+
+printf "%b\n" "${YELLOW}Provider firewall reminder: allow inbound ${firewall_ports}. Do not expose backend port 8000 publicly.${NC}"
 printf "smoke_test_output_file=%s\n" "$SMOKE_OUT"
 
 if [[ "$critical_failed" -ne 0 ]]; then

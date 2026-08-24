@@ -60,6 +60,10 @@ BYOD_LISTENER_VENDOR_PATH="/tmp/livekit-client.umd.1.15.13.js"
 
 Full schema and generated config mappings are in `configuration_reference.md`. For normal deploy, keep `BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE` empty. After VPS sizing/stress testing, it can be set in `/opt/byod/config/backend.env` and applied with `sudo systemctl restart byod-backend`.
 
+For domain mode, first create external A-records for `listen-*` (guest Listener), `lk-*` (LiveKit SDK signaling), and optionally `admin-*` (reserved only), all pointing to this VPS. Use the domain sample in `configuration_reference.md` and set `BYOD_DOMAIN_TLS_MODE=true`. Deployment checks DNS before certificate issuance, obtains a trusted certificate with certbot, validates nginx, and enables HTTPS/WSS. Direct-IP mode remains the default and requires none of these values.
+
+Stage XII does not implement an Admin UI and public backend `/admin/*` is blocked. The Publisher UI has no dedicated domain: its operator uses a manually configured URL such as `ws://194.58.118.140/ws/publisher` through nginx. Do not create a Publisher DNS record. Event aliases are paths beneath the Listener URL, not DNS records.
+
 ## One-command deploy
 
 Paste this command in PuTTY after the files are uploaded:
@@ -77,15 +81,17 @@ sudo BYOD_VPS_CONFIG=/tmp/vps_config.env bash -c 'set -euo pipefail; test -r "$B
 5. Prepares the host, copies LiveKit release files to `/opt/byod/releases`, and verifies SHA-256 before installation.
 6. Installs LiveKit, backend, Listener, and optional browser vendor file.
 7. Generates `/opt/byod/config/backend.env` and `/opt/byod/config/livekit.yaml` from `/tmp/vps_config.env`.
-8. Starts services, optionally imports `/tmp/room_input.json` through the backend validation endpoint, optionally applies the backend stress profile when `BYOD_ENABLE_BACKEND_STRESS_TEST=true`, and runs smoke test. The default is `false`, so normal deploys do not create or apply a stress drop-in.
-9. Prints a colored summary with service health, URLs, smoke output path, and firewall reminder.
+8. Starts services and, in domain mode, runs DNS preflight plus idempotent certbot/nginx TLS setup.
+9. Optionally imports `/tmp/room_input.json` through the local backend validation endpoint, optionally applies the backend stress profile when `BYOD_ENABLE_BACKEND_STRESS_TEST=true`, and runs smoke test.
+10. Prints a colored summary with service health, URLs, smoke output path, and firewall reminder.
 
 ## Provider firewall
 
 Allow inbound:
 
 - `80/tcp`
-- `7880/tcp`
+- `443/tcp` in domain mode
+- `7880/tcp` in direct-IP mode
 - `7881/tcp`
 - `50000-59999/udp`
 
