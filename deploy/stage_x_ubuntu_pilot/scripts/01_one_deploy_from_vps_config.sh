@@ -25,6 +25,11 @@ case "${BYOD_DOMAIN_TLS_MODE,,}" in
   false) BYOD_DOMAIN_TLS_MODE=false ;;
   *) fatal "BYOD_DOMAIN_TLS_MODE must be true or false" ;;
 esac
+normalized_public_origin="${BYOD_PUBLIC_ORIGIN%/}"
+if [[ "$normalized_public_origin" != "$BYOD_PUBLIC_ORIGIN" ]]; then
+  warn "BYOD_PUBLIC_ORIGIN had a trailing slash; normalized to $normalized_public_origin."
+  BYOD_PUBLIC_ORIGIN="$normalized_public_origin"
+fi
 validate_hostname() {
   local name="$1" value="${!1:-}"
   [[ "$value" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] ||
@@ -42,11 +47,6 @@ fi
 [[ "$BYOD_BACKEND_PORT" =~ ^[0-9]+$ ]] || fatal "BYOD_BACKEND_PORT must be an integer"
 [[ "$BYOD_PUBLIC_ORIGIN" =~ ^https?:// ]] || fatal "BYOD_PUBLIC_ORIGIN must start with http:// or https://"
 [[ "$BYOD_LIVEKIT_URL" =~ ^wss?:// ]] || fatal "BYOD_LIVEKIT_URL must start with ws:// or wss://"
-normalized_public_origin="${BYOD_PUBLIC_ORIGIN%/}"
-if [[ "$normalized_public_origin" != "$BYOD_PUBLIC_ORIGIN" ]]; then
-  warn "BYOD_PUBLIC_ORIGIN had a trailing slash; normalized to $normalized_public_origin."
-  BYOD_PUBLIC_ORIGIN="$normalized_public_origin"
-fi
 BYOD_DEFAULT_PIN="${BYOD_DEFAULT_PIN:-123456}"
 BYOD_ROOM_INPUT_PATH="${BYOD_ROOM_INPUT_PATH:-/tmp/room_input.json}"
 BYOD_LIVEKIT_TGZ_PATH="${BYOD_LIVEKIT_TGZ_PATH:-/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz}"

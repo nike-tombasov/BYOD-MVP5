@@ -1,8 +1,46 @@
 server {
+    listen 80 default_server;
+    server_name _;
+
+    root /opt/byod/listener;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store";
+    }
+
+    location = /ws/listener {
+        proxy_pass http://127.0.0.1:8000/ws/listener;
+        include /etc/nginx/byod-websocket-proxy.conf;
+    }
+
+    location = /ws/publisher {
+        proxy_pass http://127.0.0.1:8000/ws/publisher;
+        include /etc/nginx/byod-websocket-proxy.conf;
+    }
+
+    location = /health {
+        proxy_pass http://127.0.0.1:8000/health;
+        proxy_set_header Host $host;
+    }
+
+    location ^~ /admin/ {
+        return 404;
+    }
+}
+
+server {
     listen 80;
     server_name __DOMAIN_NAMES__;
-    location /.well-known/acme-challenge/ { root /opt/byod/listener; }
-    location / { return 301 https://$host$request_uri; }
+
+    location /.well-known/acme-challenge/ {
+        root /opt/byod/listener;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
