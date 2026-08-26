@@ -18,6 +18,11 @@ Optional:
 | `BYOD_REPO_URL` | Yes | Git repository URL cloned by the bootstrap command. |
 | `BYOD_REPO_BRANCH` | Yes | Branch to clone into `/opt/byod/app-src`. |
 | `BYOD_VPS_PUBLIC_IP` | Yes | Public IPv4 used by operator notes and diagnostics. |
+| `BYOD_DOMAIN_TLS_MODE` | No | Strict `true`/`false`; defaults to `false` (direct-IP mode). |
+| `BYOD_LISTENER_DOMAIN` | Domain mode | Guest Listener hostname only, without scheme, port, or path. |
+| `BYOD_LIVEKIT_DOMAIN` | Domain mode | LiveKit signaling hostname only, without scheme, port, or path. |
+| `BYOD_ADMIN_DOMAIN` | No | Optional reserved future Admin UI hostname; it returns `404`. |
+| `BYOD_TLS_EMAIL` | Domain mode | Email used for Let's Encrypt registration. |
 | `BYOD_PUBLIC_ORIGIN` | Yes | Public browser origin, for example `http://203.0.113.10`. It should be an origin without a path; one trailing slash is normalized by the deploy script. |
 | `BYOD_LIVEKIT_URL` | Yes | LiveKit URL sent to clients, for example `ws://203.0.113.10:7880`. |
 | `BYOD_LIVEKIT_API_KEY` | Yes | LiveKit API key. |
@@ -39,6 +44,7 @@ Optional:
 BYOD_REPO_URL="https://github.com/nike-tombasov/BYOD-MVP5.git"
 BYOD_REPO_BRANCH="codex-qv5tz8"
 BYOD_VPS_PUBLIC_IP="203.0.113.10"
+BYOD_DOMAIN_TLS_MODE=false
 BYOD_PUBLIC_ORIGIN="http://203.0.113.10"
 BYOD_LIVEKIT_URL="ws://203.0.113.10:7880"
 BYOD_LIVEKIT_API_KEY="replace_with_livekit_key"
@@ -55,7 +61,34 @@ BYOD_LIVEKIT_SHA256_PATH="/tmp/livekit-server-v1.9.11-linux-amd64.tar.gz.sha256"
 BYOD_LISTENER_VENDOR_PATH="/tmp/livekit-client.umd.1.15.13.js"
 ```
 
+## Domain HTTPS/WSS sample
+
+```bash
+BYOD_REPO_URL="https://github.com/nike-tombasov/BYOD-MVP5.git"
+BYOD_REPO_BRANCH="MVP11"
+BYOD_VPS_PUBLIC_IP="194.58.118.140"
+BYOD_DOMAIN_TLS_MODE=true
+BYOD_LISTENER_DOMAIN="listen-1.k-pls.ru"
+BYOD_LIVEKIT_DOMAIN="lk-1.k-pls.ru"
+BYOD_ADMIN_DOMAIN="admin-1.k-pls.ru"
+BYOD_TLS_EMAIL="replace@example.com"
+BYOD_PUBLIC_ORIGIN="https://listen-1.k-pls.ru"
+BYOD_LIVEKIT_URL="wss://lk-1.k-pls.ru"
+BYOD_LIVEKIT_API_KEY="replace_with_livekit_key"
+BYOD_LIVEKIT_API_SECRET="replace_with_long_livekit_secret"
+BYOD_BACKEND_HOST="127.0.0.1"
+BYOD_BACKEND_PORT="8000"
+BYOD_DEFAULT_PIN="123456"
+BYOD_ENABLE_BACKEND_STRESS_TEST=false
+BYOD_LISTENER_MIN_RECONNECT_INTERVAL_PER_IP_SECONDS=0
+BYOD_MAX_NEW_CONNECTIONS_PER_SEC_OVERRIDE=""
+```
+
+The reconnect interval `0` is recommended for guest mobile networks, CGNAT, and public Wi-Fi, where many clients can share an address.
+
 ## Validation rules
+
+Domain mode requires `BYOD_LISTENER_DOMAIN`, `BYOD_LIVEKIT_DOMAIN`, and `BYOD_TLS_EMAIL`; `BYOD_ADMIN_DOMAIN` is optional. Domains must be hostname-only values. The origins must be path-free exact values `https://$BYOD_LISTENER_DOMAIN` and `wss://$BYOD_LIVEKIT_DOMAIN`. DNS preflight requires each configured name to resolve to `BYOD_VPS_PUBLIC_IP` before certbot runs. Direct-IP mode requires none of these optional values.
 
 - Required values must be present and non-empty.
 - `BYOD_BACKEND_PORT` must be an integer.
