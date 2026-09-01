@@ -9,6 +9,12 @@ server {
     location = /listener.js { try_files /listener.js =404; }
     location ^~ /vendor/ { try_files $uri =404; }
     __ALIAS_LOCATIONS__
+    location ^~ /.well-known/acme-challenge/ {
+        root /opt/byod/listener;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
     location / { return 404; }
 
     location = /ws/listener {
