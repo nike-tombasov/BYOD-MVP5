@@ -122,6 +122,7 @@ def derive_max_new_connections_per_sec(target_capacity: int) -> int:
 
 
 DEFAULT_ROOM_CONFIG = {
+    "subsite_name": None,
     "pin": _env_str("BYOD_DEFAULT_PIN", "123456"),
     "target_capacity": DEFAULT_TARGET_CAPACITY,
     "channels": [

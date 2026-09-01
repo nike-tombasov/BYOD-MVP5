@@ -194,6 +194,7 @@ class RoomService:
         return {
             "schema_version": 1,
             "room_id": "room_main",
+            "subsite_name": runtime.subsite_name,
             "pin": runtime.pin,
             "room_name": runtime.room_name,
             "target_capacity": runtime.target_capacity,
@@ -244,6 +245,8 @@ class RoomService:
 
         room_config = self.storage.load_room_config()
         if room_config:
+            persisted_subsite = room_config.get("subsite_name")
+            runtime.subsite_name = persisted_subsite if isinstance(persisted_subsite, str) and persisted_subsite else None
             runtime.pin = str(room_config.get("pin") or runtime.pin)
             runtime.room_name = str(room_config.get("room_name") or runtime.room_name)
             target_capacity = int(room_config.get("target_capacity") or runtime.target_capacity)
@@ -311,6 +314,7 @@ class RoomService:
 
             runtime = self.state_service.runtime
             runtime.pin = config.pin
+            runtime.subsite_name = config.subsite_name
             runtime.room_name = config.i18n_library.room_name_i18n["en"]
             runtime.i18n_library["room_name_i18n"] = dict(config.i18n_library.room_name_i18n)
             runtime.i18n_library["custom_status_text_blocked_i18n"] = dict(config.i18n_library.custom_status_text_blocked_i18n)

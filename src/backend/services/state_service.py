@@ -21,6 +21,7 @@ class RuntimeConfig:
     max_active_listeners: int
     max_new_connections_per_sec: int
     i18n_library: dict[str, dict[str, str]] | None = None
+    subsite_name: str | None = None
 
 
 class StateService:

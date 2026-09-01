@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from backend.domain.models import ChannelConfig, I18NLibrary, ImportValidationError, RoomConfig
+
+SUBSITE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.ASCII)
+RESERVED_SUBSITE_NAMES = {
+    "admin", "health", "ws", "listener.js", "vendor", "index.html", "favicon.ico",
+}
 
 
 @dataclass
@@ -60,6 +66,7 @@ def parse_room_config_json_bytes(content: bytes) -> ImportParseResult:
             target_capacity=int(payload["target_capacity"]),
             channels=channels,
             i18n_library=i18n_library,
+            subsite_name=(str(payload.get("subsite_name") or "").strip() or None),
         ),
         errors=[],
     )
@@ -71,6 +78,16 @@ def validate_import_payload(payload: dict[str, Any]) -> list[ImportValidationErr
     missing_fields = required_fields - set(payload.keys())
     for field in sorted(missing_fields):
         errors.append(_err(1, field, "MISSING_FIELD", f"{field} is required"))
+
+    subsite_name = payload.get("subsite_name")
+    if subsite_name is not None and not isinstance(subsite_name, str):
+        errors.append(_err(1, "subsite_name", "INVALID_SUBSITE_NAME", "subsite_name must be a string or null"))
+    elif isinstance(subsite_name, str) and subsite_name.strip():
+        normalized = subsite_name.strip()
+        if not SUBSITE_NAME_RE.fullmatch(normalized):
+            errors.append(_err(1, "subsite_name", "INVALID_SUBSITE_NAME", "subsite_name must match ^[a-z0-9][a-z0-9_-]{0,63}$"))
+        elif normalized in RESERVED_SUBSITE_NAMES:
+            errors.append(_err(1, "subsite_name", "RESERVED_SUBSITE_NAME", f"subsite_name {normalized!r} is reserved"))
 
     pin = payload.get("pin")
     if not isinstance(pin, str) or not pin.strip():

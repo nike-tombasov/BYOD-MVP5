@@ -144,3 +144,11 @@ When present, the orchestrator uploads it to `http://127.0.0.1:8000/admin/import
 - Never paste real secrets into tickets, screenshots, or shared logs.
 - Backend port `8000/tcp` must remain closed publicly.
 - `/admin/*` endpoints are local-only and must not be proxied through nginx.
+
+### TLS contact, Publisher URL, and Listener alias
+
+`BYOD_TLS_EMAIL` is the Let's Encrypt/certbot contact email. It is not DNS and is not a server login. It need not belong to `k-pls.ru`; use a real personal or technical address with stable access, and never leave `replace@example.com` in a real configuration.
+
+The unchanged Publisher `Server IP` field takes a full URL: VPS/domain `ws://<VPS_PUBLIC_IP>/ws/publisher` (hall 1: `ws://194.58.118.140/ws/publisher`); local same-PC `ws://127.0.0.1:8000/ws/publisher`; intentional LAN testing `ws://<LAN_BACKEND_IP>:8000/ws/publisher`. Do not use the bare IP, public `:8000`, Listener HTTPS URL, or LiveKit WSS URL. There is no dedicated Publisher DNS record; VPS port 8000 is private and nginx serves `/ws/publisher`.
+
+`room_input.json` may contain `"subsite_name": "test-conf"`. It is a lowercase URL-path slug, not DNS. It enables exactly `/test-conf/` in addition to root; absent, null, or empty enables no alias. A new import replaces the prior alias, so obsolete event paths return `404`.

@@ -36,3 +36,11 @@ This keeps guest QR links readable while preserving the MVP capacity rule: one s
 Direct-IP pilot mode remains supported for practical testing, diagnostics, and emergency fallback. In domain mode, domain URLs are the primary guest URLs, while direct-IP HTTP/WS remains available on the same VPS for diagnostics and operator fallback. Direct-IP fallback does not provide HTTPS/WSS. Domain HTTPS/WSS mode is not mandatory for every pilot.
 
 Set `BYOD_DOMAIN_TLS_MODE=true` to opt in. Deployment then validates the HTTPS/WSS origins, verifies every configured A-record against the VPS IPv4, obtains a Let's Encrypt certificate, and installs the domain nginx configuration. With the default `false`, no domain values or certificate are required and existing HTTP/WS behavior remains in use.
+
+## Exact Publisher input and controlled Listener paths
+
+The Publisher UI and its `Server IP` label remain unchanged. The value must be the full backend WebSocket URL: `ws://<VPS_PUBLIC_IP>/ws/publisher` (currently `ws://194.58.118.140/ws/publisher`). Do not enter the bare IP, `ws://194.58.118.140:8000/ws/publisher`, `https://listen-1.k-pls.ru/`, or `wss://lk-1.k-pls.ru`. Same-PC development uses `ws://127.0.0.1:8000/ws/publisher`; intentional LAN testing may use `ws://<LAN_BACKEND_IP>:8000/ws/publisher`.
+
+Publisher has no dedicated DNS name. VPS port 8000 remains private; nginx provides `/ws/publisher`. Optional room-config `subsite_name` controls one Listener path alias without DNS or multi-room routing. Listener root always works; only the current alias works, while old and arbitrary aliases return `404`.
+
+`BYOD_TLS_EMAIL` is only the Let's Encrypt/certbot contact address—not DNS or a server login. It may be a stable personal or technical email outside `k-pls.ru`; replace the example address for real deployment.

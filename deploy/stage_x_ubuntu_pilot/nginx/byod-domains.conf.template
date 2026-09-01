@@ -5,10 +5,11 @@ server {
     root /opt/byod/listener;
     index index.html;
 
-    location / {
-        try_files $uri $uri/ /index.html;
-        add_header Cache-Control "no-store";
-    }
+    location = / { try_files /index.html =404; add_header Cache-Control "no-store"; }
+    location = /listener.js { try_files /listener.js =404; }
+    location ^~ /vendor/ { try_files $uri =404; }
+    __ALIAS_LOCATIONS__
+    location / { return 404; }
 
     location = /ws/listener {
         proxy_pass http://127.0.0.1:8000/ws/listener;
@@ -50,7 +51,11 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/__CERT_NAME__/privkey.pem;
     root /opt/byod/listener;
     index index.html;
-    location / { try_files $uri $uri/ /index.html; add_header Cache-Control "no-store"; }
+    location = / { try_files /index.html =404; add_header Cache-Control "no-store"; }
+    location = /listener.js { try_files /listener.js =404; }
+    location ^~ /vendor/ { try_files $uri =404; }
+    __ALIAS_LOCATIONS__
+    location / { return 404; }
     location = /ws/listener { proxy_pass http://127.0.0.1:8000/ws/listener; include /etc/nginx/byod-websocket-proxy.conf; }
     location = /ws/publisher { proxy_pass http://127.0.0.1:8000/ws/publisher; include /etc/nginx/byod-websocket-proxy.conf; }
     location = /health { proxy_pass http://127.0.0.1:8000/health; proxy_set_header Host $host; }

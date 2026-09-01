@@ -152,3 +152,11 @@ Deep diagnostics, metrics, load checks, logs, and dangerous commands are documen
 ## Manifest
 
 Deployment package manifest: `deploy/stage_x_ubuntu_pilot/manifest.yaml`.
+
+## Publisher `Server IP` and event path rules
+
+The Publisher UI is unchanged and its field remains labelled `Server IP`, but it requires a **full backend WebSocket URL**. In VPS/domain mode enter `ws://<VPS_PUBLIC_IP>/ws/publisher`; for hall 1 this is `ws://194.58.118.140/ws/publisher`. Do not enter `194.58.118.140`, `ws://194.58.118.140:8000/ws/publisher`, `https://listen-1.k-pls.ru/`, or `wss://lk-1.k-pls.ru`.
+
+For same-PC development use `ws://127.0.0.1:8000/ws/publisher`. For LAN testing only, when the backend is intentionally bound to LAN, use `ws://<LAN_BACKEND_IP>:8000/ws/publisher`. Publisher has no dedicated DNS name; do not create one. Port 8000 stays private on a VPS, and nginx exposes only `/ws/publisher`.
+
+Optional room-config `subsite_name` is one current-event Listener path slug (for example `test-conf` gives `/test-conf/`). Root remains valid. Missing/empty means no alias, and wrong or old paths return `404`. It does not create DNS or multi-room routing.
