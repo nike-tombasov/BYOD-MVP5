@@ -23,13 +23,14 @@ Canonical admin endpoint:
 ```json
 {
   "pin": "123456",
+  "subsite_name": "test-conf",
   "target_capacity": 200,
   "channels": [],
   "i18n_library": {}
 }
 ```
 
-All fields above are required.
+`pin`, `target_capacity`, `channels`, and `i18n_library` are required. `subsite_name` is optional.
 
 ---
 
@@ -40,6 +41,16 @@ Top-level:
 - `target_capacity`: positive integer
 - `channels`: non-empty list
 - `i18n_library`: object
+
+
+`subsite_name` rules:
+- optional top-level field; absent, `null`, an empty string, or a whitespace-only string means no alias;
+- a non-empty value is trimmed and must be one lowercase ASCII URL path slug matching `^[a-z0-9][a-z0-9_-]{0,63}$`;
+- slash, dot, colon, spaces, uppercase, Unicode, `%`, `?`, `#`, and backslash are not allowed;
+- reserved values `admin`, `health`, `ws`, `listener.js`, `vendor`, `index.html`, and `favicon.ico` are rejected;
+- `"subsite_name": "test-conf"` enables the Listener path `/test-conf/`; Listener root `/` remains valid;
+- the slug is a URL path, not DNS, and creates neither additional LiveKit rooms nor multiple simultaneous events on one VPS;
+- each successful import replaces the previous alias rather than merging with it.
 
 `channels` item rules:
 - each item must be object with required fields:
@@ -89,6 +100,7 @@ Process:
 ```json
 {
   "pin": "123456",
+  "subsite_name": "test-conf",
   "target_capacity": 200,
   "channels": [
     {"channel_id": "channel_0", "channel_label": "Original - FLOOR - Оригинал", "listen": false},
@@ -119,11 +131,12 @@ Process:
 
 ### 18.6 Invalid JSON example and expected error
 
-Invalid example (missing `ru` in `room_name_i18n`):
+Invalid example (invalid `subsite_name` and missing `ru` in `room_name_i18n`):
 
 ```json
 {
   "pin": "123456",
+  "subsite_name": "Old/Event",
   "target_capacity": 200,
   "channels": [
     {"channel_id": "channel_0", "channel_label": "Floor", "listen": false}
@@ -144,6 +157,12 @@ Expected validation error example:
   "errors": [
     {
       "line": 1,
+      "field": "subsite_name",
+      "code": "INVALID_SUBSITE_NAME",
+      "message": "subsite_name must match ^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    {
+      "line": 1,
       "field": "room_name_i18n.ru",
       "code": "MISSING_REQUIRED_LANG",
       "message": "room_name_i18n must include non-empty ru"
@@ -160,6 +179,8 @@ Expected validation error example:
 - `INVALID_JSON`
 - `MISSING_FIELD`
 - `INVALID_PIN`
+- `INVALID_SUBSITE_NAME`
+- `RESERVED_SUBSITE_NAME`
 - `INVALID_TARGET_CAPACITY`
 - `INVALID_CHANNELS`
 - `INVALID_CHANNEL`

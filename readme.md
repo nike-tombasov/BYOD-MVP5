@@ -55,6 +55,7 @@ Deploy package path: `deploy/stage_x_ubuntu_pilot`
 
 Operator docs:
 - `deploy/stage_x_ubuntu_pilot/docs/deploy_guide.md`
+- `deploy/stage_x_ubuntu_pilot/docs/operator_runbook_flashdrive.md`
 - `deploy/stage_x_ubuntu_pilot/docs/smoke_test_guide.md`
 - `deploy/stage_x_ubuntu_pilot/docs/incident_quick_actions.md`
 - `deploy/stage_x_ubuntu_pilot/docs/configuration_reference.md`

@@ -171,6 +171,17 @@ if path.is_file():
     payload['subsite_name'] = None
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY_CLEAR_ALIAS
+  systemctl restart byod-backend
+  backend_ready=false
+  for _ in {1..30}; do
+    if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+      backend_ready=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$backend_ready" == true ]] || fatal "Backend did not become healthy after clearing persisted subsite_name"
+  ok "Backend restarted with no configured Listener alias"
 fi
 
 if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then

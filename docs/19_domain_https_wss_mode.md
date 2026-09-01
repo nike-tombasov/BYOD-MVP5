@@ -25,11 +25,11 @@ Stage XII does not implement the Admin UI, and `admin-*` must never proxy the ba
 
 For MVP operations, one simultaneous hall/event equals one VPS. A second simultaneous hall/event uses a second VPS and a second subdomain pair.
 
-### 19.3 Event aliases are URL paths, not DNS rooms
+### 19.3 One controlled event alias
 
-Event aliases are path aliases on the same Listener HTML, for example `/event/main-hall` or `/event/workshop-a`. They do not create separate DNS records, separate LiveKit rooms, or separate simultaneous halls by themselves.
+Optional room-config `subsite_name` is one lowercase slug such as `test-conf`. A successful validated import enables exactly `/test-conf/` while Listener root `/` remains valid. There are no nested alias paths or arbitrary aliases; wrong and old aliases return `404`.
 
-This keeps guest QR links readable while preserving the MVP capacity rule: one simultaneous hall/event is served by one VPS.
+The alias is configured through validated room config import, not DNS. It creates neither another LiveKit room nor another simultaneous event: one simultaneous hall/event is still served by one VPS.
 
 ### 19.4 Direct-IP pilot mode
 

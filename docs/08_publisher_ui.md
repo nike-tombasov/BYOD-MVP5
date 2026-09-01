@@ -98,6 +98,15 @@ sounddevice.query_devices()
 
 ### 8.6. Блок IP+PIN
 
+The UI requirement is unchanged: the field label remains `Server IP`. Despite that label, the operator enters a complete backend WebSocket URL:
+
+- VPS/domain mode: `ws://<VPS_PUBLIC_IP>/ws/publisher`;
+- hall 1: `ws://194.58.118.140/ws/publisher`;
+- local same-PC development: `ws://127.0.0.1:8000/ws/publisher`;
+- LAN testing only, when backend is intentionally LAN-bound: `ws://<LAN_BACKEND_IP>:8000/ws/publisher`.
+
+Do not enter a bare IP, a public `:8000` URL, the Listener HTTPS URL, or the LiveKit WSS URL. VPS backend port 8000 remains private and Publisher reaches `/ws/publisher` through nginx.
+
 Publisher UI хранит последнюю введённую комбинацию IP+PIN и подставляет при последующем открытии
 
 Статусы (цвет):

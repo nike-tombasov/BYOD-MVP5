@@ -75,15 +75,15 @@ sudo BYOD_VPS_CONFIG=/tmp/vps_config.env bash -c 'set -euo pipefail; test -r "$B
 ## What the command does
 
 1. Verifies and loads `/tmp/vps_config.env`, converting CRLF to LF first.
-2. Installs the minimal bootstrap packages: `git`, `curl`, `ca-certificates`.
-3. Clones the configured branch into `/opt/byod/app-src`.
-4. Runs `01_one_deploy_from_vps_config.sh` as the repository orchestrator.
-5. Prepares the host, copies LiveKit release files to `/opt/byod/releases`, and verifies SHA-256 before installation.
-6. Installs LiveKit, backend, Listener, and optional browser vendor file.
-7. Generates `/opt/byod/config/backend.env` and `/opt/byod/config/livekit.yaml` from `/tmp/vps_config.env`.
-8. Starts services and, in domain mode, runs DNS preflight plus idempotent certbot/nginx TLS setup.
-9. Optionally imports `/tmp/room_input.json` through the local backend validation endpoint, optionally applies the backend stress profile when `BYOD_ENABLE_BACKEND_STRESS_TEST=true`, and runs smoke test.
-10. Prints a colored summary with service health, URLs, smoke output path, and firewall reminder.
+2. Installs bootstrap packages and clones the configured branch into `/opt/byod/app-src`.
+3. Prepares the host and verifies/copies the LiveKit release artifact.
+4. Installs LiveKit, backend, and Listener.
+5. Generates `/opt/byod/config/backend.env` and `/opt/byod/config/livekit.yaml`.
+6. Installs the optional browser vendor file and enables/starts services.
+7. Imports `/tmp/room_input.json` through backend validation when present. With no input, it clears any persisted alias, restarts backend, and waits for health.
+8. In domain mode, runs DNS preflight and certbot/nginx setup using the validated/persisted `subsite_name`.
+9. Applies the optional stress profile, then runs smoke after domain nginx has been rendered.
+10. Prints service health, canonical client URLs, smoke output path, and firewall reminders.
 
 ## Provider firewall
 
@@ -99,9 +99,20 @@ Do **not** expose `8000/tcp`. Backend admin endpoints are local-only and are not
 
 ## Public client checks
 
-- Listener URL: `http://<VPS_PUBLIC_IP>/`
-- Backend health through nginx: `http://<VPS_PUBLIC_IP>/health`
-- LiveKit URL given to browser clients: `ws://<VPS_PUBLIC_IP>:7880`
+Direct-IP mode:
+- Listener: `http://<VPS_PUBLIC_IP>/`;
+- health: `http://<VPS_PUBLIC_IP>/health`;
+- LiveKit signaling: `ws://<VPS_PUBLIC_IP>:7880`;
+- Publisher `Server IP`: `ws://<VPS_PUBLIC_IP>/ws/publisher`.
+
+Domain mode:
+- Listener root: `https://<BYOD_LISTENER_DOMAIN>/`;
+- health: `https://<BYOD_LISTENER_DOMAIN>/health`;
+- direct-IP fallback: `http://<VPS_PUBLIC_IP>/`;
+- configured alias, if present: `https://<BYOD_LISTENER_DOMAIN>/<subsite_name>/` and its direct-IP equivalent;
+- Publisher `Server IP`: `ws://<VPS_PUBLIC_IP>/ws/publisher`.
+
+A wrong or old Listener alias must return `404`. Root remains valid whether or not an alias is configured.
 
 ## Manual room config import
 

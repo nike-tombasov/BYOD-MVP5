@@ -13,7 +13,7 @@ Root folder:
 `backend_data/`
 
 Files:
-- `room_config_v1.json` — room static/semi-static config (PIN, channels, labels, listen flags, immutable i18n library, capacity).
+- `room_config_v1.json` — room static/semi-static config (PIN, `subsite_name`, channels, labels, listen flags, immutable i18n library, capacity).
 - `runtime_state_v1.json` — current runtime snapshot (room_status, owner map, online counters).
 - `connections_log_YYYYMMDD.jsonl` — append-only connection events (publisher/listener connect/disconnect).
 - `events_log_YYYYMMDD.jsonl` — append-only operational events (on_air/stop/status changes).
@@ -44,6 +44,7 @@ For log files (current Stage VII implementation):
 {
   "schema_version": 1,
   "room_id": "room_main",
+  "subsite_name": "test-conf",
   "pin": "123456",
   "target_capacity": 200,
   "channels": [
@@ -72,6 +73,9 @@ For log files (current Stage VII implementation):
 ```
 
 Rules:
+- `subsite_name` is persisted with room metadata; absent or `null` means no Listener alias.
+- Old persisted configs without `subsite_name` remain compatible and load as no alias.
+- A successful JSON import replaces `subsite_name` together with the room snapshot; it is never merged with the previous alias.
 - `channel_id` unique.
 - `channel_0.listen` default false.
 - `target_capacity` immutable for current event runtime.
@@ -85,6 +89,7 @@ Backend MUST use this immutable bootstrap default at deploy-time before first JS
 
 ```json
 {
+  "subsite_name": null,
   "target_capacity": 200,
   "pin": "123456",
   "channels": [
@@ -180,7 +185,7 @@ Baseline policy (MVP):
 
 Import replacement rule:
 - on each successful JSON import backend fully replaces room metadata snapshot (`room_config_v1.json`) and resets runtime metadata that can mix with old room config (owners/recording state).
-- backend does not merge old and new channel metadata.
+- backend does not merge old and new channel metadata or retain the previous `subsite_name`; absent/null means no alias.
 
 ---
 
