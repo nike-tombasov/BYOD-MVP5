@@ -27,6 +27,12 @@ Keep the VPS login/password and other credentials safely outside git. Do not put
 
 A `subsite_name` such as `test-conf` is a Listener URL path, not a DNS name. Do not add DNS for it.
 
+### Event VPS update policy
+
+The BYOD Stage XII VPS is an **ephemeral event appliance** and may be considered live from the start of deploy. Automatic package updates and automatic reboots are disabled for deployment and operation. The MVP accepts the security tradeoff because the VPS is short-lived and must not mutate during live use. Rebuild or rent a fresh VPS for future events rather than depending on unattended in-place upgrades; manual OS maintenance is outside the live-event deploy path.
+
+Never delete dpkg or apt lock files. On first boot, if `unattended-upgrades` or `apt-daily` owns a lock, deploy safely stops/disables the automatic-update path and waits for the lock instead of deleting it or killing an operator-started apt command.
+
 ## C. Use the foreign Windows computer
 
 Open the USB folder in File Explorer, click its address bar, type `powershell`, and press Enter. Check SSH access:
@@ -71,8 +77,57 @@ set +a
 printf 'BYOD_REPO_URL=[%s]\n' "$BYOD_REPO_URL"
 printf 'BYOD_REPO_BRANCH=[%s]\n' "$BYOD_REPO_BRANCH"
 
+export DEBIAN_FRONTEND=noninteractive
+apt_units=(apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service)
+systemctl stop "${apt_units[@]}" >/dev/null 2>&1 || true
+systemctl disable "${apt_units[@]}" >/dev/null 2>&1 || true
+systemctl mask "${apt_units[@]}" >/dev/null 2>&1 || true
+cat >/etc/apt/apt.conf.d/20auto-upgrades <<'APT_PERIODIC'
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::AutocleanInterval "0";
+APT_PERIODIC
+cat >/etc/apt/apt.conf.d/99byod-no-auto-reboot <<'APT_REBOOT'
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+APT_REBOOT
+
+# Wait for supported apt/dpkg locking; never delete lock files.
+apt_locks=(/var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock)
+deadline=$((SECONDS + 180))
+while :; do
+  held=''
+  for lock in "${apt_locks[@]}"; do
+    [[ -e $lock ]] || continue
+    if command -v fuser >/dev/null 2>&1; then
+      holders=$(fuser "$lock" 2>/dev/null || true)
+    elif command -v lsof >/dev/null 2>&1; then
+      holders=$(lsof -t -- "$lock" 2>/dev/null || true)
+    else
+      holders=$(python3 - "$lock" <<'PYLOCK'
+import fcntl, os, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o640)
+    fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    fcntl.lockf(fd, fcntl.LOCK_UN)
+    os.close(fd)
+except (PermissionError, BlockingIOError):
+    print("held")
+PYLOCK
+)
+    fi
+    [[ -z $holders ]] || { held="$lock (holder: $holders)"; break; }
+  done
+  [[ -n $held ]] || break
+  if (( SECONDS >= deadline )); then
+    echo "FATAL: apt/dpkg remains busy: $held. Lock files were not removed." >&2
+    exit 1
+  fi
+  echo "WARNING: waiting for apt/dpkg lock: $held" >&2
+  sleep 2
+done
 apt-get update
-apt-get install -y git curl ca-certificates tar gzip
+apt-get install -y --no-install-recommends git curl ca-certificates tar gzip
 
 cat >/tmp/byod_fetch_app_source.sh <<'BYOD_FETCH'
 #!/usr/bin/env bash

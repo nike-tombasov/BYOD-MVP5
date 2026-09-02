@@ -64,6 +64,12 @@ For domain mode, first create external A-records for `listen-*` (guest Listener)
 
 Stage XII does not implement an Admin UI and public backend `/admin/*` is blocked. The Publisher UI has no dedicated domain: its operator uses a manually configured URL such as `ws://194.58.118.140/ws/publisher` through nginx. Do not create a Publisher DNS record. Event aliases are paths beneath the Listener URL, not DNS records.
 
+## Event VPS update policy
+
+The BYOD Stage XII VPS is treated as an **ephemeral event appliance** that may be live as soon as deployment begins. Automatic package updates and automatic reboots are disabled during deployment and operation so the host cannot mutate or restart during an event. This security tradeoff is accepted for the MVP event-appliance model because the VPS is short-lived. For a future event, the operator should rebuild or rent a fresh VPS instead of relying on unattended in-place upgrades; manual OS maintenance is outside the live-event deploy path.
+
+Never delete dpkg or apt lock files. If `unattended-upgrades` or an `apt-daily` job holds a lock during first boot, the bootstrap stops/disables that automatic path and waits safely for supported package locking to become available rather than deleting locks or interfering with an operator-started apt process.
+
 ## Launch deploy from the VPS shell
 
 After uploading all files, connect to the VPS with PuTTY or `ssh` and paste this entire bash block into the remote Linux shell. Do **not** paste PowerShell here-strings (`@' ... '@`) into Linux bash. If using PowerShell on the local Windows PC, use it only for the documented `scp` upload commands and a normal `ssh root@<VPS_IP>` login; paste and run the deploy block only after that login, at the remote Linux prompt.
@@ -85,8 +91,57 @@ set +a
 printf 'BYOD_REPO_URL=[%s]\n' "$BYOD_REPO_URL"
 printf 'BYOD_REPO_BRANCH=[%s]\n' "$BYOD_REPO_BRANCH"
 
+export DEBIAN_FRONTEND=noninteractive
+apt_units=(apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service)
+systemctl stop "${apt_units[@]}" >/dev/null 2>&1 || true
+systemctl disable "${apt_units[@]}" >/dev/null 2>&1 || true
+systemctl mask "${apt_units[@]}" >/dev/null 2>&1 || true
+cat >/etc/apt/apt.conf.d/20auto-upgrades <<'APT_PERIODIC'
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::AutocleanInterval "0";
+APT_PERIODIC
+cat >/etc/apt/apt.conf.d/99byod-no-auto-reboot <<'APT_REBOOT'
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+APT_REBOOT
+
+# Wait for supported apt/dpkg locking; never delete lock files.
+apt_locks=(/var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock)
+deadline=$((SECONDS + 180))
+while :; do
+  held=''
+  for lock in "${apt_locks[@]}"; do
+    [[ -e $lock ]] || continue
+    if command -v fuser >/dev/null 2>&1; then
+      holders=$(fuser "$lock" 2>/dev/null || true)
+    elif command -v lsof >/dev/null 2>&1; then
+      holders=$(lsof -t -- "$lock" 2>/dev/null || true)
+    else
+      holders=$(python3 - "$lock" <<'PYLOCK'
+import fcntl, os, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o640)
+    fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    fcntl.lockf(fd, fcntl.LOCK_UN)
+    os.close(fd)
+except (PermissionError, BlockingIOError):
+    print("held")
+PYLOCK
+)
+    fi
+    [[ -z $holders ]] || { held="$lock (holder: $holders)"; break; }
+  done
+  [[ -n $held ]] || break
+  if (( SECONDS >= deadline )); then
+    echo "FATAL: apt/dpkg remains busy: $held. Lock files were not removed." >&2
+    exit 1
+  fi
+  echo "WARNING: waiting for apt/dpkg lock: $held" >&2
+  sleep 2
+done
 apt-get update
-apt-get install -y git curl ca-certificates tar gzip
+apt-get install -y --no-install-recommends git curl ca-certificates tar gzip
 
 cat >/tmp/byod_fetch_app_source.sh <<'BYOD_FETCH'
 #!/usr/bin/env bash
@@ -159,7 +214,7 @@ The temporary bootstrap helper mirrors the checked-in `deploy/stage_x_ubuntu_pil
 ## What the command does
 
 1. Verifies and loads `/tmp/vps_config.env`, converting CRLF to LF first.
-2. Installs bootstrap packages and fetches the configured branch into `/opt/byod/app-src`, falling back from `git clone` to a public GitHub codeload archive when necessary.
+2. Disables automatic apt updates/reboots, safely waits for package locks, installs bootstrap packages, and fetches the configured branch into `/opt/byod/app-src`, falling back from `git clone` to a public GitHub codeload archive when necessary.
 3. Prepares the host and verifies/copies the LiveKit release artifact.
 4. Installs LiveKit, backend, and Listener.
 5. Generates `/opt/byod/config/backend.env` and `/opt/byod/config/livekit.yaml`.
