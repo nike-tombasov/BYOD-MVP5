@@ -11,7 +11,7 @@ Store these files on it:
 - `livekit-server-v1.9.11-linux-amd64.tar.gz`
 - `livekit-server-v1.9.11-linux-amd64.tar.gz.sha256`
 - optional `livekit-client.umd.1.15.13.js`
-- a text file containing the prepared one-command deploy command
+- a text file containing the prepared VPS-shell bash deploy block
 
 Keep the VPS login/password and other credentials safely outside git. Do not put secrets in a repository.
 
@@ -46,13 +46,45 @@ scp .\livekit-server-v1.9.11-linux-amd64.tar.gz.sha256 root@<VPS_IP>:/tmp/
 scp .\livekit-client.umd.1.15.13.js root@<VPS_IP>:/tmp/
 ```
 
-Log in again with `ssh root@<VPS_IP>`, then protect the config:
+After the uploads finish, log in again with `ssh root@<VPS_IP>` (or connect with PuTTY). The remaining commands run in the **remote VPS Linux shell**, not in local PowerShell. Protect the config:
 
 ```bash
-sudo chmod 600 /tmp/vps_config.env
+chmod 600 /tmp/vps_config.env
 ```
 
-Paste and run the prepared one-command deploy command from the deploy guide. An invalid `room_input.json` stops deployment; fix it rather than bypassing validation.
+Then paste this entire bash block into that remote shell:
+
+```bash
+cat >/tmp/byod_run_deploy.sh <<'BYOD_DEPLOY'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BYOD_VPS_CONFIG=/tmp/vps_config.env
+
+test -r "$BYOD_VPS_CONFIG"
+sed -i 's/\r$//' "$BYOD_VPS_CONFIG"
+
+set -a
+source "$BYOD_VPS_CONFIG"
+set +a
+
+printf 'BYOD_REPO_URL=[%s]\n' "$BYOD_REPO_URL"
+printf 'BYOD_REPO_BRANCH=[%s]\n' "$BYOD_REPO_BRANCH"
+
+apt-get update
+apt-get install -y git curl ca-certificates
+
+rm -rf /opt/byod/app-src
+mkdir -p /opt/byod
+GIT_TERMINAL_PROMPT=0 git clone --branch "$BYOD_REPO_BRANCH" --single-branch "$BYOD_REPO_URL" /opt/byod/app-src
+
+bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/01_one_deploy_from_vps_config.sh "$BYOD_VPS_CONFIG"
+BYOD_DEPLOY
+
+bash /tmp/byod_run_deploy.sh
+```
+
+Do **not** paste a PowerShell here-string (`@' ... '@`) into Linux bash. On the local Windows PC, PowerShell is used only for the `scp` commands above and the normal `ssh` login; the deploy block runs remotely. An invalid `room_input.json` stops deployment; fix it rather than bypassing validation.
 
 ## D. Post-deploy checks
 

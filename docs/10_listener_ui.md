@@ -117,6 +117,12 @@ Hiding channels:
 if current channel sets listen = false:
     STOP ACTION
 ```
+### 10.4A. Listener labels and browser title
+
+Visible Listener channel buttons show `channel_label` only. `channel_id` remains the internal protocol and LiveKit track identity and is not shown to Listener users during normal operation; it is only a defensive fallback when a label is missing or blank.
+
+The browser address bar continues to show the URL, domain, and path. The browser tab title is controlled by HTML `<title>` / JavaScript `document.title` and uses the localized room name after backend state and the i18n library are loaded. It does not depend on the selected audio channel.
+
 ### 10.5. Existing tracks handling
 
 Naming rule:
