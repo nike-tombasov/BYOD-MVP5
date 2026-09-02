@@ -5,6 +5,19 @@ step(){ printf "%b\n" "${BLUE}==> $*${NC}"; }
 ok(){ printf "%b\n" "${GREEN}OK: $*${NC}"; }
 warn(){ printf "%b\n" "${YELLOW}WARNING: $*${NC}"; }
 fatal(){ printf "%b\n" "${RED}FATAL: $*${NC}" >&2; exit 1; }
+wait_for_backend_health() {
+  local failure_message="${1:-Backend did not become healthy before room config import}"
+  local ready=false
+  for _ in {1..30}; do
+    if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$ready" == true ]] || fatal "$failure_message"
+  ok "Backend health endpoint is ready"
+}
 trap 'fatal "one-command deploy failed near line $LINENO"' ERR
 
 [[ ${EUID} -eq 0 ]] || fatal "Run as root: sudo bash $0 /tmp/vps_config.env"
@@ -145,12 +158,20 @@ fi
 
 step "Enable and start services"
 bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
+wait_for_backend_health
 
 step "Import optional room config"
 if [[ -s "$BYOD_ROOM_INPUT_PATH" ]]; then
   response_file="$(mktemp /tmp/byod-room-import-XXXXXX.json)"
-  curl -sf -F "file=@${BYOD_ROOM_INPUT_PATH};type=application/json" "http://127.0.0.1:8000/admin/import_json" -o "$response_file"
-  python3 - "$response_file" <<'PY'
+  if ! http_status="$(curl -sS -o "$response_file" -w '%{http_code}' \
+    -F "file=@${BYOD_ROOM_INPUT_PATH};type=application/json" \
+    "http://127.0.0.1:8000/admin/import_json")"; then
+    fatal "Room config import request failed (HTTP ${http_status:-000}); response saved to $response_file"
+  fi
+  if [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+    fatal "Room config import rejected with HTTP $http_status; response saved to $response_file"
+  fi
+  if ! python3 - "$response_file" <<'PY'
 import json, sys
 p=json.load(open(sys.argv[1], encoding='utf-8'))
 if not p.get('ok'):
@@ -159,6 +180,9 @@ if not p.get('ok'):
 a=p.get('applied', {})
 print(f"room_import: room_name={a.get('room_name')} subsite_name={a.get('subsite_name')} target_capacity={a.get('target_capacity')} max_active_listeners={a.get('max_active_listeners')} max_new_connections_per_sec={a.get('max_new_connections_per_sec')} channels={a.get('channels')}")
 PY
+  then
+    fatal "Room config import returned an invalid or unsuccessful response; response saved to $response_file"
+  fi
   rm -f "$response_file"
   ok "Room config imported through backend validation endpoint"
 else
@@ -172,15 +196,7 @@ if path.is_file():
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY_CLEAR_ALIAS
   systemctl restart byod-backend
-  backend_ready=false
-  for _ in {1..30}; do
-    if curl -sf http://127.0.0.1:8000/health >/dev/null; then
-      backend_ready=true
-      break
-    fi
-    sleep 1
-  done
-  [[ "$backend_ready" == true ]] || fatal "Backend did not become healthy after clearing persisted subsite_name"
+  wait_for_backend_health "Backend did not become healthy after clearing persisted subsite_name"
   ok "Backend restarted with no configured Listener alias"
 fi
 

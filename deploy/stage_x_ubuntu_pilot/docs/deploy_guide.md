@@ -1,6 +1,6 @@
 # BYOD VPS Deploy Guide
 
-This is the administrator workflow for a single BYOD VPS. The normal deploy path is: upload files with WinSCP, then paste one command in PuTTY. No manual `nano` editing is required during a clean deploy.
+This is the administrator workflow for a single BYOD VPS. First upload the files from Windows with `scp` (or WinSCP), then connect to the VPS with PuTTY or normal `ssh`, and paste the bash block below into the **remote VPS shell**. No manual `nano` editing is required during a clean deploy.
 
 ## Target environment
 
@@ -64,12 +64,38 @@ For domain mode, first create external A-records for `listen-*` (guest Listener)
 
 Stage XII does not implement an Admin UI and public backend `/admin/*` is blocked. The Publisher UI has no dedicated domain: its operator uses a manually configured URL such as `ws://194.58.118.140/ws/publisher` through nginx. Do not create a Publisher DNS record. Event aliases are paths beneath the Listener URL, not DNS records.
 
-## One-command deploy
+## Launch deploy from the VPS shell
 
-Paste this command in PuTTY after the files are uploaded:
+After uploading all files, connect to the VPS with PuTTY or `ssh` and paste this entire bash block into the remote Linux shell. Do **not** paste PowerShell here-strings (`@' ... '@`) into Linux bash. If using PowerShell on the local Windows PC, use it only for the documented `scp` upload commands and a normal `ssh root@<VPS_IP>` login; paste and run the deploy block only after that login, at the remote Linux prompt.
 
 ```bash
-sudo BYOD_VPS_CONFIG=/tmp/vps_config.env bash -c 'set -euo pipefail; test -r "$BYOD_VPS_CONFIG"; sed -i "s/\r$//" "$BYOD_VPS_CONFIG"; set -a; source "$BYOD_VPS_CONFIG"; set +a; apt-get update; apt-get install -y git curl ca-certificates; rm -rf /opt/byod/app-src; mkdir -p /opt/byod; git clone --branch "$BYOD_REPO_BRANCH" "$BYOD_REPO_URL" /opt/byod/app-src; bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/01_one_deploy_from_vps_config.sh "$BYOD_VPS_CONFIG"'
+cat >/tmp/byod_run_deploy.sh <<'BYOD_DEPLOY'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BYOD_VPS_CONFIG=/tmp/vps_config.env
+
+test -r "$BYOD_VPS_CONFIG"
+sed -i 's/\r$//' "$BYOD_VPS_CONFIG"
+
+set -a
+source "$BYOD_VPS_CONFIG"
+set +a
+
+printf 'BYOD_REPO_URL=[%s]\n' "$BYOD_REPO_URL"
+printf 'BYOD_REPO_BRANCH=[%s]\n' "$BYOD_REPO_BRANCH"
+
+apt-get update
+apt-get install -y git curl ca-certificates
+
+rm -rf /opt/byod/app-src
+mkdir -p /opt/byod
+GIT_TERMINAL_PROMPT=0 git clone --branch "$BYOD_REPO_BRANCH" --single-branch "$BYOD_REPO_URL" /opt/byod/app-src
+
+bash /opt/byod/app-src/deploy/stage_x_ubuntu_pilot/scripts/01_one_deploy_from_vps_config.sh "$BYOD_VPS_CONFIG"
+BYOD_DEPLOY
+
+bash /tmp/byod_run_deploy.sh
 ```
 
 ## What the command does

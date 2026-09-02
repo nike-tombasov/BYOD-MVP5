@@ -416,6 +416,11 @@ function getLocalizedRoomName() {
   return resolveTextByUiLanguage(i18nLibrary?.room_name_i18n, 'Room');
 }
 
+function updateDocumentTitle() {
+  const title = getLocalizedRoomName();
+  document.title = title && title.trim() ? title : 'BYOD Listener';
+}
+
 function getLocalizedStatusText(status) {
   if (status === 'BLOCKED') {
     return resolveTextByUiLanguage(i18nLibrary?.custom_status_text_blocked_i18n, 'BLOCKED');
@@ -462,6 +467,7 @@ function applyI18nLibrary(nextLibrary) {
   i18nApplyCount += 1;
   updateDiagnosticsSnapshot();
   chooseUiLanguage(i18nLibrary);
+  updateDocumentTitle();
 
   if (currentState) {
     roomNameEl.textContent = getLocalizedRoomName();
@@ -930,6 +936,7 @@ function renderState(state) {
   enforceRoomStatusRules(state);
 
   roomNameEl.textContent = getLocalizedRoomName();
+  updateDocumentTitle();
 
   if (state.room_status && state.room_status !== 'OPENED') {
     statusBox.style.display = 'block';
@@ -953,7 +960,7 @@ function renderState(state) {
 
     const button = document.createElement('button');
     button.className = 'btn';
-    button.textContent = `${channel.channel_id} — ${channel.channel_label}`;
+    button.textContent = channel.channel_label || channel.channel_id;
     if (selectedChannel === channel.channel_id) button.classList.add('active');
     button.disabled = isRoomClosed();
 
