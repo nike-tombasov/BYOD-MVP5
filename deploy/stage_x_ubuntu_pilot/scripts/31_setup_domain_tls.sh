@@ -10,12 +10,13 @@ esac
 [[ ${EUID} -eq 0 ]] || fatal 'run as root'
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+source "$REPO_ROOT/deploy/stage_x_ubuntu_pilot/scripts/03_apt_safety.sh"
+disable_event_vps_auto_updates
 bash "$REPO_ROOT/deploy/stage_x_ubuntu_pilot/scripts/30_domain_dns_preflight.sh"
 
-export DEBIAN_FRONTEND=noninteractive
 if ! command -v certbot >/dev/null 2>&1 || ! dpkg-query -W python3-certbot-nginx >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y certbot python3-certbot-nginx
+  apt_update_safe
+  apt_install_safe certbot python3-certbot-nginx
 fi
 
 domains=("$BYOD_LISTENER_DOMAIN" "$BYOD_LIVEKIT_DOMAIN")
