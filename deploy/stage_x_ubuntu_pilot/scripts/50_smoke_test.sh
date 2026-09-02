@@ -157,10 +157,27 @@ printf 'livekit-config: udp_range=50000-59999, fallback_udp_mux=7882\n'
 
 if [[ "${BYOD_DOMAIN_TLS_MODE:-false}" == "true" ]]; then
   domain_failed=0
-  curl -fsS "https://${BYOD_LISTENER_DOMAIN}/" >/dev/null || domain_failed=1
+  listener_html="$(curl -fsS "https://${BYOD_LISTENER_DOMAIN}/" || true)"
+  [[ "$listener_html" == *'<html'* || "$listener_html" == *'<HTML'* ]] || domain_failed=1
   curl -fsS "https://${BYOD_LISTENER_DOMAIN}/health" >/dev/null || domain_failed=1
   curl -fsS "http://${BYOD_VPS_PUBLIC_IP}/" >/dev/null || domain_failed=1
-  curl -fsS "http://${BYOD_VPS_PUBLIC_IP}/health" >/dev/null || domain_failed=1
+  listener_js="$(curl -fsS "https://${BYOD_LISTENER_DOMAIN}/listener.js" || true)"
+  [[ -n "$listener_js" && "$listener_js" != *'<html'* && "$listener_js" != *'<!DOCTYPE'* ]] || domain_failed=1
+  subsite_name="$(python3 - "$room_config_path" <<'PY_SUBSITE'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+if p.is_file():
+    value = json.loads(p.read_text(encoding='utf-8')).get('subsite_name')
+    if isinstance(value, str): print(value)
+PY_SUBSITE
+)"
+  if [[ -n "$subsite_name" ]]; then
+    curl -fsS "https://${BYOD_LISTENER_DOMAIN}/${subsite_name}/" | grep -qi '<html' || domain_failed=1
+    curl -fsS "http://${BYOD_VPS_PUBLIC_IP}/${subsite_name}/" | grep -qi '<html' || domain_failed=1
+  else
+    arbitrary_status="$(curl -sS -o /dev/null -w '%{http_code}' "https://${BYOD_LISTENER_DOMAIN}/test-conf/" || true)"
+    [[ "$arbitrary_status" == 404 ]] || domain_failed=1
+  fi
   ip_admin_status="$(curl -sS -o /dev/null -w '%{http_code}' "http://${BYOD_VPS_PUBLIC_IP}/admin/metrics_snapshot" || true)"
   [[ "$ip_admin_status" != 2* ]] || domain_failed=1
   admin_status="not-configured"
@@ -172,7 +189,7 @@ if [[ "${BYOD_DOMAIN_TLS_MODE:-false}" == "true" ]]; then
   [[ "$public_admin_status" != 2* ]] || domain_failed=1
   backend_livekit_url="$(awk -F= '$1 == "BYOD_LIVEKIT_URL" {gsub(/^"|"$/, "", $2); print $2}' /opt/byod/config/backend.env 2>/dev/null)"
   [[ "$backend_livekit_url" == "wss://${BYOD_LIVEKIT_DOMAIN}" ]] || domain_failed=1
-  printf 'domain-tls: listener=https://%s direct-ip=http://%s livekit=%s ip-admin-http=%s public-admin-http=%s reserved-admin-http=%s\n' "$BYOD_LISTENER_DOMAIN" "$BYOD_VPS_PUBLIC_IP" "$backend_livekit_url" "$ip_admin_status" "$public_admin_status" "$admin_status"
+  printf 'domain-tls: listener=https://%s direct-ip=http://%s subsite=%s livekit=%s ip-admin-http=%s public-admin-http=%s reserved-admin-http=%s\n' "$BYOD_LISTENER_DOMAIN" "$BYOD_VPS_PUBLIC_IP" "${subsite_name:-none}" "$backend_livekit_url" "$ip_admin_status" "$public_admin_status" "$admin_status"
   printf 'domain-tls: WSS paths share the validated HTTPS nginx endpoints (protocol upgrade requires a client token)\n'
   if [[ "$domain_failed" -ne 0 ]]; then critical_failed=1; fi
   firewall_ports='80/tcp, 443/tcp, 7881/tcp, and 50000-59999/udp'

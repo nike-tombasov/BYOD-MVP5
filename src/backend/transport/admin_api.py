@@ -44,6 +44,7 @@ def build_admin_router(state_service: StateService, room_service: RoomService, s
             "ok": True,
             "applied": {
                 "room_name": runtime.room_name,
+                "subsite_name": runtime.subsite_name,
                 "target_capacity": runtime.target_capacity,
                 "max_active_listeners": runtime.max_active_listeners,
                 "max_new_connections_per_sec": runtime.max_new_connections_per_sec,

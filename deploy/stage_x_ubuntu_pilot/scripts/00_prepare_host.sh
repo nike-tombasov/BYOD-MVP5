@@ -12,6 +12,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y python3 python3-venv python3-pip nginx curl ca-certificates git btop
 
+# The packaged default also claims server_name _ on port 80. BYOD owns the
+# single default server, so remove only its enabled symlink (idempotently).
+rm -f /etc/nginx/sites-enabled/default
+
 id -u byod >/dev/null 2>&1 || useradd --system --home /opt/byod --shell /usr/sbin/nologin byod
 
 for d in /opt/byod/app /opt/byod/config /opt/byod/livekit /opt/byod/listener /opt/byod/backend_data /opt/byod/logs /opt/byod/metrics /opt/byod/releases; do

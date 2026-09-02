@@ -24,6 +24,7 @@ class RoomConfig:
     target_capacity: int
     channels: list[ChannelConfig]
     i18n_library: I18NLibrary
+    subsite_name: str | None = None
 
 
 @dataclass

@@ -144,3 +144,33 @@ When present, the orchestrator uploads it to `http://127.0.0.1:8000/admin/import
 - Never paste real secrets into tickets, screenshots, or shared logs.
 - Backend port `8000/tcp` must remain closed publicly.
 - `/admin/*` endpoints are local-only and must not be proxied through nginx.
+
+### TLS contact, Publisher URL, and Listener alias
+
+`BYOD_TLS_EMAIL` is the Let's Encrypt/certbot contact email. It is not DNS and is not a server login. It need not belong to `k-pls.ru`; use a real personal or technical address with stable access, and never leave `replace@example.com` in a real configuration.
+
+The unchanged Publisher `Server IP` field takes a full URL: VPS/domain `ws://<VPS_PUBLIC_IP>/ws/publisher` (hall 1: `ws://194.58.118.140/ws/publisher`); local same-PC `ws://127.0.0.1:8000/ws/publisher`; intentional LAN testing `ws://<LAN_BACKEND_IP>:8000/ws/publisher`. Do not use the bare IP, public `:8000`, Listener HTTPS URL, or LiveKit WSS URL. There is no dedicated Publisher DNS record; VPS port 8000 is private and nginx serves `/ws/publisher`.
+
+`room_input.json` may contain `"subsite_name": "test-conf"`. It is a lowercase URL-path slug, not DNS. It enables exactly `/test-conf/` in addition to root; absent, null, or empty enables no alias. A new import replaces the prior alias, so obsolete event paths return `404`.
+
+## `/tmp/room_input.json` mini-schema
+
+`/tmp/room_input.json` is a JSON room-config document and is separate from the shell environment file `/tmp/vps_config.env`. Its required top-level fields are `pin`, `target_capacity`, `channels`, and `i18n_library`; optional `subsite_name` controls one current-event Listener path alias.
+
+```json
+{
+  "pin": "123456",
+  "subsite_name": "test-conf",
+  "target_capacity": 200,
+  "channels": [
+    {"channel_id": "channel_0", "channel_label": "Floor", "listen": false}
+  ],
+  "i18n_library": {
+    "room_name_i18n": {"en": "Conference room", "ru": "Зал конференции"},
+    "custom_status_text_blocked_i18n": {"en": "Blocked", "ru": "Заблокировано"},
+    "custom_status_text_closed_i18n": {"en": "Closed", "ru": "Закрыто"}
+  }
+}
+```
+
+Valid aliases include `test-conf` and `hall_1`. Invalid examples include `Old/Event`, `two words`, `admin`, and `listener.js`. The field is not DNS and is not a deploy environment variable. Absent, `null`, or empty means no alias. Changing it requires a successful room-config import/redeploy so nginx is regenerated from validated persisted state; editing `/tmp/vps_config.env` does not change the alias.

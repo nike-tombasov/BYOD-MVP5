@@ -35,12 +35,36 @@ if [[ -n "${BYOD_ADMIN_DOMAIN:-}" ]]; then
   domain_names+=" $BYOD_ADMIN_DOMAIN"
   admin_server="server { listen 443 ssl; server_name $BYOD_ADMIN_DOMAIN; ssl_certificate /etc/letsencrypt/live/$BYOD_LISTENER_DOMAIN/fullchain.pem; ssl_certificate_key /etc/letsencrypt/live/$BYOD_LISTENER_DOMAIN/privkey.pem; location / { return 404; } }"
 fi
-sed -e "s/__DOMAIN_NAMES__/$domain_names/g" \
-    -e "s/__LISTENER_DOMAIN__/$BYOD_LISTENER_DOMAIN/g" \
-    -e "s/__LIVEKIT_DOMAIN__/$BYOD_LIVEKIT_DOMAIN/g" \
-    -e "s/__CERT_NAME__/$BYOD_LISTENER_DOMAIN/g" \
-    -e "s|__ADMIN_SERVER__|$admin_server|g" \
-    "$REPO_ROOT/deploy/stage_x_ubuntu_pilot/nginx/byod-domains.conf.template" > /etc/nginx/sites-available/byod-domains.conf
+room_config=/opt/byod/backend_data/room_config_v1.json
+subsite_name="$(python3 - "$room_config" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+if path.is_file():
+    value = json.loads(path.read_text(encoding="utf-8")).get("subsite_name")
+    if isinstance(value, str):
+        print(value)
+PY
+)"
+export BYOD_NGINX_DOMAIN_NAMES="$domain_names" BYOD_NGINX_ADMIN_SERVER="$admin_server" BYOD_NGINX_SUBSITE_NAME="$subsite_name"
+python3 - "$REPO_ROOT/deploy/stage_x_ubuntu_pilot/nginx/byod-domains.conf.template" <<'PY' > /etc/nginx/sites-available/byod-domains.conf
+import os, pathlib, sys
+template = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+alias = os.environ["BYOD_NGINX_SUBSITE_NAME"]
+locations = ""
+if alias:
+    locations = f"location = /{alias} {{ return 308 /{alias}/; }}\n    location = /{alias}/ {{ try_files /index.html =404; add_header Cache-Control \"no-store\"; }}"
+replacements = {
+    "__DOMAIN_NAMES__": os.environ["BYOD_NGINX_DOMAIN_NAMES"],
+    "__LISTENER_DOMAIN__": os.environ["BYOD_LISTENER_DOMAIN"],
+    "__LIVEKIT_DOMAIN__": os.environ["BYOD_LIVEKIT_DOMAIN"],
+    "__CERT_NAME__": os.environ["BYOD_LISTENER_DOMAIN"],
+    "__ADMIN_SERVER__": os.environ["BYOD_NGINX_ADMIN_SERVER"],
+    "__ALIAS_LOCATIONS__": locations,
+}
+for old, new in replacements.items():
+    template = template.replace(old, new)
+print(template, end="")
+PY
 ln -sfn /etc/nginx/sites-available/byod-domains.conf /etc/nginx/sites-enabled/byod-domains.conf
 rm -f /etc/nginx/sites-enabled/byod-listener.conf
 nginx -t || fatal 'generated domain nginx configuration is invalid'

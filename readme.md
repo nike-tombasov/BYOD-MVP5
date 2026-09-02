@@ -4,7 +4,7 @@ This repository contains the full technical specification of the BYOD Audio Dist
 
 Current status: the MVP supports a single-node Ubuntu Server 22.04 LTS VPS pilot
 with self-hosted LiveKit. Stage X and Stage XI are completed for current MVP
-pilot risk; Stage XII documents optional domain HTTPS/WSS mode and MVP launch hardening.
+pilot risk; Stage XII includes optional domain HTTPS/WSS deploy support while preserving direct-IP pilot mode and MVP launch hardening.
 
 IMPORTANT:
 1. Read hard_rules.md first
@@ -55,6 +55,7 @@ Deploy package path: `deploy/stage_x_ubuntu_pilot`
 
 Operator docs:
 - `deploy/stage_x_ubuntu_pilot/docs/deploy_guide.md`
+- `deploy/stage_x_ubuntu_pilot/docs/operator_runbook_flashdrive.md`
 - `deploy/stage_x_ubuntu_pilot/docs/smoke_test_guide.md`
 - `deploy/stage_x_ubuntu_pilot/docs/incident_quick_actions.md`
 - `deploy/stage_x_ubuntu_pilot/docs/configuration_reference.md`
@@ -69,7 +70,7 @@ Completed-stage snapshots:
 - `legacy/stage_x_ubuntu_pilot/`
 - `legacy/stage_xi_load_capacity/`
 
-The current BYOD VPS deploy keeps direct-IP pilot mode available. Stage XII documents optional domain HTTPS/WSS mode for later implementation; production monitoring, scaling, load balancing, and multi-node deployment remain future hardening work.
+Stage XII includes optional domain HTTPS/WSS deploy support while preserving direct-IP pilot mode; production monitoring, scaling, load balancing, and multi-node deployment remain future hardening work.
 
 ## Stage XI — Protocol/engine load measurement
 

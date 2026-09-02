@@ -14,7 +14,7 @@ One Publisher can stream multiple channels.
 
 ### 8.2. Структура интерфейса (по блокам):
 
-1) Подключение к VPS - подписи и поля ввода IP и PIN, кнопка CONNECT, статус подключения к backend 
+1) Подключение к VPS — поле с UI label `Server IP` для полного backend WebSocket URL, поле PIN, кнопка CONNECT, статус подключения к backend
 2) Room info (поступает от backend динамически) - room_name, room_status
 3) Channels (поступают от backend динамически), где в каждом подблоке строки:
 - 3.1) channel_id, channel_label  
@@ -79,8 +79,8 @@ sounddevice.query_devices()
 ### 8.5. Путь Publisher
 
 0) доступен блок подключения к серверу, остальные блоки не заполнены
-1) room technician вводит IP+PIN, нажимает CONNECT button
-2) статус в блоке подключения меняется на Connecting..., в backend отправляются IP+PIN и Windows system hostname (backend проверяет правильность room PIN, generate and send в ответ JWT token Identity publisher_id и персональный publisher_id)
+1) operator enters the full backend WebSocket URL in the `Server IP` field plus PIN, then presses CONNECT
+2) статус в блоке подключения меняется на Connecting..., в backend отправляются backend WebSocket URL from the `Server IP` field, PIN и Windows system hostname (backend проверяет правильность room PIN, generate and send в ответ JWT token Identity publisher_id и персональный publisher_id)
 3) блок подключения к серверу отображает статус Connected при успешном подключении, кнопка CONNECT становится неактивной/некликабельной, а в случае обрывов выводить статус CONNECTION ERROR или Invalid PIN в случае неверного PIN
 4) получает room info from backend (поля заполняются автоматически) в динамическом режиме - room_name, room_status, channel_id, channel_label, а также owner по каждому channel_id
 4.1) на initial connect/reconnect получает immutable `i18n_library` (full maps), в MVP использует `en` для отображения текстов
@@ -96,9 +96,18 @@ sounddevice.query_devices()
 14) при завершении работы может просто закрыть Publisher UI (без необходимости STOP streaming)
 15) backend регистрирует owner == null при получении STOP from Publisher по конкретному channel_id (или закрытии Publisher UI) и рассылает актуальный `publisher_state`, status channel_id меняется на FREE
 
-### 8.6. Блок IP+PIN
+### 8.6. Блок `Server IP` + PIN
 
-Publisher UI хранит последнюю введённую комбинацию IP+PIN и подставляет при последующем открытии
+The UI requirement is unchanged: the field label remains `Server IP`. Despite that label, the operator enters a complete backend WebSocket URL:
+
+- VPS/domain mode: `ws://<VPS_PUBLIC_IP>/ws/publisher`;
+- hall 1: `ws://194.58.118.140/ws/publisher`;
+- local same-PC development: `ws://127.0.0.1:8000/ws/publisher`;
+- LAN testing only, when backend is intentionally LAN-bound: `ws://<LAN_BACKEND_IP>:8000/ws/publisher`.
+
+Do not enter a bare IP, a public `:8000` URL, the Listener HTTPS URL, or the LiveKit WSS URL. VPS backend port 8000 remains private and Publisher reaches `/ws/publisher` through nginx.
+
+Publisher UI хранит последнюю введённую комбинацию полного backend WebSocket URL из поля `Server IP` и PIN и подставляет её при последующем открытии
 
 Статусы (цвет):
 * IDLE (чёрный)
@@ -238,7 +247,7 @@ Window and alignment:
 - Button text alignment: centered.
 - Main alignment: left-first, with stretch only where needed.
 
-IP/PIN block:
+`Server IP` + PIN block:
 - Row 1: `Server IP:` + address field + `PIN:` + PIN field + CONNECT button aligned right.
 - CONNECT button width: by text appearance (no extra stretch width).
 - Address and PIN fields: fixed width by practical symbol size.

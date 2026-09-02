@@ -146,12 +146,6 @@ fi
 step "Enable and start services"
 bash deploy/stage_x_ubuntu_pilot/scripts/40_enable_services.sh
 
-if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
-  step "Verify domain DNS and configure trusted TLS"
-  bash deploy/stage_x_ubuntu_pilot/scripts/30_domain_dns_preflight.sh
-  bash deploy/stage_x_ubuntu_pilot/scripts/31_setup_domain_tls.sh
-fi
-
 step "Import optional room config"
 if [[ -s "$BYOD_ROOM_INPUT_PATH" ]]; then
   response_file="$(mktemp /tmp/byod-room-import-XXXXXX.json)"
@@ -163,12 +157,37 @@ if not p.get('ok'):
     print(json.dumps(p, ensure_ascii=False), file=sys.stderr)
     raise SystemExit(1)
 a=p.get('applied', {})
-print(f"room_import: room_name={a.get('room_name')} target_capacity={a.get('target_capacity')} max_active_listeners={a.get('max_active_listeners')} max_new_connections_per_sec={a.get('max_new_connections_per_sec')} channels={a.get('channels')}")
+print(f"room_import: room_name={a.get('room_name')} subsite_name={a.get('subsite_name')} target_capacity={a.get('target_capacity')} max_active_listeners={a.get('max_active_listeners')} max_new_connections_per_sec={a.get('max_new_connections_per_sec')} channels={a.get('channels')}")
 PY
   rm -f "$response_file"
   ok "Room config imported through backend validation endpoint"
 else
-  warn "Room input file not found: $BYOD_ROOM_INPUT_PATH; continuing with default persisted room config."
+  warn "Room input file not found: $BYOD_ROOM_INPUT_PATH; clearing any persisted event alias."
+  python3 - <<'PY_CLEAR_ALIAS'
+import json, pathlib
+path = pathlib.Path('/opt/byod/backend_data/room_config_v1.json')
+if path.is_file():
+    payload = json.loads(path.read_text(encoding='utf-8'))
+    payload['subsite_name'] = None
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+PY_CLEAR_ALIAS
+  systemctl restart byod-backend
+  backend_ready=false
+  for _ in {1..30}; do
+    if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+      backend_ready=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$backend_ready" == true ]] || fatal "Backend did not become healthy after clearing persisted subsite_name"
+  ok "Backend restarted with no configured Listener alias"
+fi
+
+if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
+  step "Verify domain DNS and configure trusted TLS with the validated event alias"
+  bash deploy/stage_x_ubuntu_pilot/scripts/30_domain_dns_preflight.sh
+  bash deploy/stage_x_ubuntu_pilot/scripts/31_setup_domain_tls.sh
 fi
 
 if [[ "$BYOD_ENABLE_BACKEND_STRESS_TEST_NORMALIZED" == "true" ]]; then
@@ -187,10 +206,10 @@ printf 'backend_health=%s\n' "$(curl -sf http://127.0.0.1:8000/health 2>/dev/nul
 printf 'nginx_status=%s\n' "$(systemctl is-active nginx 2>/dev/null || true)"
 printf 'livekit_status=%s\n' "$(systemctl is-active byod-livekit 2>/dev/null || true)"
 public_origin="${BYOD_PUBLIC_ORIGIN%/}"
-publisher_ws_origin="${public_origin/http:\/\//ws://}"
-publisher_ws_origin="${publisher_ws_origin/https:\/\//wss://}"
 printf 'listener_url=%s/\n' "$public_origin"
-printf 'publisher_backend_url=%s/ws/publisher\n' "$publisher_ws_origin"
+# Publisher UI's Server IP field uses the public-IP nginx route in VPS mode,
+# never the Listener or LiveKit domain.
+printf 'publisher_backend_url=ws://%s/ws/publisher\n' "$BYOD_VPS_PUBLIC_IP"
 printf 'smoke_output_file=%s\n' "${smoke_path:-unknown}"
 if [[ "$BYOD_DOMAIN_TLS_MODE" == true ]]; then
   warn "Provider firewall: allow 80/tcp, 443/tcp, 7881/tcp, 50000-59999/udp; do not expose 8000/tcp."

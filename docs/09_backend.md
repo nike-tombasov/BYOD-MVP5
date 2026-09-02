@@ -15,6 +15,7 @@ Startup/import persistence policy:
 - after restart backend must keep last successful imported room metadata;
 - only clean deploy (no import yet) uses immutable bootstrap defaults;
 - each new successful JSON import fully replaces previous room metadata snapshot (no metadata mixing).
+- backend persists `subsite_name` as room config metadata. Listener root remains valid when it is set; nginx returns `404` for wrong or old aliases. Canonical validation is in `docs/18_json_import_schema_v1.md`, and canonical persistence is in `docs/17_backend_persistence_json_v1.md`.
 
 1) room PIN (6-тизначный код)
 2) channel number - channel_id по форме channel_0, channel_1, channel_2...
@@ -24,6 +25,7 @@ Startup/import persistence policy:
 6) room status - room_status (BLOCKED по умолчанию при clean deploy до первого импорта)
 7) status custom text - текст для web page на room statuses BLOCKED и CLOSED
 8) target_capacity - целевое количество Listener для sizing/лимитов VPS (задаётся при deploy и не изменяется в runtime мероприятия)
+9) `subsite_name` — optional current-event Listener URL path slug controlling one allowed Listener path alias; absent, `null`, or empty means root only.
 
 ### 9.2. Tokens and PIN
 
