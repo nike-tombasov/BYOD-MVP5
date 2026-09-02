@@ -18,7 +18,7 @@ Canonical admin endpoint:
 
 ---
 
-### 18.2 Required top-level fields
+### 18.2 Top-level fields
 
 ```json
 {
